@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project Specific Directories (Generated/Temp)
+cache/
+output/
+projects/
+music/
+scratch/
+yt_login_profile/
+agents/
+logs/
+
+# Secrets and Local configs
+cookies.txt
+pexels_key.txt
+ui_prefs.json
+campaign.json.disabled
+
+# Media and Logs
+*.log
+*.webm
+*.mp4
+*.mp3
+*.wav
+*.mkv
+
+# PyInstaller / Build
+ClipAI.spec
+
+# Web / Frontend (React + Vite)
+web/node_modules/
+web/dist/
+web/dist-ssr/
+web/*.local
+
+# Tauri
+web/src-tauri/target/
+web/src-tauri/gen/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
