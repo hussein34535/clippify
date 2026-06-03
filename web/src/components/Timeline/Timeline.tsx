@@ -388,10 +388,35 @@ export const Timeline: React.FC<TimelineProps> = ({
           {/* Video Tracks */}
           <div className="flex flex-col gap-2 py-2.5">
             {timelineState.tracks.video.map((track) => (
-              <TrackLane 
-                key={track.id} 
-                track={track} 
+              <TrackLane
+                key={track.id}
+                track={track}
                 trackType="video"
+                zoomLevel={zoomLevel}
+                selectedClipId={selectedClipId}
+                onSelectClip={onSelectClip}
+                timelineState={timelineState}
+                onChange={onChange}
+                onDropMedia={onDropMedia}
+              />
+            ))}
+          </div>
+
+          {/* Audio Tracks (right under video for visibility) */}
+          <div className="flex flex-col gap-2 py-2.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-tertiary)' }}>
+                {timelineState.tracks.audio.length} تراك صوت
+              </span>
+              <span className="text-[9px] font-semibold flex items-center gap-1" style={{ color: '#34c759' }}>
+                <Music className="w-3 h-3" /> موسيقى ومؤثرات
+              </span>
+            </div>
+            {timelineState.tracks.audio.map((track) => (
+              <TrackLane
+                key={track.id}
+                track={track}
+                trackType="audio"
                 zoomLevel={zoomLevel}
                 selectedClipId={selectedClipId}
                 onSelectClip={onSelectClip}
@@ -405,9 +430,9 @@ export const Timeline: React.FC<TimelineProps> = ({
           {/* Overlays Tracks */}
           <div className="flex flex-col gap-2 py-2.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
             {timelineState.tracks.overlays.map((track) => (
-              <TrackLane 
-                key={track.id} 
-                track={track} 
+              <TrackLane
+                key={track.id}
+                track={track}
                 trackType="overlay"
                 zoomLevel={zoomLevel}
                 selectedClipId={selectedClipId}
@@ -422,27 +447,10 @@ export const Timeline: React.FC<TimelineProps> = ({
           {/* Subtitle Tracks */}
           <div className="flex flex-col gap-2 py-2.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
             {timelineState.tracks.subtitles.map((track) => (
-              <TrackLane 
-                key={track.id} 
-                track={track} 
+              <TrackLane
+                key={track.id}
+                track={track}
                 trackType="subtitle"
-                zoomLevel={zoomLevel}
-                selectedClipId={selectedClipId}
-                onSelectClip={onSelectClip}
-                timelineState={timelineState}
-                onChange={onChange}
-                onDropMedia={onDropMedia}
-              />
-            ))}
-          </div>
-
-          {/* Audio Tracks */}
-          <div className="flex flex-col gap-2 py-2.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
-            {timelineState.tracks.audio.map((track) => (
-              <TrackLane 
-                key={track.id} 
-                track={track} 
-                trackType="audio"
                 zoomLevel={zoomLevel}
                 selectedClipId={selectedClipId}
                 onSelectClip={onSelectClip}

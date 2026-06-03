@@ -270,6 +270,34 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedClipId, selectedClipType, timelineState, undo, redo]);
 
+  // Viewport-aware responsive sizing
+  const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  useEffect(() => {
+    const update = () => setViewportSize({ w: window.innerWidth, h: window.innerHeight });
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  const isNarrow = viewportSize.w > 0 && viewportSize.w < 900;
+  const isShort = viewportSize.h > 0 && viewportSize.h < 700;
+
+  // Auto-fit panel sizes based on viewport
+  useEffect(() => {
+    if (viewportSize.w === 0) return;
+    // Auto-scale left/right panels if they exceed viewport
+    const totalHorizontal = leftWidth + rightWidth;
+    if (totalHorizontal > viewportSize.w - 200) {
+      const scale = (viewportSize.w - 200) / totalHorizontal;
+      setLeftWidth(Math.max(220, Math.floor(leftWidth * scale)));
+      setRightWidth(Math.max(240, Math.floor(rightWidth * scale)));
+    }
+    // Auto-scale bottom timeline if window is short
+    if (isShort && bottomHeight > 240) {
+      setBottomHeight(220);
+    }
+  }, [viewportSize]);
+
   const handleApplyActionPlan = (actions: any[]) => {
     // Filter out destructive actions and ask for confirmation
     const safeActions: any[] = [];
@@ -883,8 +911,8 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
         <div onPointerDown={() => setActiveDrag('left')} className={`splitter-col ${activeDrag === 'left' ? 'active' : ''}`} />
 
         <section className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ background: 'var(--bg-base)' }}>
-          <div className="flex-1 flex items-center justify-center p-6 min-h-0 relative">
-            <CanvasPreview timelineState={timelineState} currentTime={currentTime} duration={duration} onTimeUpdate={setCurrentTime} playing={playing} setPlaying={setPlaying} videoPath={videoPath} />
+          <div className={`flex-1 flex items-center justify-center min-h-0 relative ${isNarrow ? 'p-2' : 'p-4 lg:p-6'}`}>
+            <CanvasPreview timelineState={timelineState} currentTime={currentTime} duration={duration} onTimeUpdate={setCurrentTime} onTimeSeek={setCurrentTime} playing={playing} setPlaying={setPlaying} videoPath={videoPath} />
           </div>
           <TranscriptWords words={words} currentTime={currentTime} seekTo={seekTo} onDeleteWords={handleDeleteWords} />
         </section>

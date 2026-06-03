@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { produce } from 'immer';
-import { Upload, Video, Download, FolderOpen, Sparkles, Film, Layers, Wand2, Search, Plus } from 'lucide-react';
+import { Upload, Video, Download, FolderOpen, Sparkles, Film, Layers, Wand2, Search, Plus, Music } from 'lucide-react';
 import StyleMimicWorkspace from '../StyleMimicWorkspace';
 import type { Clip } from '../../types';
 import axios from 'axios';
@@ -35,7 +35,7 @@ interface MediaPoolProps {
   settings?: any;
 }
 
-type Section = 'import' | 'clips' | 'broll' | 'mimic';
+type Section = 'import' | 'clips' | 'broll' | 'mimic' | 'music';
 
 export default function MediaPool({
   ytUrl, setYtUrl, videoPath, setVideoPath, loading,
@@ -45,7 +45,7 @@ export default function MediaPool({
   width, timelineState, onChange, currentTime, settings,
 }: MediaPoolProps) {
   const [section, setSection] = useState<Section>('import');
-  
+
   // B-Roll search states
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -53,6 +53,53 @@ export default function MediaPool({
   const [brollResults, setBrollResults] = useState<any[]>([]);
   const [downloadingBrollId, setDownloadingBrollId] = useState<number | null>(null);
   const [rawVideoDurations, setRawVideoDurations] = useState<Record<string, number>>({});
+
+  // Music library state
+  const [musicLibrary, setMusicLibrary] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('clipai_musicLibrary');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [localMusicPath, setLocalMusicPath] = useState('');
+
+  // Persist music library
+  useEffect(() => {
+    try { localStorage.setItem('clipai_musicLibrary', JSON.stringify(musicLibrary)); } catch {}
+  }, [musicLibrary]);
+
+  const addMusicToTimeline = (overridePath?: string) => {
+    const path = overridePath || localMusicPath;
+    if (!path) return;
+    // Add to library if not already there
+    if (!musicLibrary.includes(path)) {
+      setMusicLibrary(prev => [...prev, path]);
+    }
+    // Create audio clip at current playhead
+    const newClip = {
+      id: `audio_${Date.now()}`,
+      source_path: path,
+      start_time_in_timeline: currentTime,
+      end_time_in_timeline: currentTime + 30, // default 30s
+      source_trim_start: 0,
+      source_trim_end: 30,
+      volume: 1.0,
+    };
+    const nextTimeline = produce(timelineState, (draft: any) => {
+      if (!draft.tracks.audio || draft.tracks.audio.length === 0) {
+        draft.tracks.audio = [{ id: 'a_track_music', name: 'Background Music Track', index: 0, clips: [] }];
+      }
+      // Find or create audio track
+      let track = draft.tracks.audio[0];
+      if (!track) {
+        draft.tracks.audio.push({ id: 'a_track_music', name: 'Background Music Track', index: 0, clips: [] });
+        track = draft.tracks.audio[0];
+      }
+      track.clips.push(newClip);
+    });
+    onChange(nextTimeline);
+    if (!overridePath) setLocalMusicPath('');
+  };
 
   const API_BASE = 'http://localhost:8000';
 
@@ -160,6 +207,7 @@ export default function MediaPool({
         {navBtn('import', 'استيراد', Upload)}
         {navBtn('clips', `كليبات (${clips.length})`, Layers)}
         {navBtn('broll', 'بحث B-Roll', Film)}
+        {navBtn('music', 'موسيقى', Music)}
         {navBtn('mimic', 'محاكاة', Wand2)}
       </div>
 
@@ -503,6 +551,116 @@ export default function MediaPool({
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ─── MUSIC SECTION ─── */}
+        {section === 'music' && (
+          <div className="flex flex-col gap-3.5 flex-1 text-right">
+            <h3 className="text-sm font-semibold tracking-wider flex items-center gap-2 justify-end" style={{ color: 'var(--text-primary)' }}>
+              <Music className="w-4 h-4" style={{ color: '#34c759' }} /> الموسيقى والمؤثرات
+            </h3>
+
+            {/* Import Local Audio */}
+            <div className="apple-card p-4 flex flex-col gap-2.5">
+              <label className="apple-label">استيراد ملف موسيقى محلي:</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Music className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#34c759' }} />
+                  <input
+                    type="text"
+                    value={localMusicPath}
+                    onChange={(e) => setLocalMusicPath(e.target.value)}
+                    placeholder="C:\music.mp3"
+                    className="apple-input w-full pl-9 pr-3 py-2.5 text-sm"
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    const tauri = (window as any).__TAURI__;
+                    if (tauri && tauri.dialog) {
+                      try {
+                        const selected = await tauri.dialog.open({
+                          filters: [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'ogg', 'm4a', 'flac'] }],
+                          multiple: false
+                        });
+                        if (selected && typeof selected === 'string') {
+                          setLocalMusicPath(selected);
+                        }
+                      } catch (err: any) {
+                        alert('فشل: ' + err.message);
+                      }
+                    } else {
+                      alert('File browser not available. Type the path manually.');
+                    }
+                  }}
+                  className="apple-btn-secondary py-2 px-2.5 flex items-center justify-center"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => addMusicToTimeline()}
+                  disabled={!localMusicPath}
+                  className="apple-btn-primary py-2 px-3 flex items-center gap-1.5"
+                  style={{ background: '#34c759' }}
+                >
+                  <Plus className="w-4 h-4" /> أضف
+                </button>
+              </div>
+              <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                MP3, WAV, AAC, OGG, M4A, FLAC
+              </p>
+            </div>
+
+            {/* Music Library */}
+            <div className="flex flex-col gap-2 flex-1 min-h-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-tertiary)' }}>
+                  {musicLibrary.length} مقطع
+                </span>
+                <span className="text-[10px] font-semibold" style={{ color: 'var(--text-secondary)' }}>المكتبة:</span>
+              </div>
+              {musicLibrary.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed rounded-xl" style={{ borderColor: 'var(--border-default)', color: 'var(--text-tertiary)' }}>
+                  <Music className="w-10 h-10 mb-2 animate-pulse" style={{ color: 'var(--border-strong)' }} />
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>لا يوجد موسيقى</p>
+                  <p className="text-[11px] max-w-[200px] mt-1" style={{ color: 'var(--text-tertiary)' }}>استورد ملف صوتي أو اسحب ملف من File Explorer</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 overflow-y-auto flex-1 min-h-0 pr-1">
+                  {musicLibrary.map((track, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-lg border flex items-center gap-2"
+                      style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border-default)' }}
+                    >
+                      <Music className="w-4 h-4 flex-shrink-0" style={{ color: '#34c759' }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }} title={track}>
+                          {track.split('\\').pop() || track.split('/').pop()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => addMusicToTimeline(track)}
+                        className="px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                        style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}
+                        title="أضف للتايملاين"
+                      >
+                        <Plus className="w-3 h-3" /> أضف
+                      </button>
+                      <button
+                        onClick={() => setMusicLibrary(prev => prev.filter((_, i) => i !== idx))}
+                        className="px-2 py-1 rounded text-[10px] font-semibold flex items-center transition-all cursor-pointer"
+                        style={{ background: 'transparent', color: 'var(--text-tertiary)' }}
+                        title="حذف من المكتبة"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

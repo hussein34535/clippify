@@ -21,6 +21,7 @@ interface CanvasPreviewProps {
   currentTime: number;
   duration: number;
   onTimeUpdate: (time: number) => void;
+  onTimeSeek?: (time: number) => void;
   playing: boolean;
   setPlaying: (playing: boolean) => void;
   videoPath: string; // fallback or main video source
@@ -29,8 +30,9 @@ interface CanvasPreviewProps {
 export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   timelineState,
   currentTime,
-  duration: _duration,
+  duration,
   onTimeUpdate,
+  onTimeSeek,
   playing,
   setPlaying,
   videoPath,
@@ -99,29 +101,35 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     return null;
   };
 
-  // Sync hidden video playback with playing state and currentTime
+  // Sync hidden video playback with playing state
   useEffect(() => {
     const video = hiddenVideoRef.current;
     if (!video) return;
 
     if (playing) {
-      // Sync time and play
-      if (Math.abs(video.currentTime - currentTime) > 0.3) {
-        video.currentTime = currentTime;
+      // Only seek if there's a significant mismatch (manual seek, not play loop drift)
+      if (Math.abs(video.currentTime - currentTime) > 0.5) {
+        try { video.currentTime = currentTime; } catch {}
       }
-      video.play().catch(() => {});
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {});
+      }
     } else {
+      // Pause without overwriting currentTime — preserve last frame
       video.pause();
-      video.currentTime = currentTime;
     }
   }, [playing]);
 
-  // Sync seek events
+  // Sync seek events (only when paused, to avoid fighting the play loop)
   useEffect(() => {
     const video = hiddenVideoRef.current;
     if (!video || playing) return;
-    video.currentTime = currentTime;
-  }, [currentTime]);
+    if (Math.abs(video.currentTime - currentTime) > 0.05) {
+      try { video.currentTime = currentTime; } catch {}
+      requestAnimationFrame(renderFrame);
+    }
+  }, [currentTime, playing]);
 
   // Track video state when src changes
   useEffect(() => {
@@ -479,110 +487,381 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         </div>
       )}
 
-      {/* Player Controller Bar */}
-      <div className="h-12 border-t flex items-center justify-between px-3 shrink-0 gap-2" style={{ background: 'var(--bg-surface-1)', borderColor: 'var(--border-subtle)' }}>
-        {/* Play/Pause */}
-        <button
-          onClick={togglePlay}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-white transition-all cursor-pointer hover:opacity-90 active:scale-95 border-none flex-shrink-0"
-          style={{ background: 'var(--accent)' }}
-          title={playing ? 'إيقاف (Space)' : 'تشغيل (Space)'}
-        >
-          {playing ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current translate-x-0.5" />}
-        </button>
+      {/* Fullscreen overlay controller (auto-hide) */}
+      {isFullscreen && (
+        <FullscreenOverlay
+          playing={playing}
+          togglePlay={togglePlay}
+          currentTime={currentTime}
+          duration={duration}
+          onSeek={(t) => onTimeSeek?.(t)}
+          muted={muted}
+          setMuted={setMuted}
+          aspectRatio={aspectRatio}
+          setAspectRatio={setAspectRatio}
+          fitMode={fitMode}
+          setFitMode={setFitMode}
+          toggleFullscreen={toggleFullscreen}
+        />
+      )}
 
-        {/* Aspect Ratio Selector */}
-        <div className="flex items-center gap-1 bg-[var(--bg-surface-3)] rounded-md p-0.5 border" style={{ borderColor: 'var(--border-subtle)' }}>
-          {(['9:16', '16:9', '1:1', '4:5'] as AspectRatio[]).map((ratio) => (
+      {/* Player Controller Bar (hidden in fullscreen) */}
+      {!isFullscreen && (
+        <div className="h-12 border-t flex flex-col shrink-0" style={{ background: 'var(--bg-surface-1)', borderColor: 'var(--border-subtle)' }}>
+          {/* Progress Bar */}
+          <ProgressBar
+            currentTime={currentTime}
+            duration={duration}
+            onSeek={(t) => onTimeSeek?.(t)}
+          />
+
+          {/* Controls Row */}
+          <div className="flex-1 flex items-center justify-between px-3 gap-2">
+            {/* Play/Pause */}
             <button
-              key={ratio}
-              onClick={() => setAspectRatio(ratio)}
-              className="px-1.5 py-0.5 rounded text-[10px] font-semibold transition-all cursor-pointer"
-              style={{
-                background: aspectRatio === ratio ? 'var(--accent)' : 'transparent',
-                color: aspectRatio === ratio ? '#fff' : 'var(--text-secondary)',
-              }}
-              title={`أبعاد ${ratio}`}
+              onClick={togglePlay}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white transition-all cursor-pointer hover:opacity-90 active:scale-95 border-none flex-shrink-0"
+              style={{ background: 'var(--accent)' }}
+              title={playing ? 'إيقاف (Space)' : 'تشغيل (Space)'}
             >
-              {ratio}
+              {playing ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current translate-x-0.5" />}
             </button>
-          ))}
+
+            {/* Aspect Ratio Selector */}
+            <div className="flex items-center gap-1 bg-[var(--bg-surface-3)] rounded-md p-0.5 border" style={{ borderColor: 'var(--border-subtle)' }}>
+              {(['9:16', '16:9', '1:1', '4:5'] as AspectRatio[]).map((ratio) => (
+                <button
+                  key={ratio}
+                  onClick={() => setAspectRatio(ratio)}
+                  className="px-1.5 py-0.5 rounded text-[10px] font-semibold transition-all cursor-pointer"
+                  style={{
+                    background: aspectRatio === ratio ? 'var(--accent)' : 'transparent',
+                    color: aspectRatio === ratio ? '#fff' : 'var(--text-secondary)',
+                  }}
+                  title={`أبعاد ${ratio}`}
+                >
+                  {ratio}
+                </button>
+              ))}
+            </div>
+
+            {/* Fit/Fill Toggle */}
+            <button
+              onClick={() => setFitMode(prev => prev === 'fit' ? 'fill' : 'fit')}
+              className="px-2 py-1 rounded text-[10px] font-semibold border transition-all cursor-pointer"
+              style={{
+                background: 'var(--bg-surface-3)',
+                borderColor: 'var(--border-subtle)',
+                color: 'var(--text-secondary)'
+              }}
+              title={fitMode === 'fit' ? 'وضع الاحتواء (Fit) - اضغط للملء' : 'وضع الملء (Fill) - اضغط للاحتواء'}
+            >
+              {fitMode === 'fit' ? '⤢ Fit' : '⛶ Fill'}
+            </button>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Scopes Toggle */}
+            <button
+              onClick={() => setActiveScope(prev => prev === 'none' ? 'histogram' : prev === 'histogram' ? 'waveform' : 'none')}
+              className="px-2 py-1 rounded-md border text-[10px] font-semibold transition-all cursor-pointer select-none"
+              style={{
+                background: activeScope !== 'none' ? 'var(--accent-bg)' : 'transparent',
+                borderColor: activeScope !== 'none' ? 'var(--accent)' : 'var(--border-subtle)',
+                color: activeScope !== 'none' ? 'var(--accent)' : 'var(--text-secondary)'
+              }}
+              title="تبديل لوحة القياس البصرية"
+            >
+              {activeScope === 'none' ? 'Scopes' : activeScope === 'histogram' ? 'Histogram' : 'Waveform'}
+            </button>
+
+            {/* Timecode */}
+            <span className="text-[11px] font-mono px-1 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+              {fmtTime(currentTime)} <span style={{ color: 'var(--text-tertiary)' }}>/ {fmtTime(duration)}</span>
+            </span>
+
+            {/* Mute */}
+            <button
+              onClick={() => setMuted(!muted)}
+              className="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0"
+              style={{ color: 'var(--text-secondary)' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-surface-3)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+              title={muted ? 'إلغاء الكتم' : 'كتم الصوت'}
+            >
+              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+
+            {/* Fullscreen */}
+            <button
+              onClick={toggleFullscreen}
+              className="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0"
+              style={{ color: 'var(--text-secondary)' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-surface-3)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+              title={isFullscreen ? 'إنهاء ملء الشاشة (Esc)' : 'ملء الشاشة (F)'}
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
+      )}
+    </div>
+  );
+};
 
-        {/* Fit/Fill Toggle */}
-        <button
-          onClick={() => setFitMode(prev => prev === 'fit' ? 'fill' : 'fit')}
-          className="px-2 py-1 rounded text-[10px] font-semibold border transition-all cursor-pointer"
+// ─── Progress Bar Component (scrubbable) ─────────────────────────────
+interface ProgressBarProps {
+  currentTime: number;
+  duration: number;
+  onSeek: (time: number) => void;
+}
+const ProgressBar: React.FC<ProgressBarProps> = ({ currentTime, duration, onSeek }) => {
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+
+  const safeDuration = duration > 0 ? duration : 0;
+  const progress = safeDuration > 0 ? (currentTime / safeDuration) * 100 : 0;
+  const hoverProgress = hoverTime !== null && safeDuration > 0 ? (hoverTime / safeDuration) * 100 : null;
+
+  const computeTimeFromEvent = (e: React.PointerEvent | PointerEvent) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect || safeDuration <= 0) return 0;
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    return ratio * safeDuration;
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    isDragging.current = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    onSeek(computeTimeFromEvent(e));
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const t = computeTimeFromEvent(e);
+    setHoverTime(t);
+    if (isDragging.current) {
+      onSeek(t);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    isDragging.current = false;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+    setHoverTime(null);
+  };
+
+  const handlePointerLeave = () => {
+    if (!isDragging.current) setHoverTime(null);
+  };
+
+  return (
+    <div
+      ref={trackRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerLeave}
+      className="relative h-2 cursor-pointer group flex items-center"
+      style={{ background: 'var(--bg-surface-2)' }}
+    >
+      {/* Buffered/Played fill */}
+      <div
+        className="absolute left-0 top-0 bottom-0 transition-[width] duration-75"
+        style={{
+          width: `${progress}%`,
+          background: 'var(--accent)',
+        }}
+      />
+      {/* Hover indicator */}
+      {hoverProgress !== null && (
+        <div
+          className="absolute top-0 bottom-0 pointer-events-none"
           style={{
+            left: `${hoverProgress}%`,
+            width: '2px',
+            background: 'rgba(255,255,255,0.6)',
+          }}
+        />
+      )}
+      {/* Scrubber handle */}
+      <div
+        className="absolute w-3 h-3 rounded-full bg-white shadow-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+        style={{
+          left: `calc(${progress}% - 6px)`,
+          top: '50%',
+          transform: 'translateY(-50%)',
+        }}
+      />
+      {/* Hover time tooltip */}
+      {hoverTime !== null && safeDuration > 0 && (
+        <div
+          className="absolute -top-7 px-1.5 py-0.5 rounded text-[10px] font-mono pointer-events-none"
+          style={{
+            left: `${hoverProgress!}%`,
+            transform: 'translateX(-50%)',
             background: 'var(--bg-surface-3)',
-            borderColor: 'var(--border-subtle)',
-            color: 'var(--text-secondary)'
+            border: '0.5px solid var(--border-default)',
+            color: 'var(--text-primary)',
           }}
-          title={fitMode === 'fit' ? 'وضع الاحتواء (Fit) - اضغط للملء' : 'وضع الملء (Fill) - اضغط للاحتواء'}
         >
-          {fitMode === 'fit' ? '⤢ Fit' : '⛶ Fill'}
-        </button>
+          {fmtTime(hoverTime)}
+        </div>
+      )}
+    </div>
+  );
+};
 
-        {/* Spacer */}
-        <div className="flex-1" />
+// ─── Fullscreen Overlay Controller ───────────────────────────────────
+interface FullscreenOverlayProps {
+  playing: boolean;
+  togglePlay: () => void;
+  currentTime: number;
+  duration: number;
+  onSeek: (time: number) => void;
+  muted: boolean;
+  setMuted: (m: boolean) => void;
+  aspectRatio: AspectRatio;
+  setAspectRatio: (r: AspectRatio) => void;
+  fitMode: FitMode;
+  setFitMode: (m: FitMode) => void;
+  toggleFullscreen: () => void;
+}
+const FullscreenOverlay: React.FC<FullscreenOverlayProps> = ({
+  playing, togglePlay, currentTime, duration, onSeek,
+  muted, setMuted, aspectRatio, setAspectRatio, fitMode, setFitMode, toggleFullscreen
+}) => {
+  const [isVisible, setIsVisible] = useState(true);
+  const hideTimer = useRef<number | null>(null);
 
-        {/* Scopes Toggle */}
-        <button
-          onClick={() => setActiveScope(prev => prev === 'none' ? 'histogram' : prev === 'histogram' ? 'waveform' : 'none')}
-          className="px-2 py-1 rounded-md border text-[10px] font-semibold transition-all cursor-pointer select-none"
-          style={{
-            background: activeScope !== 'none' ? 'var(--accent-bg)' : 'transparent',
-            borderColor: activeScope !== 'none' ? 'var(--accent)' : 'var(--border-subtle)',
-            color: activeScope !== 'none' ? 'var(--accent)' : 'var(--text-secondary)'
-          }}
-          title="تبديل لوحة القياس البصرية"
-        >
-          {activeScope === 'none' ? 'Scopes' : activeScope === 'histogram' ? 'Histogram' : 'Waveform'}
-        </button>
+  // Auto-hide after 3s of no mouse activity
+  const showTemporarily = useCallback(() => {
+    setIsVisible(true);
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    if (playing) {
+      hideTimer.current = window.setTimeout(() => setIsVisible(false), 3000);
+    }
+  }, [playing]);
 
-        {/* Timecode */}
-        <span className="text-[11px] font-mono px-1" style={{ color: 'var(--text-secondary)' }}>
-          {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{(Math.floor(currentTime) % 60).toString().padStart(2, '0')}
-        </span>
+  useEffect(() => {
+    showTemporarily();
+    return () => { if (hideTimer.current) window.clearTimeout(hideTimer.current); };
+  }, [showTemporarily, currentTime]);
 
-        {/* Mute */}
-        <button
-          onClick={() => setMuted(!muted)}
-          className="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0"
-          style={{ color: 'var(--text-secondary)' }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--bg-surface-3)';
-            e.currentTarget.style.color = 'var(--text-primary)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = 'var(--text-secondary)';
-          }}
-          title={muted ? 'إلغاء الكتم' : 'كتم الصوت'}
-        >
-          {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-        </button>
-
-        {/* Fullscreen */}
+  return (
+    <div
+      className="absolute inset-0 pointer-events-none"
+      onMouseMove={showTemporarily}
+      onClick={showTemporarily}
+    >
+      {/* Top gradient + close button */}
+      <div
+        className="absolute top-0 left-0 right-0 h-16 flex items-center justify-between px-6 pointer-events-auto transition-opacity duration-300"
+        style={{
+          background: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)',
+          opacity: isVisible ? 1 : 0,
+        }}
+      >
         <button
           onClick={toggleFullscreen}
-          className="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0"
-          style={{ color: 'var(--text-secondary)' }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--bg-surface-3)';
-            e.currentTarget.style.color = 'var(--text-primary)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = 'var(--text-secondary)';
-          }}
-          title={isFullscreen ? 'إنهاء ملء الشاشة (Esc)' : 'ملء الشاشة (F)'}
+          className="w-9 h-9 rounded-full flex items-center justify-center text-white transition-all cursor-pointer hover:bg-white/20"
+          title="إنهاء ملء الشاشة (Esc)"
         >
-          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          <Minimize2 className="w-5 h-5" />
         </button>
+        <span className="text-white text-sm font-semibold">ClipAI Studio</span>
+      </div>
+
+      {/* Bottom controller */}
+      <div
+        className="absolute bottom-0 left-0 right-0 px-6 pb-4 pointer-events-auto transition-opacity duration-300"
+        style={{
+          background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)',
+          opacity: isVisible ? 1 : 0,
+        }}
+      >
+        {/* Progress Bar */}
+        <div className="mb-3">
+          <ProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
+        </div>
+
+        {/* Time + Controls */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={togglePlay}
+            className="w-11 h-11 rounded-full flex items-center justify-center text-white transition-all cursor-pointer hover:scale-105 active:scale-95 border-none flex-shrink-0"
+            style={{ background: 'var(--accent)' }}
+            title={playing ? 'إيقاف' : 'تشغيل'}
+          >
+            {playing ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current translate-x-0.5" />}
+          </button>
+
+          <span className="text-white text-sm font-mono tabular-nums">
+            {fmtTime(currentTime)} <span className="text-white/50">/ {fmtTime(duration)}</span>
+          </span>
+
+          <div className="flex-1" />
+
+          {/* Aspect Ratio */}
+          <div className="flex items-center gap-1 bg-white/10 rounded-md p-0.5">
+            {(['9:16', '16:9', '1:1', '4:5'] as AspectRatio[]).map((ratio) => (
+              <button
+                key={ratio}
+                onClick={() => setAspectRatio(ratio)}
+                className="px-2 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer"
+                style={{
+                  background: aspectRatio === ratio ? 'var(--accent)' : 'transparent',
+                  color: '#fff',
+                }}
+              >
+                {ratio}
+              </button>
+            ))}
+          </div>
+
+          {/* Fit/Fill */}
+          <button
+            onClick={() => setFitMode(fitMode === 'fit' ? 'fill' : 'fit')}
+            className="px-3 py-1.5 rounded text-[11px] font-semibold text-white transition-all cursor-pointer"
+            style={{ background: 'rgba(255,255,255,0.1)' }}
+          >
+            {fitMode === 'fit' ? '⤢ Fit' : '⛶ Fill'}
+          </button>
+
+          {/* Mute */}
+          <button
+            onClick={() => setMuted(!muted)}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-white transition-all cursor-pointer hover:bg-white/10"
+            title={muted ? 'إلغاء الكتم' : 'كتم'}
+          >
+            {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+          </button>
+        </div>
       </div>
     </div>
   );
 };
+
+// ─── Time formatting helper ─────────────────────────────────────────
+function fmtTime(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) return '00:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
 
 export default CanvasPreview;
