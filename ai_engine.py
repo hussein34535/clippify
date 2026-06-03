@@ -78,13 +78,18 @@ _CHUNK_SEC = 60  # seconds per chunk for parallel transcription
 # Resolve ffmpeg/ffprobe path for audio duration
 _FFPROBE = "ffprobe"
 try:
-    import imageio_ffmpeg
-    _ff = imageio_ffmpeg.get_ffmpeg_exe()
-    _dir = os.path.dirname(_ff)
-    _name = os.path.basename(_ff).replace("ffmpeg", "ffprobe")
-    _FFPROBE = os.path.join(_dir, _name)
-    if not os.path.isfile(_FFPROBE):
-        _FFPROBE = "ffprobe"
+    local_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
+    ffprobe_local = os.path.join(local_bin, "ffprobe.exe" if os.name == "nt" else "ffprobe")
+    if os.path.exists(ffprobe_local):
+        _FFPROBE = ffprobe_local
+    else:
+        import imageio_ffmpeg
+        _ff = imageio_ffmpeg.get_ffmpeg_exe()
+        _dir = os.path.dirname(_ff)
+        _name = os.path.basename(_ff).replace("ffmpeg", "ffprobe")
+        _FFPROBE = os.path.join(_dir, _name)
+        if not os.path.isfile(_FFPROBE):
+            _FFPROBE = "ffprobe"
 except Exception:
     pass
 
@@ -299,51 +304,73 @@ def get_words_in_range(words: list, start_sec: float, end_sec: float) -> list:
 
 
 def translate_chunks_to_arabic(chunks_texts: list) -> list:
-    """Translate a list of subtitle phrases to Arabic in small batches using deep-translator (completely free) with AI fallback if needed."""
+    """Translate a list of subtitle phrases to Arabic in small batches."""
     if not chunks_texts:
         return []
 
-    # 1. Try deep-translator first (free, no API key required)
-    try:
-        from deep_translator import GoogleTranslator
-        translator = GoogleTranslator(source='auto', target='ar')
-        batch_size = 25
-        translated_all = []
-        
-        for i in range(0, len(chunks_texts), batch_size):
-            batch = chunks_texts[i:i + batch_size]
-            print(f"  [TRANSLATION] Translating batch {i // batch_size + 1} ({len(batch)} phrases) using deep-translator (Free)...")
-            translated = translator.translate_batch(batch)
-            if isinstance(translated, list) and len(translated) == len(batch):
-                translated_all.extend([str(item).strip() for item in translated])
-            else:
-                raise ValueError(f"Batch length mismatch: got {len(translated) if isinstance(translated, list) else 'non-list'}, expected {len(batch)}")
-            
-        print("  [TRANSLATION] Completed successfully using deep-translator (Free)!")
-        return translated_all
-        
-    except Exception as e:
-        print(f"  [TRANSLATION WARNING] deep-translator failed: {e}. Falling back to AI model...")
+    from dotenv import load_dotenv
+    load_dotenv()
 
-    # 2. AI Fallback (Gemma/Gemma API)
+    # 1. Try DeepL API if key is available
+    deepl_key = os.getenv("DEEPL_API_KEY")
+    if deepl_key:
+        try:
+            print("  [TRANSLATION] Translating using DeepL API...")
+            import requests
+            headers = {"Authorization": f"DeepL-Auth-Key {deepl_key}"}
+            domain = "api-free.deepl.com" if deepl_key.endswith(":fx") else "api.deepl.com"
+            url = f"https://{domain}/v2/translate"
+            payload = {
+                "text": chunks_texts,
+                "target_lang": "AR"
+            }
+            resp = requests.post(url, json=payload, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                translations = resp.json().get("translations", [])
+                if len(translations) == len(chunks_texts):
+                    return [t.get("text", "").strip() for t in translations]
+        except Exception as e:
+            print(f"  [TRANSLATION WARNING] DeepL translation failed: {e}")
+
+    # 2. Try Google Cloud Translation API if key is available
+    google_key = os.getenv("GOOGLE_TRANSLATE_KEY")
+    if google_key:
+        try:
+            print("  [TRANSLATION] Translating using Google Cloud Translate API...")
+            import requests
+            url = f"https://translation.googleapis.com/language/translate/v2?key={google_key}"
+            payload = {
+                "q": chunks_texts,
+                "target": "ar"
+            }
+            resp = requests.post(url, json=payload, timeout=15)
+            if resp.status_code == 200:
+                translations = resp.json().get("data", {}).get("translations", [])
+                if len(translations) == len(chunks_texts):
+                    return [t.get("translatedText", "").strip() for t in translations]
+        except Exception as e:
+            print(f"  [TRANSLATION WARNING] Google Translate API failed: {e}")
+
+    # 3. Stable Fallback: Google Gemma / Gemini API (which is already configured)
     import requests
     from campaign import GEMMA_API_KEY
     import json
     import time
         
-    model = "gemma-4-31b-it"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMMA_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    
-    # Split chunks into smaller batches to prevent LLM timeouts
-    batch_size = 25
-    translated_all = []
-    
-    for i in range(0, len(chunks_texts), batch_size):
-        batch = chunks_texts[i:i + batch_size]
-        print(f"  [TRANSLATION] Translating batch {i // batch_size + 1} ({len(batch)} phrases) using {model}...")
+    api_key = os.getenv("GEMMA_API_KEY") or GEMMA_API_KEY
+    if api_key:
+        model = "gemma-4-31b-it"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
         
-        prompt = f"""
+        batch_size = 25
+        translated_all = []
+        
+        for i in range(0, len(chunks_texts), batch_size):
+            batch = chunks_texts[i:i + batch_size]
+            print(f"  [TRANSLATION] Translating batch {i // batch_size + 1} ({len(batch)} phrases) using Gemma/Gemini API...")
+            
+            prompt = f"""
 You are an expert translator. Translate this JSON list of English subtitle phrases into a parallel list of natural, engaging, and accurate Arabic subtitle phrases.
 Keep the exact same order and number of items (exactly {len(batch)} items).
 Keep the translations short and punchy suitable for TikTok/Reels subtitles.
@@ -358,59 +385,67 @@ Example output format:
   "العبارة الثانية"
 ]
 """
-        payload = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }],
-            "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 2000
+            payload = {
+                "contents": [{
+                    "parts": [{"text": prompt}]
+                }],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 2000
+                }
             }
-        }
-        
-        batch_translated = None
-        # Try up to 3 times for this batch
-        for attempt in range(1, 4):
-            try:
-                response = requests.post(url, json=payload, headers=headers, timeout=120)
-                if response.status_code == 200:
-                    data = response.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        text_parts = [p.get("text", "") for p in parts if not p.get("thought")]
-                        resp_text = "".join(text_parts).strip()
-                        
-                        # Clean markdown if present
-                        if resp_text.startswith("```"):
-                            lines = resp_text.splitlines()
-                            cleaned_lines = []
-                            for line in lines:
-                                if not line.strip().startswith("```"):
-                                    cleaned_lines.append(line)
-                            resp_text = "\n".join(cleaned_lines).strip()
+            
+            batch_translated = None
+            for attempt in range(1, 4):
+                try:
+                    response = requests.post(url, json=payload, headers=headers, timeout=120)
+                    if response.status_code == 200:
+                        data = response.json()
+                        candidates = data.get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            text_parts = [p.get("text", "") for p in parts if not p.get("thought")]
+                            resp_text = "".join(text_parts).strip()
                             
-                        translated = json.loads(resp_text)
-                        if isinstance(translated, list) and len(translated) == len(batch):
-                            batch_translated = [str(item).strip() for item in translated]
-                            print(f"  [TRANSLATION] Batch {i // batch_size + 1} translated successfully!")
-                            break
-                        else:
-                            print(f"  [TRANSLATION] Batch {i // batch_size + 1} length mismatch: got {len(translated)}, expected {len(batch)}")
-                else:
-                    print(f"  [TRANSLATION] Model {model} returned status {response.status_code}: {response.text[:200]}")
-            except Exception as e:
-                print(f"  [TRANSLATION] Error during batch {i // batch_size + 1} (attempt {attempt}): {e}")
+                            if resp_text.startswith("```"):
+                                lines = resp_text.splitlines()
+                                cleaned_lines = []
+                                for line in lines:
+                                    if not line.strip().startswith("```"):
+                                        cleaned_lines.append(line)
+                                resp_text = "\n".join(cleaned_lines).strip()
+                                
+                            translated = json.loads(resp_text)
+                            if isinstance(translated, list) and len(translated) == len(batch):
+                                batch_translated = [str(item).strip() for item in translated]
+                                break
+                    time.sleep(1)
+                except Exception as ex:
+                    print(f"  [TRANSLATION] Gemma attempt {attempt} failed: {ex}")
+                time.sleep(1)
                 
-            time.sleep(2)
-            
-        if batch_translated is not None:
-            translated_all.extend(batch_translated)
-        else:
-            print(f"  [TRANSLATION] Batch {i // batch_size + 1} failed after 3 attempts. Falling back to English for this batch.")
-            translated_all.extend(batch) # Fallback for this batch specifically
-            
-    return translated_all
+            if batch_translated is not None:
+                translated_all.extend(batch_translated)
+            else:
+                translated_all.extend(batch)
+                
+        return translated_all
+
+    # 4. Final local/crude fallback if nothing works (free public endpoint without deps)
+    try:
+        translated_all = []
+        import urllib.request
+        import urllib.parse
+        for text in chunks_texts:
+            url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ar&dt=t&q=" + urllib.parse.quote(text)
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req) as response:
+                res = json.loads(response.read().decode('utf-8'))
+                translated_all.append(res[0][0][0])
+        return translated_all
+    except Exception as e:
+        print(f"  [TRANSLATION WARNING] Free Google Web Translate fallback failed: {e}")
+        return chunks_texts
 
 
 def generate_ass_for_clip(

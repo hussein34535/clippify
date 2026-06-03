@@ -99,10 +99,8 @@ def main():
     # Get video duration for clamping
     video_duration = None
     try:
-        from moviepy import VideoFileClip as _VFC
-        _tmp = _VFC(args.video)
-        video_duration = _tmp.duration
-        _tmp.close()
+        from editor import _get_duration
+        video_duration = _get_duration(args.video)
     except Exception:
         pass
 

@@ -52,7 +52,7 @@ const loadSavedData = (key: string, defaultValue: any) => {
   const [exportDefaultTab, setExportDefaultTab] = useState<'video' | 'xml'>('video');
   const [leftWidth, setLeftWidth] = useState(300);
   const [rightWidth, setRightWidth] = useState(300);
-  const [bottomHeight, setBottomHeight] = useState(280);
+  const [bottomHeight, setBottomHeight] = useState(320);
   const [activeDrag, setActiveDrag] = useState<'left' | 'right' | 'bottom' | null>(null);
   const [rightPanelTab, setRightPanelTab] = useState<'inspector' | 'copilot'>('copilot');
 
@@ -293,8 +293,8 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
       setRightWidth(Math.max(240, Math.floor(rightWidth * scale)));
     }
     // Auto-scale bottom timeline if window is short
-    if (isShort && bottomHeight > 240) {
-      setBottomHeight(220);
+    if (isShort && bottomHeight > 280) {
+      setBottomHeight(260);
     }
   }, [viewportSize]);
 

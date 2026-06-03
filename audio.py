@@ -9,9 +9,7 @@ import wave
 import math
 import struct
 import tempfile
-
-from moviepy import VideoFileClip
-
+import subprocess
 
 def extract(video_path: str):
     """
@@ -21,26 +19,35 @@ def extract(video_path: str):
 
     Returns ([], 0) if the video has no audio track.
     """
-    temp_wav = tempfile.mktemp(suffix=".wav")
+    # Resolve local or bundled ffmpeg
+    local_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
+    ffmpeg_exe = os.path.join(local_bin, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+    if not os.path.exists(ffmpeg_exe):
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            ffmpeg_exe = "ffmpeg"
+
+    # Temporary wav output file
+    temp_wav = os.path.join(tempfile.gettempdir(), f"temp_{os.path.basename(video_path)}.wav")
 
     try:
-        clip = VideoFileClip(video_path)
-
-        if clip.audio is None:
-            print("  [WARN] Video has no audio track - skipping energy analysis.")
-            clip.close()
+        # Run FFmpeg to extract WAV
+        cmd = [
+            ffmpeg_exe,
+            "-y",
+            "-i", video_path,
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "1",
+            temp_wav
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode != 0 or not os.path.exists(temp_wav) or os.path.getsize(temp_wav) == 0:
+            print("  [WARN] Video has no audio track or FFmpeg extraction failed.")
             return ([], 0)
-
-        # Write mono 16kHz WAV
-        clip.audio.write_audiofile(
-            temp_wav,
-            fps=16000,
-            nbytes=2,           # 16-bit
-            codec="pcm_s16le",
-            ffmpeg_params=["-ac", "1"],   # mono
-            logger=None,
-        )
-        clip.close()
 
         # Read raw samples using built-in wave module (no extra deps)
         samples = []
@@ -55,7 +62,10 @@ def extract(video_path: str):
 
     finally:
         if os.path.exists(temp_wav):
-            os.remove(temp_wav)
+            try:
+                os.remove(temp_wav)
+            except OSError:
+                pass
 
 
 def energy_timeline(samples: list, sample_rate: int, window_sec: float = 0.5):

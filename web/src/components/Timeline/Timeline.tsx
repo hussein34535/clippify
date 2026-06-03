@@ -386,7 +386,7 @@ export const Timeline: React.FC<TimelineProps> = ({
           </div>
 
           {/* Video Tracks */}
-          <div className="flex flex-col gap-2 py-2.5">
+          <div className="flex flex-col gap-1.5 py-1.5">
             {timelineState.tracks.video.map((track) => (
               <TrackLane
                 key={track.id}
@@ -403,7 +403,7 @@ export const Timeline: React.FC<TimelineProps> = ({
           </div>
 
           {/* Audio Tracks (right under video for visibility) */}
-          <div className="flex flex-col gap-2 py-2.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="flex flex-col gap-1.5 py-1.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
             <div className="flex items-center justify-between px-1">
               <span className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-tertiary)' }}>
                 {timelineState.tracks.audio.length} تراك صوت
@@ -428,7 +428,7 @@ export const Timeline: React.FC<TimelineProps> = ({
           </div>
 
           {/* Overlays Tracks */}
-          <div className="flex flex-col gap-2 py-2.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="flex flex-col gap-1.5 py-1.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
             {timelineState.tracks.overlays.map((track) => (
               <TrackLane
                 key={track.id}
@@ -445,7 +445,7 @@ export const Timeline: React.FC<TimelineProps> = ({
           </div>
 
           {/* Subtitle Tracks */}
-          <div className="flex flex-col gap-2 py-2.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="flex flex-col gap-1.5 py-1.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
             {timelineState.tracks.subtitles.map((track) => (
               <TrackLane
                 key={track.id}

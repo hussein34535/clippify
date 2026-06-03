@@ -203,7 +203,10 @@ def generate_caption_file(
 # ═══════════════════════════════════════════════════════════════════════════
 #  Gemma AI Studio Integration
 # ═══════════════════════════════════════════════════════════════════════════
-GEMMA_API_KEY = "AIzaSyBBqtTJRqEAtWNf2g6dMT3XJGDw5Tr7bno"
+from dotenv import load_dotenv
+load_dotenv()
+
+GEMMA_API_KEY = os.getenv("GEMMA_API_KEY", "")
 
 def generate_ai_captions(
     video_summary: str,

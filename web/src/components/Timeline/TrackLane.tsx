@@ -117,7 +117,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`flex h-[46px] border rounded-[7px] relative mb-2 items-center flex-shrink-0 transition-colors ${isDragOver ? 'border-[var(--accent)] bg-[var(--accent-bg)]' : ''}`}
+      className={`flex h-[38px] border rounded-[7px] relative mb-1.5 items-center flex-shrink-0 transition-colors ${isDragOver ? 'border-[var(--accent)] bg-[var(--accent-bg)]' : ''}`}
       style={{
         background: isDragOver ? 'var(--accent-bg)' : 'var(--bg-surface-1)',
         borderColor: isDragOver ? 'var(--accent)' : 'var(--border-subtle)',

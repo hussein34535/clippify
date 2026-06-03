@@ -7,15 +7,7 @@ Compatible with moviepy 2.x
 import os
 import struct
 import wave
-
 import numpy as np
-from moviepy import (
-    VideoFileClip,
-    TextClip,
-    CompositeVideoClip,
-    ImageClip,
-)
-from moviepy.video.fx import Crop
 
 _NVENC_AVAILABLE = None
 
@@ -775,8 +767,31 @@ _TRANSITION_MAP = {
 
 
 def _get_duration(path: str) -> float:
-    from moviepy import VideoFileClip as _VFC
-    c = _VFC(path); d = c.duration; c.close(); return d
+    """Return video duration in seconds using ffprobe."""
+    import subprocess
+    # Check local bin/ first
+    local_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
+    ffmpeg = os.path.join(local_bin, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+    if not os.path.exists(ffmpeg):
+        try:
+            import imageio_ffmpeg
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            ffmpeg = "ffmpeg"
+            
+    ffprobe = ffmpeg.replace("ffmpeg", "ffprobe")
+    if not os.path.isfile(ffprobe):
+        ffprobe = "ffprobe"
+        
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=10
+        )
+        return float(result.stdout.strip())
+    except Exception:
+        return 0.0
 
 
 def compile_clips(clip_paths: list, output_path: str,

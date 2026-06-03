@@ -2,19 +2,14 @@
 # Install with: pip install -r requirements.txt
 
 # ── Core backend ────────────────────────────────────────────────────────────
-moviepy
 pydub
 numpy
 faster-whisper
 scenedetect
-
+python-dotenv
 
 # ── AI / LLM ────────────────────────────────────────────────────────────────
 google-genai
-deep-translator
-
-# ── Desktop GUI ─────────────────────────────────────────────────────────────
-customtkinter
 
 # ── YouTube upload ──────────────────────────────────────────────────────────
 google-auth-oauthlib
@@ -25,9 +20,7 @@ pyperclip
 # ── YouTube download ────────────────────────────────────────────────────────
 yt-dlp
 
-# ── Optional: drag-and-drop support ─────────────────────────────────────────
-# tkinterdnd2
-
 # ── Reference Video Style Mimicry ──────────────────────────────────────────
 easyocr
 librosa
+

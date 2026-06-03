@@ -10,10 +10,13 @@ import re
 import requests
 from typing import List, Dict, Any, Optional
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Standard trial/free Pexels API key (if user doesn't provide one)
-DEFAULT_PEXELS_KEY = "Wd5c48S5saK69x0nuacx5LVZI1UIppd8nedYb2Ur5lFDY53I2NvdSqpi"
+DEFAULT_PEXELS_KEY = os.getenv("PEXELS_API_KEY", "")
 # Default Pixabay API Key (a public default key, or user-supplied)
-DEFAULT_PIXABAY_KEY = "44190772-a9686c75bc9fbf3b30e4612d3"
+DEFAULT_PIXABAY_KEY = os.getenv("PIXABAY_API_KEY", "")
 
 def search_pexels_videos(keyword: str, pexels_api_key: str = "") -> List[Dict[str, Any]]:
     key = pexels_api_key or DEFAULT_PEXELS_KEY

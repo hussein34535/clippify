@@ -13,7 +13,25 @@ from pydantic import BaseModel
 # Add current folder to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gui_state import load_ui_prefs, save_ui_prefs
+PREFS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui_prefs.json")
+
+def load_ui_prefs() -> dict:
+    if os.path.exists(PREFS_FILE):
+        try:
+            with open(PREFS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_ui_prefs(prefs: dict) -> bool:
+    try:
+        with open(PREFS_FILE, "w", encoding="utf-8") as f:
+            json.dump(prefs, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
 from audio import extract
 from detector import find_clips
 from downloader import download_youtube_video
@@ -31,17 +49,90 @@ app = FastAPI(title="ClipAI Local API Server", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "tauri://localhost",
+        "http://tauri.localhost"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# In-memory session store
-# sessions = { session_id: { "progress": float, "status": str, "results": list, "errors": list } }
-sessions: Dict[str, Dict[str, Any]] = {}
-_sessions_lock = threading.Lock()
+import sqlite3
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sessions.db")
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id TEXT PRIMARY KEY,
+            progress REAL,
+            status TEXT,
+            results TEXT,
+            errors TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Initialize immediately
+init_db()
+
+def set_session(session_id: str, progress: float, status: str, results: list = None, errors: list = None):
+    # Fetch existing to preserve or merge if we don't pass them
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT results, errors FROM sessions WHERE session_id = ?", (session_id,))
+    row = cursor.fetchone()
+    
+    existing_results = []
+    existing_errors = []
+    if row:
+        if row[0]:
+            try: existing_results = json.loads(row[0])
+            except: pass
+        if row[1]:
+            try: existing_errors = json.loads(row[1])
+            except: pass
+            
+    final_results = results if results is not None else existing_results
+    final_errors = errors if errors is not None else existing_errors
+    
+    results_json = json.dumps(final_results)
+    errors_json = json.dumps(final_errors)
+    
+    cursor.execute("""
+        INSERT INTO sessions (session_id, progress, status, results, errors)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET
+            progress=excluded.progress,
+            status=excluded.status,
+            results=excluded.results,
+            errors=excluded.errors
+    """, (session_id, progress, status, results_json, errors_json))
+    conn.commit()
+    conn.close()
+
+def get_session(session_id: str) -> dict:
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT progress, status, results, errors FROM sessions WHERE session_id = ?", (session_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "progress": row[0],
+            "status": row[1],
+            "results": json.loads(row[2]) if row[2] else [],
+            "errors": json.loads(row[3]) if row[3] else []
+        }
+    return None
+
 _download_pool = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+_render_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1) # FIFO queue for CPU-heavy rendering/analysis tasks
 
 class SettingsModel(BaseModel):
     n_clips: int = 5
@@ -130,26 +221,6 @@ def post_settings(settings: SettingsModel):
         return {"status": "success", "message": "Settings saved successfully"}
     raise HTTPException(status_code=500, detail="Failed to save settings")
 
-@app.post("/api/browse-file")
-def browse_file():
-    import tkinter as tk
-    from tkinter import filedialog
-    
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    
-    file_paths = filedialog.askopenfilenames(
-        title="Select video files",
-        filetypes=[("Video files", "*.mp4 *.mov *.avi *.mkv *.webm *.flv"),
-                   ("All files", "*.*")]
-    )
-    root.destroy()
-    
-    if file_paths:
-        paths = [os.path.abspath(p) for p in file_paths]
-        return {"status": "success", "file_path": paths[0], "file_paths": paths}
-    return {"status": "cancelled", "file_path": "", "file_paths": []}
 
 
 @app.get("/api/video-stream")
@@ -199,19 +270,11 @@ def stream_video_endpoint(path: str, range: Optional[str] = Header(None)):
 @app.post("/api/download-youtube")
 def download_yt(url: str = Body(..., embed=True)):
     session_id = str(uuid.uuid4())
-    with _sessions_lock:
-        sessions[session_id] = {
-            "progress": 0.0,
-            "status": "Starting download...",
-            "results": [],
-            "errors": []
-        }
+    set_session(session_id, 0.0, "Starting download...", [], [])
     
     def run_download():
         try:
-            with _sessions_lock:
-                sessions[session_id]["status"] = "Downloading YouTube Video..."
-                sessions[session_id]["progress"] = 0.2
+            set_session(session_id, 0.2, "Downloading YouTube Video...")
             
             # Use ClipAI's existing YouTube downloader
             out_folder = "./temp"
@@ -219,23 +282,15 @@ def download_yt(url: str = Body(..., embed=True)):
             
             # Download
             def api_progress(pct, status):
-                with _sessions_lock:
-                    sessions[session_id]["progress"] = 0.2 + (pct / 100.0) * 0.7
-                    sessions[session_id]["status"] = status
+                set_session(session_id, 0.2 + (pct / 100.0) * 0.7, status)
 
             video_path = download_youtube_video(url, out_folder, progress_callback=api_progress)
             if video_path and os.path.exists(video_path):
-                with _sessions_lock:
-                    sessions[session_id]["progress"] = 1.0
-                    sessions[session_id]["status"] = "Done"
-                    sessions[session_id]["results"] = [video_path]
+                set_session(session_id, 1.0, "Done", results=[video_path])
             else:
                 raise Exception("Downloaded file not found.")
         except Exception as e:
-            with _sessions_lock:
-                sessions[session_id]["status"] = "Failed"
-                sessions[session_id]["progress"] = 0.0
-                sessions[session_id]["errors"].append(str(e))
+            set_session(session_id, 0.0, "Failed", errors=[str(e)])
             
     _download_pool.submit(run_download)
     return {"session_id": session_id}
@@ -424,26 +479,19 @@ def analyze_video(req: AnalyzeRequest):
         raise HTTPException(status_code=404, detail="Local video file not found")
         
     session_id = str(uuid.uuid4())
-    sessions[session_id] = {
-        "progress": 0.0,
-        "status": "Extracting audio and transcribing...",
-        "results": [],
-        "errors": []
-    }
+    set_session(session_id, 0.0, "Extracting audio and transcribing...", [], [])
     
     def run_analysis():
         try:
             # 1. Transcribe audio using faster-whisper
-            sessions[session_id]["progress"] = 0.1
-            sessions[session_id]["status"] = "Transcribing audio..."
+            set_session(session_id, 0.1, "Transcribing audio...")
             words = generate_subtitles(video_path)
             
             if not words:
                 raise Exception("Could not extract speech from this video.")
                 
             # 2. Extract DNA
-            sessions[session_id]["progress"] = 0.6
-            sessions[session_id]["status"] = "Extracting Content DNA..."
+            set_session(session_id, 0.6, "Extracting Content DNA...")
             
             from content_dna import extract_content_dna
             # Mock or minimal LLM helper for offline usage
@@ -453,8 +501,7 @@ def analyze_video(req: AnalyzeRequest):
             content_dna = extract_content_dna(words, llm_fn=local_llm_dummy)
             
             # 3. Viral Scorer Timeline
-            sessions[session_id]["progress"] = 0.8
-            sessions[session_id]["status"] = "Computing viral engagement score..."
+            set_session(session_id, 0.8, "Computing viral engagement score...")
             
             viral_timeline = {}
             try:
@@ -463,20 +510,16 @@ def analyze_video(req: AnalyzeRequest):
             except Exception as e:
                 print(f"Viral Scorer skipped: {e}")
                 
-            sessions[session_id]["progress"] = 1.0
-            sessions[session_id]["status"] = "Done"
-            sessions[session_id]["results"] = {
+            set_session(session_id, 1.0, "Done", results={
                 "words": words,
                 "content_dna": content_dna,
                 "viral_timeline": viral_timeline,
                 "video_path": video_path
-            }
+            })
         except Exception as e:
-            sessions[session_id]["status"] = "Failed"
-            sessions[session_id]["progress"] = 0.0
-            sessions[session_id]["errors"].append(str(e))
+            set_session(session_id, 0.0, "Failed", errors=[str(e)])
             
-    threading.Thread(target=run_analysis, daemon=True).start()
+    _render_pool.submit(run_analysis)
     return {"session_id": session_id}
 
 @app.post("/api/generate-plan")
@@ -534,12 +577,7 @@ def generate_plan(req: GeneratePlanRequest):
 @app.post("/api/render-plan")
 def render_plan(req: RenderPlanRequest):
     session_id = str(uuid.uuid4())
-    sessions[session_id] = {
-        "progress": 0.0,
-        "status": "Initializing render process...",
-        "results": [],
-        "errors": []
-    }
+    set_session(session_id, 0.0, "Initializing render process...", [], [])
     
     def run_rendering():
         try:
@@ -601,10 +639,10 @@ def render_plan(req: RenderPlanRequest):
                 import re
                 # Parse progress percent like (52%)
                 m = re.search(r'\((\d+)%\)', msg)
+                pct = 0.0
                 if m:
                     pct = int(m.group(1)) / 100.0
-                    sessions[session_id]["progress"] = pct
-                sessions[session_id]["status"] = msg
+                set_session(session_id, pct, msg)
                 
             clip_paths = run_editing_plan(plan, status_callback=status_update, sound_fx=True)
             
@@ -617,22 +655,19 @@ def render_plan(req: RenderPlanRequest):
                 shutil.copy2(cp, dest)
                 final_files.append(os.path.abspath(dest))
                 
-            sessions[session_id]["progress"] = 1.0
-            sessions[session_id]["status"] = f"Done! {len(final_files)} clips exported."
-            sessions[session_id]["results"] = final_files
+            set_session(session_id, 1.0, f"Done! {len(final_files)} clips exported.", results=final_files)
         except Exception as e:
-            sessions[session_id]["status"] = "Failed"
-            sessions[session_id]["progress"] = 0.0
-            sessions[session_id]["errors"].append(str(e))
+            set_session(session_id, 0.0, "Failed", errors=[str(e)])
             
-    threading.Thread(target=run_rendering, daemon=True).start()
+    _render_pool.submit(run_rendering)
     return {"session_id": session_id}
 
 @app.get("/api/status")
 def get_status(session_id: str):
-    if session_id not in sessions:
+    sess = get_session(session_id)
+    if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
-    return sessions[session_id]
+    return sess
 
 # ── Reference Video Style Mimicry Endpoints ───────────────────────────────
 
@@ -694,28 +729,20 @@ def imitate_style(req: ImitateRequest):
         imitator = StyleImitator(req.target_path, real_profile_path)
         
         session_id = str(uuid.uuid4())
-        sessions[session_id] = {
-            "progress": 0.1, 
-            "status": "Starting rendering with Style Imitator...", 
-            "results": [], 
-            "errors": []
-        }
+        set_session(session_id, 0.1, "Starting rendering with Style Imitator...", [], [])
         
         def run_rendering():
             try:
                 print(f"Rendering job started in background thread for output: {output_video_path}")
                 imitator.generate_mimicry_edit(output_video_path, req.words)
-                sessions[session_id]["progress"] = 1.0
-                sessions[session_id]["status"] = "Done"
-                sessions[session_id]["results"] = [os.path.abspath(output_video_path)]
+                set_session(session_id, 1.0, "Done", results=[os.path.abspath(output_video_path)])
                 print("Rendering job finished successfully.")
             except Exception as ex:
                 import traceback
                 print(f"Render engine error: {traceback.format_exc()}")
-                sessions[session_id]["status"] = "Failed"
-                sessions[session_id]["errors"].append(str(ex))
+                set_session(session_id, 0.0, "Failed", errors=[str(ex)])
                 
-        threading.Thread(target=run_rendering, daemon=True).start()
+        _render_pool.submit(run_rendering)
         return {"status": "success", "session_id": session_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Initiation failed: {str(e)}")
@@ -998,45 +1025,6 @@ def api_recent_projects():
     except Exception:
         return []
 
-@app.post("/api/project/browse-open")
-def api_project_browse_open():
-    import tkinter as tk
-    from tkinter import filedialog
-    
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    
-    file_path = filedialog.askopenfilename(
-        title="Open Project",
-        filetypes=[("ClipAI projects", "*.clipai"), ("All files", "*.*")]
-    )
-    root.destroy()
-    
-    if file_path:
-        return {"status": "success", "file_path": os.path.abspath(file_path)}
-    return {"status": "cancelled", "file_path": ""}
-
-@app.post("/api/project/browse-save")
-def api_project_browse_save(default_name: str = "project"):
-    import tkinter as tk
-    from tkinter import filedialog
-    
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    
-    file_path = filedialog.asksaveasfilename(
-        title="Save Project As",
-        initialfile=default_name,
-        defaultextension=".clipai",
-        filetypes=[("ClipAI projects", "*.clipai"), ("All files", "*.*")]
-    )
-    root.destroy()
-    
-    if file_path:
-        return {"status": "success", "file_path": os.path.abspath(file_path)}
-    return {"status": "cancelled", "file_path": ""}
 
 class BrollSearchRequest(BaseModel):
     query: str
