@@ -1089,20 +1089,110 @@ def analyze_beats(req: BeatAnalyzeRequest):
         import numpy as np
         if not os.path.exists(req.audio_path):
             raise HTTPException(status_code=404, detail="Audio file not found")
-            
+
         print(f"  [BEAT SYNC] Analyzing beats for: {req.audio_path}")
         y, sr = librosa.load(req.audio_path)
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
         beat_times = librosa.frames_to_time(beat_frames, sr=sr)
-        
+
         return {
-            "status": "success", 
-            "tempo": float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo), 
+            "status": "success",
+            "tempo": float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo),
             "beats": beat_times.tolist()
         }
     except Exception as e:
         print(f"Error analyzing beats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ════════════════════════════════════════════════════════════════════════
+# AI COPILOT — Phase 0: Function-Calling with TOOL_REGISTRY
+# ════════════════════════════════════════════════════════════════════════
+
+class AICopilotRequest(BaseModel):
+    prompt: str
+    timeline_state: Optional[Dict[str, Any]] = None
+    words: Optional[List[Dict[str, Any]]] = None
+    history: Optional[List[Dict[str, str]]] = None
+    video_path: Optional[str] = None
+
+
+class AIExecuteRequest(BaseModel):
+    actions: List[Dict[str, Any]]
+    timeline_state: Dict[str, Any]
+
+
+@app.post("/api/ai/copilot")
+def ai_copilot_endpoint(req: AICopilotRequest):
+    """
+    Main AI Copilot endpoint using TOOL_REGISTRY (219 tools).
+    Returns:
+    - actions: validated tool calls
+    - response_message: Arabic explanation
+    - confirmation_groups: {trusted: [...], destructive: [...]}
+    """
+    try:
+        from ai_copilot import copilot_chat
+        result = copilot_chat(
+            prompt=req.prompt,
+            timeline_state=req.timeline_state,
+            words=req.words,
+            history=req.history,
+            video_path=req.video_path,
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"AI Copilot error: {str(e)[:300]}")
+
+
+@app.post("/api/ai/execute")
+def ai_execute_endpoint(req: AIExecuteRequest):
+    """
+    Execute an approved action plan against the timeline state.
+    Returns the new state + per-action results.
+    """
+    try:
+        from ai_orchestrator import execute_action_plan
+        result = execute_action_plan(req.actions, req.timeline_state)
+        return {"status": "success", **result}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"AI execute error: {str(e)[:300]}")
+
+
+@app.get("/api/ai/tools")
+def ai_list_tools():
+    """List all available AI tools (grouped by category)."""
+    try:
+        from ai_copilot import get_all_tools_grouped
+        grouped = get_all_tools_grouped()
+        return {
+            "status": "success",
+            "tools": grouped,
+            "total": sum(len(v) for v in grouped.values()),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ai/validate")
+def ai_validate_actions(req: AIExecuteRequest):
+    """Validate + categorize actions (trusted vs destructive) without executing."""
+    try:
+        from ai_orchestrator import needs_user_approval, get_destructive_actions, get_safe_actions
+        return {
+            "status": "success",
+            "needs_approval": needs_user_approval(req.actions),
+            "destructive": get_destructive_actions(req.actions),
+            "safe": get_safe_actions(req.actions),
+            "total": len(req.actions),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

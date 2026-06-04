@@ -1,4 +1,11 @@
-import { Settings, Film, Download, Save, FolderOpen } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Settings, Film, Download, Save, FolderOpen, Sun, Moon, Contrast, Minimize2, Maximize2, HelpCircle } from 'lucide-react';
+import { getTheme, cycleTheme, getDensity, toggleDensity, type Theme, type WorkspaceLayout } from '../../lib/themeManager';
+import MacroMenu from '../UI/MacroMenu';
+import CommentsPanel from '../UI/CommentsPanel';
+import ShortcutsHelp from '../UI/ShortcutsHelp';
+import WorkspaceSwitcher from '../UI/WorkspaceSwitcher';
+import { useStore } from '../../store';
 
 interface HeaderProps {
   contentType: string;
@@ -8,9 +15,41 @@ interface HeaderProps {
   onExport: () => void;
   onSave: () => void;
   onLoad: () => void;
+  onWorkspaceChange?: (layout: WorkspaceLayout) => void;
 }
 
-export default function Header({ contentType, setContentType, showSettings, setShowSettings, onExport, onSave, onLoad }: HeaderProps) {
+const THEME_ICONS: Record<Theme, React.ComponentType<any>> = {
+  'dark': Moon,
+  'light': Sun,
+  'high-contrast': Contrast,
+};
+
+const THEME_LABELS: Record<Theme, string> = {
+  'dark': 'داكن',
+  'light': 'فاتح',
+  'high-contrast': 'تباين عالي',
+};
+
+export default function Header({ contentType, setContentType, showSettings, setShowSettings, onExport, onSave, onLoad, onWorkspaceChange }: HeaderProps) {
+  const [theme, setThemeState] = useState<Theme>('dark');
+  const [density, setDensityState] = useState<'normal' | 'compact'>('normal');
+
+  useEffect(() => {
+    setThemeState(getTheme());
+    setDensityState(getDensity());
+  }, []);
+
+  const handleThemeToggle = () => {
+    const next = cycleTheme();
+    setThemeState(next);
+  };
+
+  const handleDensityToggle = () => {
+    const next = toggleDensity();
+    setDensityState(next);
+  };
+
+  const ThemeIcon = THEME_ICONS[theme];
   const contentTypes = [
     { value: 'podcast', label: 'بودكاست' },
     { value: 'awareness', label: 'توعوي' },
@@ -90,12 +129,15 @@ export default function Header({ contentType, setContentType, showSettings, setS
           تصدير
         </button>
 
+        {/* Workspace layout switcher (Phase 9 — UI/UX) */}
+        {onWorkspaceChange && <WorkspaceSwitcher onLayoutChange={onWorkspaceChange} />}
+
         <button
           onClick={() => setShowSettings(!showSettings)}
           className="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer"
-          style={{ 
+          style={{
             background: showSettings ? 'var(--bg-surface-3)' : 'transparent',
-            color: showSettings ? 'var(--accent)' : 'var(--text-secondary)' 
+            color: showSettings ? 'var(--accent)' : 'var(--text-secondary)'
           }}
           onMouseEnter={(e) => {
             if (!showSettings) {
@@ -113,7 +155,64 @@ export default function Header({ contentType, setContentType, showSettings, setS
         >
           <Settings className="w-4 h-4" />
         </button>
+
+        {/* Theme toggle (Phase 9 — UI/UX) */}
+        <button
+          onClick={handleThemeToggle}
+          className="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:bg-[var(--bg-surface-3)]"
+          style={{ color: 'var(--text-secondary)' }}
+          title={`الثيم: ${THEME_LABELS[theme]} (اضغط للتبديل)`}
+        >
+          <ThemeIcon className="w-4 h-4" />
+        </button>
+
+        {/* Density toggle (Phase 9) */}
+        <button
+          onClick={handleDensityToggle}
+          className="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:bg-[var(--bg-surface-3)]"
+          style={{ color: density === 'compact' ? 'var(--accent)' : 'var(--text-secondary)' }}
+          title={density === 'compact' ? 'كثافة عادية' : 'كثافة مضغوطة'}
+        >
+          {density === 'compact' ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+        </button>
+
+        {/* Macro menu (Phase 5 — Macro Recording) */}
+        <MacroMenu />
+
+        {/* Comments panel (Phase 11 — Collaboration) */}
+        <CommentsPanel currentTime={useStore.getState().currentTime} />
+
+        {/* Help / Shortcuts (Phase 15 — Accessibility) */}
+        <HelpButton />
       </div>
+      <ShortcutsHelp />
     </header>
+  );
+}
+
+function HelpButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:bg-[var(--bg-surface-3)]"
+        style={{ color: 'var(--text-secondary)' }}
+        title="اختصارات لوحة المفاتيح (؟)"
+      >
+        <HelpCircle className="w-4 h-4" />
+      </button>
+      {open && <ShortcutsHelpTrigger onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function ShortcutsHelpTrigger({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      onClick={onClose}
+      className="fixed inset-0 z-30 bg-transparent"
+      aria-label="إغلاق"
+    />
   );
 }

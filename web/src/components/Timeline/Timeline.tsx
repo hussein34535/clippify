@@ -76,6 +76,15 @@ export const Timeline: React.FC<TimelineProps> = ({
     seek(sec);
   };
 
+  // Drag handler for the playhead head/line itself
+  const handlePlayheadMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsScrubbing(true);
+    const sec = getSecondsFromX(e.clientX);
+    seek(sec);
+  };
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isScrubbing) return;
@@ -352,12 +361,17 @@ export const Timeline: React.FC<TimelineProps> = ({
         className="flex-1 overflow-x-auto overflow-y-auto relative flex flex-col"
         style={{ background: 'var(--bg-base)' }}
       >
+        {/* Wrapper to keep ruler + tracks aligned and allow playhead overlay */}
+        <div 
+          className="relative flex flex-col flex-1"
+          style={{ width: `${(duration || 30) * zoomLevel + 100}px` }}
+        >
         {/* Timeline Ruler */}
         <div 
           ref={timelineRulerRef}
           onMouseDown={handleMouseDown}
           className="h-7 border-b sticky top-0 z-20 cursor-ew-resize relative select-none flex-shrink-0"
-          style={{ width: `${(duration || 30) * zoomLevel + 100}px`, background: '#0d0d0d', borderColor: 'var(--border-subtle)' }}
+          style={{ background: '#0d0d0d', borderColor: 'var(--border-subtle)' }}
         >
           {/* Ruler Left Spacer */}
           <div 
@@ -370,19 +384,7 @@ export const Timeline: React.FC<TimelineProps> = ({
         {/* Tracks Area */}
         <div 
           className="relative flex-1"
-          style={{ width: `${(duration || 30) * zoomLevel + 100}px` }}
         >
-          {/* Playhead Line */}
-          <div 
-            className="absolute top-0 bottom-0 w-[1px] z-10 pointer-events-none"
-            style={{ left: `${currentTime * zoomLevel + 100}px`, background: 'var(--accent)' }}
-          >
-            <div 
-              className="w-2.5 h-2.5 rotate-45 -translate-x-[4.5px] -translate-y-1 shadow-sm"
-              style={{ background: 'var(--accent)' }}
-            />
-          </div>
-
           {/* Video Tracks */}
           <div className="flex flex-col gap-1.5 py-1.5">
             {timelineState.tracks.video.map((track) => (
@@ -458,6 +460,47 @@ export const Timeline: React.FC<TimelineProps> = ({
               />
             ))}
           </div>
+        </div>
+
+        {/* Playhead — spans full vertical (ruler + tracks) */}
+        <div
+          onMouseDown={handlePlayheadMouseDown}
+          className="absolute top-0 bottom-0 z-40 cursor-ew-resize group"
+          style={{
+            left: `${currentTime * zoomLevel + 100}px`,
+            width: '18px',
+            transform: 'translateX(-9px)',
+          }}
+          title="اسحب لتحريك مؤشر التشغيل"
+        >
+          {/* Vertical line — spans ruler + all tracks */}
+          <div
+            className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 pointer-events-none"
+            style={{
+              width: '3px',
+              background: 'var(--accent)',
+            }}
+          />
+          {/* Head triangle at the very top of the ruler */}
+          <div
+            className="absolute left-1/2 -top-[1px] -translate-x-1/2 w-0 h-0 pointer-events-none"
+            style={{
+              borderLeft: '9px solid transparent',
+              borderRight: '9px solid transparent',
+              borderTop: '10px solid var(--accent)',
+            }}
+          />
+          {/* Timecode flag below the head */}
+          <div
+            className="absolute left-1/2 top-[9px] -translate-x-1/2 pointer-events-none px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold whitespace-nowrap"
+            style={{
+              background: 'var(--accent)',
+              color: '#fff',
+            }}
+          >
+            {formatTimecode(currentTime)}
+          </div>
+        </div>
         </div>
       </div>
     </div>

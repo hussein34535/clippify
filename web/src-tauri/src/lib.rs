@@ -4,6 +4,39 @@ use tauri::Manager;
 
 struct BackendProcess(Mutex<Option<Child>>);
 
+/// Detect the system DPI on Windows and tell WebView2 to render at the
+/// matching device-pixel-ratio. WebView2 otherwise defaults to 1.0 which
+/// causes the UI to look pixelated on high-DPI displays.
+#[cfg(windows)]
+fn enable_high_dpi_for_webview() {
+    use std::sync::Once;
+
+    extern "system" {
+        fn GetDpiForSystem() -> u32;
+    }
+
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        unsafe {
+            let dpi = GetDpiForSystem();
+            // Standard Windows DPI: 96 = 100% = 1.0x, 144 = 150% = 1.5x, 192 = 200% = 2.0x
+            let scale = (dpi as f64 / 96.0 * 100.0).round() / 100.0;
+            let scale_str = format!("{:.2}", scale);
+            log::info!("System DPI: {} (scale factor: {})", dpi, scale_str);
+
+            // Don't override if the user already set this env var
+            if std::env::var_os("WEBVIEW_ADDITIONAL_BROWSER_ARGUMENTS").is_none() {
+                let args = format!("--force-device-scale-factor={}", scale_str);
+                log::info!("Set WEBVIEW_ADDITIONAL_BROWSER_ARGUMENTS={}", args);
+                std::env::set_var("WEBVIEW_ADDITIONAL_BROWSER_ARGUMENTS", args);
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn enable_high_dpi_for_webview() {}
+
 /// Find the sidecar executable. Tauri copies it next to the main exe in production.
 fn find_sidecar_path() -> Option<std::path::PathBuf> {
     // 1. Production: sidecar is next to the main exe (Tauri convention)
@@ -54,6 +87,9 @@ fn find_api_py_dir() -> Option<std::path::PathBuf> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Ensure WebView2 picks up the OS DPI scale before any window is created.
+    enable_high_dpi_for_webview();
+
     tauri::Builder::default()
         .manage(BackendProcess(Mutex::new(None)))
         .setup(|app| {

@@ -2,10 +2,11 @@
 // Component for editing properties of the selected clip (Transform, Color, Filters, AI features)
 
 import React, { useState } from 'react';
-import { Video, Sparkles, Paintbrush, Volume2, Activity } from 'lucide-react';
+import { Video, Sparkles, Paintbrush, Volume2, Activity, Wand } from 'lucide-react';
 import ColorWheels from './ColorWheels';
 import ViralAnalyticsPanel from './ViralAnalyticsPanel';
 import SubtitleEditor from './SubtitleEditor';
+import AIToolPalette from './AIToolPalette';
 
 interface InspectorPanelProps {
   selectedClip: any | null;
@@ -49,7 +50,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   clipType,
   onUpdateClip,
 }) => {
-  const [activeTab, setActiveTab] = useState<'transform' | 'color' | 'audio' | 'ai' | 'viral'>('transform');
+  const [activeTab, setActiveTab] = useState<'transform' | 'color' | 'audio' | 'ai' | 'tools' | 'viral'>('transform');
 
   if (!selectedClip) {
     return (
@@ -250,6 +251,18 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
         >
           <Sparkles className="w-4 h-4" />
           ذكاء اصطناعي
+        </button>
+        <button
+          onClick={() => setActiveTab('tools')}
+          className="flex-1 py-3 text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer font-medium"
+          style={{
+            color: activeTab === 'tools' ? '#0a84ff' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'tools' ? '2px solid #0a84ff' : '2px solid transparent',
+          }}
+          title="219 أداة AI"
+        >
+          <Wand className="w-4 h-4" />
+          AI Tools
         </button>
         <button
           onClick={() => setActiveTab('viral')}
@@ -675,13 +688,20 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
         {/* Viral Analytics Tab */}
         {activeTab === 'viral' && (
-          <ViralAnalyticsPanel 
-            clip={selectedClip} 
+          <ViralAnalyticsPanel
+            clip={selectedClip}
             onApplyRecommendation={(rec) => {
               console.log('Applying recommendation:', rec);
               // This is where we'd auto-apply the recommendation to the clip
             }}
           />
+        )}
+
+        {/* AI Tools Tab — 219 tools from TOOL_REGISTRY */}
+        {activeTab === 'tools' && (
+          <div className="absolute inset-0 top-0 pt-12">
+            <AIToolPalette />
+          </div>
         )}
       </div>
     </div>

@@ -117,12 +117,17 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     }
   }, [playing]);
 
-  // Sync seek events (only when paused, to avoid fighting the play loop)
+  // Sync video element to store currentTime. Works in BOTH playing and paused states:
+  // - When paused: force re-render after seek
+  // - When playing: only catch up on large drift (play loop is source of truth at 60fps)
   useEffect(() => {
     const video = hiddenVideoRef.current;
-    if (!video || playing) return;
-    if (Math.abs(video.currentTime - currentTime) > 0.05) {
+    if (!video) return;
+    const drift = Math.abs(video.currentTime - currentTime);
+    if (drift > 0.01) {
       try { video.currentTime = currentTime; } catch {}
+    }
+    if (!playing) {
       requestAnimationFrame(renderFrame);
     }
   }, [currentTime, playing]);

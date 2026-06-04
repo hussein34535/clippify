@@ -211,7 +211,9 @@ export const ClipItem: React.FC<ClipItemProps> = ({
       borderRadius: '6px',
       borderWidth: '1px',
       borderStyle: 'solid',
-      boxShadow: isSelected ? `0 0 8px ${borderColor}` : 'none'
+      boxShadow: 'none',
+      outline: isSelected ? `1px solid ${borderColor}` : 'none',
+      outlineOffset: isSelected ? '1px' : '0',
     };
   };
 

@@ -187,3 +187,82 @@ html, body, #root {
   background: var(--accent);
   box-shadow: 0 0 4px var(--accent);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   THEME SYSTEM (Phase 9 — UI/UX)
+   Dark (default), Light, High Contrast
+   ════════════════════════════════════════════════════════════════════ */
+
+[data-theme="light"] {
+  --bg-base:       #f5f5f7;
+  --bg-surface-1:  #ffffff;
+  --bg-surface-2:  #f9f9fb;
+  --bg-surface-3:  #ececef;
+  --bg-elevated:   rgba(0, 0, 0, 0.04);
+  --border-subtle:  rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.09);
+  --border-strong:  rgba(0, 0, 0, 0.14);
+  --text-primary:   #1c1c1e;
+  --text-secondary: rgba(28, 28, 30, 0.6);
+  --text-tertiary:  rgba(28, 28, 30, 0.3);
+}
+
+[data-theme="high-contrast"] {
+  --bg-base:       #000000;
+  --bg-surface-1:  #0a0a0a;
+  --bg-surface-2:  #141414;
+  --bg-surface-3:  #1f1f1f;
+  --bg-elevated:   rgba(255, 255, 255, 0.06);
+  --border-subtle:  rgba(255, 255, 255, 0.15);
+  --border-default: rgba(255, 255, 255, 0.25);
+  --border-strong:  rgba(255, 255, 255, 0.4);
+  --text-primary:   #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.85);
+  --text-tertiary:  rgba(255, 255, 255, 0.5);
+  --accent:         #4cc2ff;
+  --accent-bg:      rgba(76, 194, 255, 0.18);
+}
+
+[data-density="compact"] {
+  font-size: 11px;
+}
+
+[data-density="compact"] button,
+[data-density="compact"] .apple-input {
+  padding: 4px 8px !important;
+}
+
+/* Reduced motion (Phase 15 — Accessibility) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+[data-reduced-motion="true"] *,
+[data-reduced-motion="true"] *::before,
+[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Focus indicators for keyboard navigation (Phase 15) */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px !important;
+}
+
+/* High visibility scrollbar for accessibility */
+[data-theme="high-contrast"] ::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.4) !important;
+}
+[data-theme="high-contrast"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.7) !important;
+}

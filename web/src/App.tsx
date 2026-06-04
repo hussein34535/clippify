@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { produce } from 'immer';
 import axios from 'axios';
 import Timeline from './components/Timeline/Timeline';
@@ -12,9 +12,13 @@ import SettingsModal from './components/Settings/SettingsModal';
 import ExportModal from './components/Export/ExportModal';
 import CopilotChat from './components/Inspector/CopilotChat';
 import { useUndoRedo } from './hooks/useUndoRedo';
+import { useAutoSave, loadAutoSave } from './hooks/useAutoSave';
 import { useToast } from './components/UI/Toast';
 import { API_BASE } from './api';
 import { useStore } from './store';
+import { registerTauriDragDrop } from './utils/tauri';
+import { setToastHandler, executeAIAction } from './lib/aiActions';
+import { initTheme, LAYOUT_PRESETS } from './lib/themeManager';
 import type { Word, Clip, AppSettings, TimelineState, VideoClip, OverlayClip, SubtitleClip } from './types';
 
 export default function App() {
@@ -26,6 +30,7 @@ const loadSavedData = (key: string, defaultValue: any) => {
   };
 
   const { showToast } = useToast();
+  useEffect(() => { setToastHandler(showToast); initTheme(); }, [showToast]);
   const [videoPath, setVideoPath] = useState<string>(() => loadSavedData('videoPath', ''));
   const [mediaBin, setMediaBin] = useState<string[]>(() => loadSavedData('mediaBin', []));
   const [ytUrl, setYtUrl] = useState('');
@@ -56,7 +61,7 @@ const loadSavedData = (key: string, defaultValue: any) => {
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [selectedClipType, setSelectedClipType] = useState<'video' | 'audio' | 'overlay' | 'subtitle' | null>(null);
 
-const initialTimeline: TimelineState = loadSavedData('timelineState', {
+const initialTimeline: TimelineState = loadSavedData('timelineState', loadAutoSave<TimelineState>() || {
     project_id: '', project_name: 'ClipAI NLE Project',
     settings: { width: 1080, height: 1920, fps: 30, sample_rate: 44100, aspect_ratio: '9:16' },
     tracks: {
@@ -71,6 +76,9 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
 
   const setTimelineState = (next: TimelineState) => pushTimeline(next);
 
+  // Auto-save timeline state to localStorage (Phase 10 — Project Management)
+  useAutoSave(timelineState, timelineState.project_id !== '' || timelineState.tracks.video.some(t => t.clips.length > 0));
+
   // Sync local state to Zustand store (for cross-component reads without prop drilling)
   useEffect(() => { useStore.setState({ videoPath }); }, [videoPath]);
   useEffect(() => { useStore.setState({ words }); }, [words]);
@@ -79,6 +87,55 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
     const u = useStore.getState().setSelectedClip;
     u(selectedClipId, selectedClipType);
   }, [selectedClipId, selectedClipType]);
+
+  // 📂 Tauri OS-level file drop listener — Tauri 2's webview doesn't expose
+  // File.path in dataTransfer.files for OS-level drops. We register a native
+  // dragDropEvent listener and route the dropped paths to handleDropMedia.
+  // The ref is bound to the latest handleDropMedia in a useEffect placed
+  // after the function declaration (so we don't have a forward reference).
+  const handleDropMediaRef = useRef<(trackId: string, trackType: any, dropTime: number, dropData: any) => void>(() => {});
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+
+    (async () => {
+      const unregister = await registerTauriDragDrop((paths: string[]) => {
+        if (cancelled) return;
+        const currentTime = useStore.getState().currentTime;
+        for (const filePath of paths) {
+          if (/\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(filePath)) {
+            handleDropMediaRef.current('v_track_main', 'video', currentTime, {
+              type: 'raw_video',
+              path: filePath,
+              name: filePath.split(/[\\/]/).pop() || 'video',
+              duration: 15.0,
+            });
+            setVideoPath(filePath);
+          } else if (/\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(filePath)) {
+            handleDropMediaRef.current('a_track_music', 'audio', currentTime, {
+              type: 'raw_video',
+              path: filePath,
+              name: filePath.split(/[\\/]/).pop() || 'audio',
+              duration: 30.0,
+            });
+          } else {
+            showToast(`نوع ملف غير مدعوم: ${filePath}`, 'error');
+          }
+        }
+      });
+      if (cancelled) {
+        unregister();
+      } else {
+        unlisten = unregister;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [showToast]);
 
   useEffect(() => {
     const t = timelineState;
@@ -251,6 +308,10 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
 
       if (isInput) return;
 
+      const currentTime = useStore.getState().currentTime;
+      const duration = useStore.getState().duration;
+      const fps = useStore.getState().timelineState?.settings?.fps || 30;
+
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
         useStore.getState().togglePlaying();
@@ -274,10 +335,64 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
         e.preventDefault();
         redo();
       }
+      // ─── Phase 1-3: Quick Wins keyboard shortcuts ───
+      else if (e.key === 'j' || e.key === 'J') {
+        e.preventDefault();
+        executeAIAction('playback.toggle_play');
+      } else if (e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        useStore.getState().setPlaying(false);
+      } else if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        executeAIAction('playback.toggle_loop');
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        executeAIAction('timeline.add_marker', { time: currentTime, name: 'Marker', color: 'yellow' });
+      } else if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault();
+        executeAIAction('timeline.set_in_point', { time: currentTime });
+      } else if (e.key === 'o' || e.key === 'O') {
+        e.preventDefault();
+        executeAIAction('timeline.set_out_point', { time: currentTime });
+      } else if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        executeAIAction('timeline.razor_at_playhead');
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen();
+      } else if (e.key === 'ArrowRight' && !e.shiftKey && !e.ctrlKey) {
+        e.preventDefault();
+        useStore.getState().seek(Math.min(duration, currentTime + 1 / fps));
+      } else if (e.key === 'ArrowLeft' && !e.shiftKey && !e.ctrlKey) {
+        e.preventDefault();
+        useStore.getState().seek(Math.max(0, currentTime - 1 / fps));
+      } else if (e.key === 'ArrowRight' && e.shiftKey) {
+        e.preventDefault();
+        useStore.getState().seek(Math.min(duration, currentTime + 5));
+      } else if (e.key === 'ArrowLeft' && e.shiftKey) {
+        e.preventDefault();
+        useStore.getState().seek(Math.max(0, currentTime - 5));
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        useStore.getState().seek(0);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        useStore.getState().seek(duration);
+      } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        showToast('استخدم شريط الزووم في شريط التايملاين', 'info');
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        showToast('استخدم شريط الزووم في شريط التايملاين', 'info');
+      } else if (e.key === '?') {
+        e.preventDefault();
+        showToast('⌨️ J=Play/Pause | K=Pause | L=Loop | M=Marker | I=In | O=Out | C=Slice | F=Fullscreen | Space=Play | Ctrl+Z=Undo | Del=Delete | +/-=Zoom', 'info');
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedClipId, selectedClipType, timelineState, undo, redo]);
+  }, [selectedClipId, selectedClipType, timelineState, undo, redo, showToast]);
 
   // Viewport-aware responsive sizing
   const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -879,6 +994,9 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
     }
   };
 
+  // Keep the Tauri drop listener's ref pointing at the latest handleDropMedia
+  useEffect(() => { handleDropMediaRef.current = handleDropMedia; }, [handleDropMedia]);
+
   useEffect(() => {
     const interval = setInterval(async () => {
       // Only auto-save if we have a real project loaded
@@ -898,7 +1016,13 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
 
   return (
     <div className={`w-full h-screen overflow-hidden flex flex-col selection:bg-blue-600 selection:text-white ${activeDrag ? 'resize-active ' + (activeDrag === 'bottom' ? 'resize-active-row' : 'resize-active-col') + ' no-transitions' : ''}`} style={{ background: 'var(--bg-base)', color: 'var(--text-primary)' }}>
-      <Header contentType={contentType} setContentType={setContentType} showSettings={showSettings} setShowSettings={setShowSettings} onExport={() => { setExportDefaultTab('video'); setShowExport(true); }} onSave={handleSave} onLoad={handleLoad} />
+      <Header contentType={contentType} setContentType={setContentType} showSettings={showSettings} setShowSettings={setShowSettings} onExport={() => { setExportDefaultTab('video'); setShowExport(true); }} onSave={handleSave} onLoad={handleLoad} onWorkspaceChange={(layout) => {
+        const preset = LAYOUT_PRESETS[layout];
+        setLeftWidth(preset.leftWidth);
+        setRightWidth(preset.rightWidth);
+        setBottomHeight(preset.bottomHeight);
+        if (preset.inspectorTab) setRightPanelTab('inspector');
+      }} />
 
       <div className="flex-1 flex overflow-hidden min-h-0 relative">
         <MediaPool
