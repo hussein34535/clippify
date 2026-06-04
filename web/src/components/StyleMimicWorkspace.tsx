@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { Upload, Sparkles, Sliders, Video, Layers } from "lucide-react";
-
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from "../api";
 
 interface StyleProfile {
   name: string;

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { Send, Sparkles, MessageSquare, AlertCircle } from 'lucide-react';
-import type { Word, TimelineState } from '../../types';
+import { API_BASE } from '../../api';
+import { useStore } from '../../store';
 
 interface Message {
   sender: 'user' | 'assistant';
@@ -10,10 +11,7 @@ interface Message {
 }
 
 interface CopilotChatProps {
-  timelineState: TimelineState;
-  words: Word[];
   onApplyActionPlan: (actions: any[]) => void;
-  API_BASE: string;
 }
 
 const QUICK_COMMANDS = [
@@ -23,7 +21,7 @@ const QUICK_COMMANDS = [
   'تفعيل خفض الموسيقى التلقائي (Ducking)'
 ];
 
-export default function CopilotChat({ timelineState, words, onApplyActionPlan, API_BASE }: CopilotChatProps) {
+export default function CopilotChat({ onApplyActionPlan }: CopilotChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       sender: 'assistant',
@@ -46,11 +44,14 @@ export default function CopilotChat({ timelineState, words, onApplyActionPlan, A
     setInput('');
     setLoading(true);
 
+    const words = useStore.getState().words;
+    const timelineState = useStore.getState().timelineState;
+
     try {
       const response = await axios.post(`${API_BASE}/api/copilot/chat`, {
         prompt: textToSend,
         transcript: words,
-        timeline_state: timelineState
+        timeline_state: timelineState,
       });
 
       const data = response.data;

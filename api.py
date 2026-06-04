@@ -5,6 +5,10 @@ import json
 import threading
 import concurrent.futures
 from typing import List, Dict, Any, Optional
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, BackgroundTasks, Header, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse

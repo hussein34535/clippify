@@ -14,6 +14,10 @@ import os
 import json
 import requests
 import threading
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from models import EditingPlan, ClipSpec, VideoAnalysis
 from ai_engine import (
     generate_subtitles,
@@ -27,7 +31,7 @@ from editor import export
 from content_types import get_type_profile, get_hook_prompt, get_emphasis_sfx
 from broll_manager import DEFAULT_PEXELS_KEY
 
-_API_KEY = "AIzaSyBBqtTJRqEAtWNf2g6dMT3XJGDw5Tr7bno"
+_API_KEY = os.getenv("GEMMA_API_KEY", "")
 _LLM_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key="
 
 progress_callback = None

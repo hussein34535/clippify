@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import type { Word } from '../../types';
+import { useStore } from '../../store';
 import { Scissors } from 'lucide-react';
 
 interface TranscriptWordsProps {
-  words: Word[];
-  currentTime: number;
-  seekTo: (sec: number) => void;
   onDeleteWords?: (indices: number[]) => void;
 }
 
-export default function TranscriptWords({ words, currentTime, seekTo, onDeleteWords }: TranscriptWordsProps) {
+export default function TranscriptWords({ onDeleteWords }: TranscriptWordsProps) {
+  const words = useStore((s) => s.words);
+  const currentTime = useStore((s) => s.currentTime);
+  const seek = useStore((s) => s.seek);
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
 
@@ -21,7 +21,7 @@ export default function TranscriptWords({ words, currentTime, seekTo, onDeleteWo
         setSelectedIndices(prev => [...prev, index]);
       }
     } else {
-      seekTo(start);
+      seek(start);
     }
   };
 

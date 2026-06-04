@@ -13,9 +13,9 @@ import ExportModal from './components/Export/ExportModal';
 import CopilotChat from './components/Inspector/CopilotChat';
 import { useUndoRedo } from './hooks/useUndoRedo';
 import { useToast } from './components/UI/Toast';
+import { API_BASE } from './api';
+import { useStore } from './store';
 import type { Word, Clip, AppSettings, TimelineState, VideoClip, OverlayClip, SubtitleClip } from './types';
-
-const API_BASE = 'http://localhost:8000';
 
 export default function App() {
 const loadSavedData = (key: string, defaultValue: any) => {
@@ -37,9 +37,6 @@ const loadSavedData = (key: string, defaultValue: any) => {
   const [words, setWords] = useState<Word[]>(() => loadSavedData('words', []));
   const [clips, setClips] = useState<Clip[]>(() => loadSavedData('clips', []));
   const [activeClipIndex, setActiveClipIndex] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [playing, setPlaying] = useState(false);
   const [, setMimicProfile] = useState<any>(null);
   const [settings, setSettings] = useState<AppSettings>({
     n_clips: 5, duration: 60, subtitle_style: 'TikTok Yellow', font_name: 'Impact',
@@ -74,6 +71,15 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
 
   const setTimelineState = (next: TimelineState) => pushTimeline(next);
 
+  // Sync local state to Zustand store (for cross-component reads without prop drilling)
+  useEffect(() => { useStore.setState({ videoPath }); }, [videoPath]);
+  useEffect(() => { useStore.setState({ words }); }, [words]);
+  useEffect(() => { useStore.setState({ timelineState }); }, [timelineState]);
+  useEffect(() => {
+    const u = useStore.getState().setSelectedClip;
+    u(selectedClipId, selectedClipType);
+  }, [selectedClipId, selectedClipType]);
+
   useEffect(() => {
     const t = timelineState;
     const needsFix =
@@ -95,7 +101,10 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
     }
   }, []);
 
-  const seekTo = (seconds: number) => setCurrentTime(Math.max(0, Math.min(duration || 0, seconds)));
+  const seekTo = (seconds: number) => {
+    const dur = useStore.getState().duration || 0;
+    useStore.getState().setCurrentTime(Math.max(0, Math.min(dur, seconds)));
+  };
 
   const getSelectedClip = () => {
     if (!selectedClipId || !selectedClipType) return null;
@@ -192,7 +201,7 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
             }
             if (data.results.words) {
               setWords(data.results.words);
-              setDuration(data.results.words[data.results.words.length - 1].end);
+              useStore.getState().setDuration(data.results.words[data.results.words.length - 1].end);
               generatePlan(data.results.video_path || videoPath, data.results.words);
             }
           }
@@ -244,7 +253,7 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
 
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
-        setPlaying(prev => !prev);
+        useStore.getState().togglePlaying();
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedClipId) {
         e.preventDefault();
         if (window.confirm('هل أنت متأكد من حذف هذا الكليب؟ يمكنك التراجع بـ Ctrl+Z.')) {
@@ -532,8 +541,8 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
 
     setTimelineState(nextTimeline);
     setWords(finalWords);
-    setDuration(prev => Math.max(0, prev - totalDeletedDuration));
-    seekTo(Math.max(0, currentTime - totalDeletedDuration));
+    useStore.getState().setDuration(Math.max(0, useStore.getState().duration - totalDeletedDuration));
+    seekTo(Math.max(0, useStore.getState().currentTime - totalDeletedDuration));
   };
 
   const triggerYoutubeDownload = async () => {
@@ -894,17 +903,16 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
       <div className="flex-1 flex overflow-hidden min-h-0 relative">
         <MediaPool
           ytUrl={ytUrl} setYtUrl={setYtUrl}
-          videoPath={videoPath} setVideoPath={setVideoPath}
+          setVideoPath={setVideoPath}
           mediaBin={mediaBin} setMediaBin={setMediaBin}
           loading={loading} triggerYoutubeDownload={triggerYoutubeDownload}
           analyzeLocalVideo={analyzeLocalVideo} browseLocalFile={browseLocalFile}
           clips={clips} activeClipIndex={activeClipIndex}
-          setActiveClipIndex={setActiveClipIndex} seekTo={seekTo}
+          setActiveClipIndex={setActiveClipIndex}
           setClips={setClips} setMimicProfile={setMimicProfile}
           width={leftWidth}
           timelineState={timelineState}
           onChange={setTimelineState}
-          currentTime={currentTime}
           settings={settings}
         />
 
@@ -912,9 +920,9 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
 
         <section className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ background: 'var(--bg-base)' }}>
           <div className={`flex-1 flex items-center justify-center min-h-0 relative ${isNarrow ? 'p-2' : 'p-4 lg:p-6'}`}>
-            <CanvasPreview timelineState={timelineState} currentTime={currentTime} duration={duration} onTimeUpdate={setCurrentTime} onTimeSeek={setCurrentTime} playing={playing} setPlaying={setPlaying} videoPath={videoPath} />
+            <CanvasPreview timelineState={timelineState} videoPath={videoPath} />
           </div>
-          <TranscriptWords words={words} currentTime={currentTime} seekTo={seekTo} onDeleteWords={handleDeleteWords} />
+          <TranscriptWords onDeleteWords={handleDeleteWords} />
         </section>
 
         <div onPointerDown={() => setActiveDrag('right')} className={`splitter-col ${activeDrag === 'right' ? 'active' : ''}`} />
@@ -946,10 +954,7 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
           <div className="flex-1 overflow-y-auto min-h-0">
             {rightPanelTab === 'copilot' ? (
               <CopilotChat
-                timelineState={timelineState}
-                words={words}
                 onApplyActionPlan={handleApplyActionPlan}
-                API_BASE={API_BASE}
               />
             ) : (
               <div className="p-4 h-full flex flex-col gap-4">
@@ -981,7 +986,6 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', {
         <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
           <Timeline
             timelineState={timelineState} onChange={setTimelineState}
-            currentTime={currentTime} duration={duration} onTimeSeek={setCurrentTime}
             selectedClipId={selectedClipId}
             onSelectClip={(id, type) => { setSelectedClipId(id); setSelectedClipType(type); }}
             onAutoCut={handleAutoCut} onAutoFrame={handleAutoFrame} onSyncBeats={handleSyncBeats}

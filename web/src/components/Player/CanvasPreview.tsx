@@ -3,7 +3,9 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize2, Minimize2, AlertCircle, Film } from 'lucide-react';
+import { streamUrl } from '../../api';
 import VideoScopes from './VideoScopes';
+import { useStore } from '../../store';
 import type { TimelineState, VideoClip, SubtitleClip } from '../../types';
 
 type AspectRatio = '9:16' | '16:9' | '1:1' | '4:5';
@@ -18,25 +20,19 @@ const ASPECT_RATIOS: Record<AspectRatio, number> = {
 
 interface CanvasPreviewProps {
   timelineState: TimelineState;
-  currentTime: number;
-  duration: number;
-  onTimeUpdate: (time: number) => void;
-  onTimeSeek?: (time: number) => void;
-  playing: boolean;
-  setPlaying: (playing: boolean) => void;
   videoPath: string; // fallback or main video source
 }
 
 export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   timelineState,
-  currentTime,
-  duration,
-  onTimeUpdate,
-  onTimeSeek,
-  playing,
-  setPlaying,
   videoPath,
 }) => {
+  const currentTime = useStore((s) => s.currentTime);
+  const duration = useStore((s) => s.duration);
+  const playing = useStore((s) => s.playing);
+  const setPlaying = useStore((s) => s.setPlaying);
+  const setDuration = useStore((s) => s.setDuration);
+  const setCurrentTime = useStore((s) => s.setCurrentTime);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenVideoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,7 +65,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     // Always use backend video-stream endpoint. It handles byte ranges perfectly,
     // has no restrictive Tauri scope limitations for arbitrary folders, and bypasses
     // Tauri's strict asset protocol CSP which was blocking media-src.
-    return `http://localhost:8000/api/video-stream?path=${encodeURIComponent(path)}`;
+    return streamUrl(path);
   };
 
 
@@ -325,7 +321,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         setPlaying(false);
         return;
       }
-      onTimeUpdate(video.currentTime);
+      setCurrentTime(video.currentTime);
       requestRef.current = requestAnimationFrame(renderFrame);
     }
   };
@@ -425,7 +421,15 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         onLoadedData={() => {
           setVideoState('ready');
           setVideoError('');
+          if (hiddenVideoRef.current && hiddenVideoRef.current.duration && Number.isFinite(hiddenVideoRef.current.duration)) {
+            setDuration(hiddenVideoRef.current.duration);
+          }
           requestAnimationFrame(renderFrame);
+        }}
+        onLoadedMetadata={() => {
+          if (hiddenVideoRef.current && hiddenVideoRef.current.duration && Number.isFinite(hiddenVideoRef.current.duration)) {
+            setDuration(hiddenVideoRef.current.duration);
+          }
         }}
         onError={() => {
           setVideoState('error');
@@ -494,7 +498,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
           togglePlay={togglePlay}
           currentTime={currentTime}
           duration={duration}
-          onSeek={(t) => onTimeSeek?.(t)}
+            onSeek={setCurrentTime}
           muted={muted}
           setMuted={setMuted}
           aspectRatio={aspectRatio}
@@ -512,7 +516,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
           <ProgressBar
             currentTime={currentTime}
             duration={duration}
-            onSeek={(t) => onTimeSeek?.(t)}
+          onSeek={setCurrentTime}
           />
 
           {/* Controls Row */}

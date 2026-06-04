@@ -7,6 +7,9 @@ import os
 import json
 from dataclasses import dataclass, field, asdict
 from typing import List
+from dotenv import load_dotenv
+
+load_dotenv()
 
 APP_DIR       = os.path.dirname(os.path.abspath(__file__))
 CAMPAIGN_FILE = os.path.join(APP_DIR, "campaign.json")

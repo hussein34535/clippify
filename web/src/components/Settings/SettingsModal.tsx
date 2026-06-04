@@ -1,6 +1,7 @@
 import { Sliders, Trash2 } from 'lucide-react';
 import type { AppSettings } from '../../types';
 import axios from 'axios';
+import { API_BASE } from '../../api';
 import { useToast } from '../UI/Toast';
 
 interface SettingsModalProps {
@@ -45,7 +46,7 @@ export default function SettingsModal({ settings, setSettings, onSave, onClose }
   const { showToast } = useToast();
   const handleClearCache = async () => {
     try {
-      const res = await axios.post('http://localhost:8000/api/clear-cache');
+      const res = await axios.post(`${API_BASE}/api/clear-cache`);
       showToast(res.data.message, 'success');
     } catch (e: any) {
       showToast('فشل تنظيف الكاش: ' + e.message, 'error');

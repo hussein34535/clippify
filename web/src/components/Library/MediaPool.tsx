@@ -4,6 +4,8 @@ import { Upload, Video, Download, FolderOpen, Sparkles, Film, Layers, Wand2, Sea
 import StyleMimicWorkspace from '../StyleMimicWorkspace';
 import type { Clip } from '../../types';
 import axios from 'axios';
+import { API_BASE, streamUrl } from '../../api';
+import { useStore } from '../../store';
 
 const YoutubeIcon = () => (
   <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 fill-current" style={{ color: 'var(--accent-red)' }} viewBox="0 0 24 24">
@@ -14,7 +16,6 @@ const YoutubeIcon = () => (
 interface MediaPoolProps {
   ytUrl: string;
   setYtUrl: (url: string) => void;
-  videoPath: string;
   setVideoPath: (path: string) => void;
   mediaBin?: string[];
   setMediaBin?: (bin: string[]) => void;
@@ -25,26 +26,27 @@ interface MediaPoolProps {
   clips: Clip[];
   activeClipIndex: number;
   setActiveClipIndex: (idx: number) => void;
-  seekTo: (sec: number) => void;
   setClips: (clips: Clip[]) => void;
   setMimicProfile: (profile: any) => void;
   width?: number;
   timelineState: any;
   onChange: (newState: any) => void;
-  currentTime: number;
   settings?: any;
 }
 
 type Section = 'import' | 'clips' | 'broll' | 'mimic' | 'music';
 
 export default function MediaPool({
-  ytUrl, setYtUrl, videoPath, setVideoPath, loading,
+  ytUrl, setYtUrl, setVideoPath, loading,
   mediaBin = [], setMediaBin: _setMediaBin,
   triggerYoutubeDownload, analyzeLocalVideo, browseLocalFile,
-  clips = [], activeClipIndex = 0, setActiveClipIndex, seekTo, setClips, setMimicProfile,
-  width, timelineState, onChange, currentTime, settings,
+  clips = [], activeClipIndex = 0, setActiveClipIndex, setClips, setMimicProfile,
+  width, timelineState, onChange, settings,
 }: MediaPoolProps) {
   const [section, setSection] = useState<Section>('import');
+  const videoPath = useStore((s) => s.videoPath);
+  const currentTime = useStore((s) => s.currentTime);
+  const seek = useStore((s) => s.seek);
 
   // B-Roll search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,8 +102,6 @@ export default function MediaPool({
     onChange(nextTimeline);
     if (!overridePath) setLocalMusicPath('');
   };
-
-  const API_BASE = 'http://localhost:8000';
 
   const handleSearchBroll = async () => {
     if (!searchQuery.trim()) return;
@@ -295,7 +295,7 @@ export default function MediaPool({
                     >
                       <div className="relative w-full h-20 mb-2 bg-black rounded overflow-hidden">
                         <video
-                          src={`http://localhost:8000/api/video-stream?path=${encodeURIComponent(binPath)}`}
+                          src={streamUrl(binPath)}
                           className="w-full h-full object-cover"
                           crossOrigin="anonymous"
                           muted
@@ -361,7 +361,7 @@ export default function MediaPool({
                   return (
                     <div
                       key={clip.index}
-                      onClick={() => { setActiveClipIndex(idx); seekTo(clip.start_sec); }}
+                      onClick={() => { setActiveClipIndex(idx); seek(clip.start_sec); }}
                       draggable={true}
                       onDragStart={(e) => {
                         e.dataTransfer.setData('text/plain', JSON.stringify({

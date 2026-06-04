@@ -1,25 +1,36 @@
-use std::process::{Command, Child, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::Manager;
 
 struct BackendProcess(Mutex<Option<Child>>);
 
-fn find_api_path() -> Option<std::path::PathBuf> {
-    let cargo_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let dev_path = cargo_dir.join("../../api.py");
+/// Find the sidecar executable. Tauri copies it next to the main exe in production.
+fn find_sidecar_path() -> Option<std::path::PathBuf> {
+    // 1. Production: sidecar is next to the main exe (Tauri convention)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sidecar = dir.join("clipai-backend-x86_64-pc-windows-msvc.exe");
+            if sidecar.exists() {
+                return Some(sidecar);
+            }
+        }
+    }
+    // 2. Dev: sidecar is in ../dist/
+    let dev_path = std::path::PathBuf::from("../dist/clipai-backend.exe");
     if dev_path.exists() {
         return Some(dev_path.canonicalize().unwrap_or(dev_path));
     }
-    if let Ok(exe) = std::env::current_exe() {
-        let prod_path = exe.parent()?.join("api.py");
-        if prod_path.exists() {
-            return Some(prod_path);
+    // 3. Dev: relative to CARGO_MANIFEST_DIR
+    if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
+        let p = std::path::PathBuf::from(manifest).join("../../dist/clipai-backend.exe");
+        if p.exists() {
+            return p.canonicalize().ok().or(Some(p));
         }
     }
     None
 }
 
-// Returns true if port is FREE (nobody listening on it)
+/// Returns true if port 8000 is FREE (nobody listening on it)
 fn is_port_free(port: u16) -> bool {
     std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err()
 }
@@ -39,23 +50,60 @@ pub fn run() {
 
             // Only launch backend if port 8000 is free (not already running)
             if is_port_free(8000) {
-                if let Some(api_path) = find_api_path() {
-                    let child = Command::new("python")
-                        .arg(&api_path)
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()
-                        .expect("Failed to start Python backend");
-                    let state = app.state::<BackendProcess>();
-                    *state.0.lock().unwrap() = Some(child);
-                    log::info!("Python backend started from: {:?}", api_path);
-                    // Give the backend a moment to initialize before the UI loads
-                    std::thread::sleep(std::time::Duration::from_secs(2));
+                // Try sidecar first, fall back to system Python in dev
+                let (program, args): (String, Vec<String>) = if let Some(sidecar) = find_sidecar_path() {
+                    log::info!("Using bundled sidecar: {:?}", sidecar);
+                    (sidecar.to_string_lossy().to_string(), vec![])
+                } else if cfg!(debug_assertions) {
+                    log::warn!("Sidecar not found, falling back to system Python (dev only)");
+                    ("python".to_string(), vec!["api.py".to_string()])
                 } else {
-                    log::warn!("api.py not found! Backend will not start.");
+                    log::error!("Sidecar not found in production! Backend will not start.");
+                    return Ok(());
+                };
+
+                let cmd = {
+                    let mut c = Command::new(&program);
+                    c.args(&args)
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null());
+
+                    // In dev, set cwd to project root so api.py finds its data files
+                    if cfg!(debug_assertions) {
+                        if let Ok(cwd) = std::env::current_dir() {
+                            // Walk up to find the directory containing api.py
+                            let candidates = [
+                                cwd.clone(),
+                                cwd.join(".."),
+                                cwd.join("../.."),
+                                cwd.join("../../.."),
+                            ];
+                            for candidate in &candidates {
+                                if candidate.join("api.py").exists() {
+                                    log::info!("Backend cwd: {:?}", candidate);
+                                    c.current_dir(candidate);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    c
+                };
+
+                match cmd.spawn() {
+                    Ok(child) => {
+                        let state = app.state::<BackendProcess>();
+                        *state.0.lock().unwrap() = Some(child);
+                        log::info!("Backend started successfully");
+                        // Give the backend a moment to initialize before the UI loads
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                    }
+                    Err(e) => {
+                        log::error!("Failed to start backend: {}", e);
+                    }
                 }
             } else {
-                log::info!("Port 8000 already in use — skipping backend launch");
+                log::info!("Port 8000 already in use - skipping backend launch");
             }
             Ok(())
         })

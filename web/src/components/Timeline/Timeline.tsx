@@ -5,14 +5,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { produce } from 'immer';
 import { Scissors, Trash2, ZoomIn, ZoomOut, Sparkles, Undo2, Redo2, Music } from 'lucide-react';
 import type { TimelineState, VideoClip, OverlayClip, Clip } from '../../types';
+import { useStore } from '../../store';
 import TrackLane from './TrackLane.tsx';
 
 interface TimelineProps {
   timelineState: TimelineState;
   onChange: (newState: TimelineState) => void;
-  currentTime: number;
-  duration: number;
-  onTimeSeek: (time: number) => void;
   selectedClipId: string | null;
   onSelectClip: (clipId: string | null, clipType: 'video' | 'audio' | 'overlay' | 'subtitle') => void;
   onAutoCut?: () => void;
@@ -32,9 +30,6 @@ interface TimelineProps {
 export const Timeline: React.FC<TimelineProps> = ({
   timelineState,
   onChange,
-  currentTime,
-  duration,
-  onTimeSeek,
   selectedClipId,
   onSelectClip,
   onAutoCut,
@@ -54,6 +49,9 @@ export const Timeline: React.FC<TimelineProps> = ({
   const [isScrubbing, setIsScrubbing] = useState<boolean>(false);
   const timelineRulerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const currentTime = useStore((s) => s.currentTime);
+  const duration = useStore((s) => s.duration);
+  const seek = useStore((s) => s.seek);
 
   // Format time (MM:SS:FF or MM:SS.ms)
   const formatTimecode = (secs: number) => {
@@ -75,14 +73,14 @@ export const Timeline: React.FC<TimelineProps> = ({
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsScrubbing(true);
     const sec = getSecondsFromX(e.clientX);
-    onTimeSeek(sec);
+    seek(sec);
   };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isScrubbing) return;
       const sec = getSecondsFromX(e.clientX);
-      onTimeSeek(sec);
+      seek(sec);
     };
 
     const handleMouseUp = () => {
