@@ -9,6 +9,8 @@ import PerformanceDashboard from '../UI/PerformanceDashboard';
 import VoiceCommands from '../UI/VoiceCommands';
 import OnboardingTour from '../UI/OnboardingTour';
 import TemplatesGallery from '../UI/TemplatesGallery';
+import AnalyticsDashboard from '../UI/AnalyticsDashboard';
+import MidiPanel from '../UI/MidiPanel';
 import { useStore } from '../../store';
 import type { TimelineState } from '../../types';
 
@@ -211,6 +213,12 @@ export default function Header({ contentType, setContentType, showSettings, setS
 
         {/* Voice commands (Phase 8 — Voice Control) */}
         <VoiceCommands />
+
+        {/* Analytics dashboard (Phase 14 — Analytics) */}
+        <AnalyticsDashboard />
+
+        {/* MIDI controller (Phase 19 — Hardware) */}
+        <MidiPanel />
       </div>
       <ShortcutsHelp />
       <OnboardingTourWrapper />
