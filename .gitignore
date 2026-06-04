@@ -56,6 +56,7 @@ campaign.json.disabled
 
 # PyInstaller / Build
 ClipAI.spec
+dist/clipai-backend*.exe
 
 # Web / Frontend (React + Vite)
 web/node_modules/

@@ -35,6 +35,23 @@ fn is_port_free(port: u16) -> bool {
     std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err()
 }
 
+/// Walk up from the current working directory to find a directory containing api.py
+fn find_api_py_dir() -> Option<std::path::PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let candidates = [
+        cwd.clone(),
+        cwd.join(".."),
+        cwd.join("../.."),
+        cwd.join("../../.."),
+    ];
+    for candidate in &candidates {
+        if candidate.join("api.py").exists() {
+            return Some(candidate.clone());
+        }
+    }
+    None
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -62,33 +79,18 @@ pub fn run() {
                     return Ok(());
                 };
 
-                let cmd = {
-                    let mut c = Command::new(&program);
-                    c.args(&args)
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null());
+                let mut cmd = Command::new(&program);
+                cmd.args(&args)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
 
-                    // In dev, set cwd to project root so api.py finds its data files
-                    if cfg!(debug_assertions) {
-                        if let Ok(cwd) = std::env::current_dir() {
-                            // Walk up to find the directory containing api.py
-                            let candidates = [
-                                cwd.clone(),
-                                cwd.join(".."),
-                                cwd.join("../.."),
-                                cwd.join("../../.."),
-                            ];
-                            for candidate in &candidates {
-                                if candidate.join("api.py").exists() {
-                                    log::info!("Backend cwd: {:?}", candidate);
-                                    c.current_dir(candidate);
-                                    break;
-                                }
-                            }
-                        }
+                // In dev, set cwd to project root so api.py finds its data files
+                if cfg!(debug_assertions) {
+                    if let Some(cwd) = find_api_py_dir() {
+                        log::info!("Backend cwd: {:?}", cwd);
+                        cmd.current_dir(&cwd);
                     }
-                    c
-                };
+                }
 
                 match cmd.spawn() {
                     Ok(child) => {
