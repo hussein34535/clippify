@@ -65,6 +65,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
     }
@@ -73,22 +74,23 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragOver(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragOver(false);
     if (!onDropMedia) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
-    const relativeX = e.clientX - rect.left - 100;
+    const relativeX = Math.max(0, e.clientX - rect.left - 100);
     const dropTime = Math.max(0, relativeX / zoomLevel);
 
     const files = e.dataTransfer?.files;
     if (files && files.length > 0) {
       const file = files[0];
-      // Tauri (and some Chromium builds) expose the absolute path on the File object
       const filePath: string =
         (file as unknown as { path?: string }).path ||
         (file as unknown as { webkitRelativePath?: string }).webkitRelativePath ||
@@ -117,11 +119,10 @@ export const TrackLane: React.FC<TrackLaneProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`flex h-[38px] border rounded-[7px] relative mb-1.5 items-center flex-shrink-0 transition-colors ${isDragOver ? 'border-[var(--accent)] bg-[var(--accent-bg)]' : ''}`}
+      className={`flex h-[42px] border-2 border-dashed rounded-[7px] relative mb-1.5 items-center flex-shrink-0 transition-all ${isDragOver ? 'border-[var(--accent)] bg-[var(--accent-bg)]' : 'border-transparent'}`}
       style={{
-        background: isDragOver ? 'var(--accent-bg)' : 'var(--bg-surface-1)',
-        borderColor: isDragOver ? 'var(--accent)' : 'var(--border-subtle)',
-        boxShadow: isDragOver ? '0 0 0 2px rgba(10,132,255,0.2) inset' : 'none'
+        background: isDragOver ? 'var(--accent-bg)' : 'transparent',
+        boxShadow: isDragOver ? '0 0 0 2px var(--accent) inset, 0 0 12px rgba(10,132,255,0.4)' : 'none',
       }}
     >
       {/* Track Label Panel */}
