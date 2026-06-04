@@ -1022,7 +1022,7 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', loadAutoSa
         setRightWidth(preset.rightWidth);
         setBottomHeight(preset.bottomHeight);
         if (preset.inspectorTab) setRightPanelTab('inspector');
-      }} />
+      }} timelineState={timelineState} onApplyTemplate={setTimelineState} />
 
       <div className="flex-1 flex overflow-hidden min-h-0 relative">
         <MediaPool

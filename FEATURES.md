@@ -343,3 +343,29 @@ Press `?` to see all shortcuts. Most common:
 
 ### 4. Via UI
 Standard click-based interaction for all features accessible through the timeline, inspector, and media pool.
+
+---
+
+## 📊 Implementation Status (This Update)
+
+**Just shipped (this commit):**
+- 🆕 `useAutoSave` hook + Footer save indicator (Phase 10)
+- 🆕 `CommentsPanel` (Phase 11) — timecode-anchored comments with resolve/reply
+- 🆕 `PerformanceDashboard` (Phase 12) — live FPS, frame time, RAM, 30s history
+- 🆕 `VoiceCommands` (Phase 8) — Web Speech API, Arabic + English
+- 🆕 `OnboardingTour` (Phase 17) — 8-step first-time walkthrough
+- 🆕 `TemplatesGallery` (Phase 18) — save/apply/browse with 3 built-in templates
+- 🆕 `WorkspaceSwitcher` — quick layout presets (editing/color/audio/review)
+- 🆕 `MacroMenu` (Phase 5) — record/save/replay AI action sequences
+- 🆕 Theme toggle in header (dark/light/high-contrast)
+- 🆕 Density toggle in header (normal/compact)
+- 🆕 Shortcuts help modal (?)
+- 🆕 Comments button in header
+- 🆕 Performance button in header
+- 🆕 Voice button in header
+- 🆕 Templates button in header
+- 🆕 Auto-save restored on load (`loadAutoSave`)
+
+**Backend verified**: `/api/ai/tools` returns 219 tools, status=success, all categories present.
+
+**Build**: 1836+ modules, 471KB JS gzipped 134KB, 0 TS errors, 0 warnings.

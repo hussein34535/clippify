@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Settings, Film, Download, Save, FolderOpen, Sun, Moon, Contrast, Minimize2, Maximize2, HelpCircle } from 'lucide-react';
+import { Settings, Film, Download, Save, FolderOpen, Sun, Moon, Contrast, Minimize2, Maximize2, HelpCircle, LayoutTemplate } from 'lucide-react';
 import { getTheme, cycleTheme, getDensity, toggleDensity, type Theme, type WorkspaceLayout } from '../../lib/themeManager';
 import MacroMenu from '../UI/MacroMenu';
 import CommentsPanel from '../UI/CommentsPanel';
 import ShortcutsHelp from '../UI/ShortcutsHelp';
 import WorkspaceSwitcher from '../UI/WorkspaceSwitcher';
+import PerformanceDashboard from '../UI/PerformanceDashboard';
+import VoiceCommands from '../UI/VoiceCommands';
+import OnboardingTour from '../UI/OnboardingTour';
+import TemplatesGallery from '../UI/TemplatesGallery';
 import { useStore } from '../../store';
+import type { TimelineState } from '../../types';
 
 interface HeaderProps {
   contentType: string;
@@ -16,6 +21,8 @@ interface HeaderProps {
   onSave: () => void;
   onLoad: () => void;
   onWorkspaceChange?: (layout: WorkspaceLayout) => void;
+  timelineState?: TimelineState;
+  onApplyTemplate?: (state: TimelineState) => void;
 }
 
 const THEME_ICONS: Record<Theme, React.ComponentType<any>> = {
@@ -30,9 +37,10 @@ const THEME_LABELS: Record<Theme, string> = {
   'high-contrast': 'تباين عالي',
 };
 
-export default function Header({ contentType, setContentType, showSettings, setShowSettings, onExport, onSave, onLoad, onWorkspaceChange }: HeaderProps) {
+export default function Header({ contentType, setContentType, showSettings, setShowSettings, onExport, onSave, onLoad, onWorkspaceChange, timelineState, onApplyTemplate }: HeaderProps) {
   const [theme, setThemeState] = useState<Theme>('dark');
   const [density, setDensityState] = useState<'normal' | 'compact'>('normal');
+  const [showTemplates, setShowTemplates] = useState(false);
 
   useEffect(() => {
     setThemeState(getTheme());
@@ -120,6 +128,19 @@ export default function Header({ contentType, setContentType, showSettings, setS
           فتح
         </button>
 
+        {/* Templates gallery (Phase 18) */}
+        {timelineState && onApplyTemplate && (
+          <button
+            onClick={() => setShowTemplates(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-[11px] font-semibold transition-all cursor-pointer"
+            style={{ background: 'var(--bg-surface-3)', border: '1.5px solid var(--border-default)', color: 'var(--text-primary)' }}
+            title="معرض القوالب"
+          >
+            <LayoutTemplate className="w-3.5 h-3.5" />
+            القوالب
+          </button>
+        )}
+
         <button
           onClick={onExport}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-[11px] font-semibold transition-all cursor-pointer"
@@ -184,10 +205,34 @@ export default function Header({ contentType, setContentType, showSettings, setS
 
         {/* Help / Shortcuts (Phase 15 — Accessibility) */}
         <HelpButton />
+
+        {/* Performance dashboard (Phase 12 — Performance) */}
+        <PerformanceDashboard />
+
+        {/* Voice commands (Phase 8 — Voice Control) */}
+        <VoiceCommands />
       </div>
       <ShortcutsHelp />
+      <OnboardingTourWrapper />
+      {showTemplates && timelineState && onApplyTemplate && (
+        <TemplatesGallery
+          current={timelineState}
+          onApply={onApplyTemplate}
+          onClose={() => setShowTemplates(false)}
+        />
+      )}
     </header>
   );
+}
+
+function OnboardingTourWrapper() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const completed = localStorage.getItem('clipai_onboarding_completed');
+    if (!completed) setShow(true);
+  }, []);
+  if (!show) return null;
+  return <OnboardingTour />;
 }
 
 function HelpButton() {
