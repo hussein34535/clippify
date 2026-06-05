@@ -217,7 +217,10 @@ export const Timeline: React.FC<TimelineProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full w-full select-none font-sans relative" style={{ background: 'var(--bg-base)' }}>
+    <div className="flex flex-col h-full w-full select-none font-sans relative" style={{ background: 'var(--bg-base)' }}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+    >
       {/* 🛠️ Timeline Toolbar */}
       <div className="flex items-center justify-between px-3.5 py-2 border-b h-11" style={{ background: 'var(--bg-surface-1)', borderColor: 'var(--border-subtle)' }}>
         <div className="flex items-center gap-1.5">
@@ -360,16 +363,22 @@ export const Timeline: React.FC<TimelineProps> = ({
         ref={scrollContainerRef}
         className="flex-1 overflow-x-auto overflow-y-auto relative flex flex-col"
         style={{ background: 'var(--bg-base)' }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
       >
         {/* Wrapper to keep ruler + tracks aligned and allow playhead overlay */}
         <div 
           className="relative flex flex-col flex-1"
           style={{ width: `${(duration || 30) * zoomLevel + 100}px` }}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
         >
         {/* Timeline Ruler */}
         <div 
           ref={timelineRulerRef}
           onMouseDown={handleMouseDown}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
           className="h-7 border-b sticky top-0 z-20 cursor-ew-resize relative select-none flex-shrink-0"
           style={{ background: '#0d0d0d', borderColor: 'var(--border-subtle)' }}
         >
@@ -384,9 +393,14 @@ export const Timeline: React.FC<TimelineProps> = ({
         {/* Tracks Area */}
         <div 
           className="relative flex-1"
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
         >
           {/* Video Tracks */}
-          <div className="flex flex-col gap-1.5 py-1.5">
+          <div className="flex flex-col gap-1.5 py-1.5"
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
             {timelineState.tracks.video.map((track) => (
               <TrackLane
                 key={track.id}
@@ -403,7 +417,10 @@ export const Timeline: React.FC<TimelineProps> = ({
           </div>
 
           {/* Audio Tracks (right under video for visibility) */}
-          <div className="flex flex-col gap-1.5 py-1.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="flex flex-col gap-1.5 py-1.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
             <div className="flex items-center justify-between px-1">
               <span className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text-tertiary)' }}>
                 {timelineState.tracks.audio.length} تراك صوت
@@ -428,7 +445,10 @@ export const Timeline: React.FC<TimelineProps> = ({
           </div>
 
           {/* Overlays Tracks */}
-          <div className="flex flex-col gap-1.5 py-1.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="flex flex-col gap-1.5 py-1.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
             {timelineState.tracks.overlays.map((track) => (
               <TrackLane
                 key={track.id}
@@ -445,7 +465,10 @@ export const Timeline: React.FC<TimelineProps> = ({
           </div>
 
           {/* Subtitle Tracks */}
-          <div className="flex flex-col gap-1.5 py-1.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}>
+          <div className="flex flex-col gap-1.5 py-1.5 border-t border-[0.5px]" style={{ borderColor: 'var(--border-subtle)' }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
             {timelineState.tracks.subtitles.map((track) => (
               <TrackLane
                 key={track.id}

@@ -319,34 +319,6 @@ export default function MediaPool({
                           >
                             <Sparkles className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const durationSec = rawVideoDurations[binPath] || 15.0;
-                              const newClip = {
-                                id: `raw_video_${Date.now()}`,
-                                source_path: binPath,
-                                start_time_in_timeline: 0,
-                                end_time_in_timeline: durationSec,
-                                source_trim_start: 0,
-                                source_trim_end: durationSec,
-                                speed: 1.0,
-                                volume: 1.0,
-                                transform: { position: { x: 0, y: 0 }, scale: { x: 100, y: 100 }, rotation: 0, keyframes: [] },
-                                color_grading: { brightness: 0, contrast: 1.0, saturation: 1.0, temperature: 5600, lut_path: "" },
-                                ai_features: { face_tracking: false, bg_removed: false, bg_remove_method: "chromakey", chromakey_color: "#00FF00" }
-                              };
-                              const next = produce(timelineState, (draft: any) => {
-                                const track = draft.tracks.video[0];
-                                if (track) track.clips.push(newClip);
-                              });
-                              onChange(next);
-                            }}
-                            title="أضف للتايم لاين مباشرة"
-                            className="p-2 rounded-full bg-[#30D158] text-white hover:scale-110 transition-transform shadow-lg"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
                         </div>
                       </div>
                       <p

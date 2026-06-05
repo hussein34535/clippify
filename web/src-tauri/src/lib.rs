@@ -100,6 +100,7 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            app.handle().plugin(tauri_plugin_dialog::init())?;
 
             // Only launch backend if port 8000 is free (not already running)
             if is_port_free(8000) {

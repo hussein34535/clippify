@@ -668,40 +668,65 @@ const initialTimeline: TimelineState = loadSavedData('timelineState', loadAutoSa
 
   const analyzeLocalVideo = async () => {
     if (!videoPath) return showToast('برجاء إدخال مسار ملف الفيديو المحلي', 'error');
+    // Add to mediaBin so user can drag to timeline
+    setMediaBin(prev => {
+      if (prev.includes(videoPath)) return prev;
+      return [...prev, videoPath];
+    });
     setLoading(true); setStatusMsg('جاري فحص الفيديو وتحليله...');
     try { const res = await axios.post(`${API_BASE}/api/analyze-video`, { video_path: videoPath, content_type: contentType }); setActiveSessionId(res.data.session_id); } catch (err: any) { setLoading(false); showToast('فشل: ' + err.message, 'error'); }
   };
 
   const browseLocalFile = async () => {
-    const tauri = (window as any).__TAURI__;
-    if (tauri && tauri.dialog) {
+    const tauri = (window as any).__TAURI_INTERNALS__;
+    if (tauri) {
       try {
-        const selected = await tauri.dialog.open({
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const selected = await open({
           filters: [{ name: 'Video Files', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv'] }],
           multiple: false
         });
         if (selected && typeof selected === 'string') {
           setVideoPath(selected);
+          setMediaBin(prev => {
+            if (prev.includes(selected)) return prev;
+            return [...prev, selected];
+          });
         }
       } catch (err: any) {
-        showToast('فشل فتح الملف عبر Tauri: ' + err.message, 'error');
+        // Fallback: use HTML file input
+        showToast('Tauri dialog غير متاح، استخدام متصفح الملفات', 'info');
+        pickFileViaInput();
       }
     } else {
-      try { 
-        const res = await axios.post(`${API_BASE}/api/browse-file`); 
-        if (res.data.file_paths && res.data.file_paths.length > 0) { 
-          setMediaBin(prev => {
-            const newBin = [...prev];
-            res.data.file_paths.forEach((p: string) => {
-               if(!newBin.includes(p)) newBin.push(p);
-            });
-            return newBin;
-          });
-          if (!videoPath) setVideoPath(res.data.file_paths[0]); 
-        } 
-      } catch (err: any) { showToast('فشل: ' + err.message, 'error'); }
+      pickFileViaInput();
     }
   };
+
+  // Utility: hidden <input type="file"> for both Tauri WebView + browser
+  function pickFileViaInput() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm,video/x-flv';
+    input.onchange = () => {
+      if (input.files && input.files.length > 0) {
+        const file = input.files[0];
+        // Try to get full path (Tauri exposes .path on File object)
+        const filePath = (file as any).path || file.name;
+        const url = URL.createObjectURL(file);
+        setVideoPath(filePath);
+        // Store blob URL temporarily for preview
+        if (!(file as any).path) {
+          localStorage.setItem('clipai_temp_blob_url', url);
+        }
+        setMediaBin(prev => {
+          if (prev.includes(filePath)) return prev;
+          return [...prev, filePath];
+        });
+      }
+    };
+    input.click();
+  }
 
   const generatePlan = async (path: string, wordList: Word[]) => {
     setStatusMsg('جاري توليد الخطة الزمنية بالذكاء الاصطناعي...');

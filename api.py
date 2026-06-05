@@ -957,6 +957,85 @@ def api_export_xml(req: XmlExportRequest):
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/browse-file")
+async def browse_file():
+    """Open a native Windows file dialog to pick video files."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        OFN_FILEMUSTEXIST = 0x00001000
+        OFN_PATHMUSTEXIST = 0x00000800
+        OFN_NOCHANGEDIR = 0x00000008
+        OFN_ALLOWMULTISELECT = 0x00000200
+
+        class OPENFILENAME(ctypes.Structure):
+            _fields_ = [
+                ("lStructSize", wintypes.DWORD),
+                ("hwndOwner", wintypes.HWND),
+                ("hInstance", wintypes.HINSTANCE),
+                ("lpstrFilter", wintypes.LPCWSTR),
+                ("lpstrCustomFilter", wintypes.LPWSTR),
+                ("nMaxCustFilter", wintypes.DWORD),
+                ("nFilterIndex", wintypes.DWORD),
+                ("lpstrFile", wintypes.LPWSTR),
+                ("nMaxFile", wintypes.DWORD),
+                ("lpstrFileTitle", wintypes.LPWSTR),
+                ("nMaxFileTitle", wintypes.DWORD),
+                ("lpstrInitialDir", wintypes.LPCWSTR),
+                ("lpstrTitle", wintypes.LPCWSTR),
+                ("Flags", wintypes.DWORD),
+                ("nFileOffset", wintypes.WORD),
+                ("nFileExtension", wintypes.WORD),
+                ("lpstrDefExt", wintypes.LPCWSTR),
+                ("lCustData", wintypes.LPARAM),
+                ("lpfnHook", wintypes.LPVOID),
+                ("lpTemplateName", wintypes.LPCWSTR),
+            ]
+
+        buf = ctypes.create_unicode_buffer(65536)
+        buf[0] = '\0'
+        ofn = OPENFILENAME(
+            lStructSize=ctypes.sizeof(OPENFILENAME),
+            hwndOwner=None,
+            lpstrFilter="Video Files\0*.mp4;*.mov;*.avi;*.mkv;*.webm;*.flv\0All Files\0*.*\0",
+            lpstrFile=buf,
+            nMaxFile=len(buf),
+            lpstrTitle="اختر فيديو",
+            Flags=OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_ALLOWMULTISELECT,
+        )
+        ctypes.windll.comdlg32.GetOpenFileNameW(ctypes.byref(ofn))
+        result = buf.value
+        if result:
+            # Multi-select returns: "path\0file1\0file2\0\0"
+            parts = [p for p in buf.split('\0') if p]
+            if len(parts) > 1:
+                dir_path = parts[0]
+                files = [os.path.join(dir_path, f) for f in parts[1:]]
+            else:
+                files = [result]
+            return {"file_paths": list(dict.fromkeys(f for f in files if os.path.exists(f)))}
+    except Exception as e:
+        # Fallback: tkinter
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            root.update()
+            files = filedialog.askopenfilenames(
+                title="اختر ملف فيديو",
+                filetypes=[("Video files", "*.mp4 *.mov *.avi *.mkv *.webm *.flv")]
+            )
+            root.destroy()
+            if files:
+                return {"file_paths": list(files)}
+        except:
+            pass
+        print(f"[browse-file] Failed: {e}")
+    return {"file_paths": []}
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "app_dir": os.path.dirname(os.path.abspath(__file__))}
@@ -1196,4 +1275,4 @@ def ai_validate_actions(req: AIExecuteRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
