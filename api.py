@@ -226,6 +226,90 @@ def post_settings(settings: SettingsModel):
     raise HTTPException(status_code=500, detail="Failed to save settings")
 
 
+def get_video_duration_ffmpeg(video_path: str) -> float:
+    try:
+        import subprocess
+        import re
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        result = subprocess.run(
+            [ffmpeg_exe, "-i", video_path],
+            capture_output=True,
+            text=True,
+            errors="ignore",
+            timeout=10
+        )
+        match = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", result.stderr)
+        if match:
+            hours = int(match.group(1))
+            minutes = int(match.group(2))
+            seconds = float(match.group(3))
+            return hours * 3600 + minutes * 60 + seconds
+    except Exception as e:
+        print(f"Error getting duration via ffmpeg: {e}")
+    return 0.0
+
+def generate_thumbnail_ffmpeg(video_path: str, output_thumb_path: str, timestamp_sec: float = 1.0) -> bool:
+    try:
+        import subprocess
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        result = subprocess.run([
+            ffmpeg_exe,
+            "-ss", f"{timestamp_sec}",
+            "-i", video_path,
+            "-vframes", "1",
+            "-q:v", "2",
+            "-vf", "scale=160:-1",
+            "-y",
+            output_thumb_path
+        ], capture_output=True, timeout=15)
+        return result.returncode == 0 and os.path.exists(output_thumb_path)
+    except Exception as e:
+        print(f"Error generating thumbnail: {e}")
+    return False
+
+class MediaInfoRequest(BaseModel):
+    path: str
+    timestamp_sec: Optional[float] = 1.0
+
+@app.post("/api/media-info")
+def get_media_info(req: MediaInfoRequest):
+    if not os.path.exists(req.path):
+        raise HTTPException(status_code=404, detail=f"File not found: {req.path}")
+        
+    duration = get_video_duration_ffmpeg(req.path)
+    
+    temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "thumbnails")
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Clamp requested timestamp to actual video duration
+    requested_time = req.timestamp_sec if req.timestamp_sec is not None else 1.0
+    target_time = requested_time
+    if duration > 0.0:
+        # Clamp to avoid seeking past duration
+        target_time = min(requested_time, max(0.0, duration - 0.2))
+        
+    # Round to 2 decimal places to prevent float precision duplicates
+    target_time = round(target_time, 2)
+    
+    import hashlib
+    # Include clamped target_time in hash to save unique frame images
+    h = hashlib.sha256(f"{req.path}_{target_time}".encode()).hexdigest()[:16]
+    thumb_path = os.path.join(temp_dir, f"{h}_thumb.jpg")
+    
+    success = False
+    if not os.path.exists(thumb_path):
+        success = generate_thumbnail_ffmpeg(req.path, thumb_path, target_time)
+    else:
+        success = True
+        
+    return {
+        "status": "success",
+        "duration": duration,
+        "thumbnail_path": os.path.abspath(thumb_path) if success else None
+    }
+
 
 @app.get("/api/video-stream")
 def stream_video_endpoint(path: str, range: Optional[str] = Header(None)):

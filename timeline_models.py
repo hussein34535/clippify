@@ -44,6 +44,7 @@ class VideoClip(BaseModel):
     end_time_in_timeline: float
     source_trim_start: float = 0.0
     source_trim_end: float
+    source_duration: float = 0.0
     speed: float = 1.0
     volume: float = 1.0
     transform: TransformState = Field(default_factory=TransformState)
@@ -58,6 +59,7 @@ class AudioClip(BaseModel):
     end_time_in_timeline: float
     source_trim_start: float = 0.0
     source_trim_end: float
+    source_duration: float = 0.0
     volume: float = 1.0
     fade_in: float = 0.0
     fade_out: float = 0.0
@@ -87,6 +89,7 @@ class OverlayClip(BaseModel):
     end_time_in_timeline: float
     source_trim_start: float = 0.0
     source_trim_end: float
+    source_duration: float = 0.0
     transform: TransformState = Field(default_factory=TransformState)
 
 class VideoTrack(BaseModel):
