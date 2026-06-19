@@ -106,15 +106,20 @@
 | File | Description |
 |------|-------------|
 | `flutter_client/.../timeline_widget.dart` | ~1430 سطر — الهيكل الرئيسي للتايملاين مع السايدبار الخارجي |
+| `flutter_client/.../timeline_painters.dart` | **جديد** — `TrackConfig`, `RecordingIndicator`, `PlayheadTriangle` |
 | `flutter_client/.../clip_item_widget.dart` | ~500 سطر — عرض الكليبات بالتدرجات + المقابض |
 | `flutter_client/.../timeline_provider.dart` | ~1020 سطر — حالة التايملاين + Command Pattern + undo/redo |
 | `flutter_client/.../video_player_widget.dart` | ~270 سطر — مشغل الفيديو مع الربط الثنائي |
 | `flutter_client/.../backend_controller.dart` | ~180 سطر — إدارة الباك إند مع التحقق من الصحة |
 | `flutter_client/.../app_theme.dart` | الثيم (داكن/فاتح) + `AppColors` |
-| `flutter_client/.../timeline_models.dart` | `VideoClip`, `AudioClip`, `OverlayClip`, `SubtitleClip`, `TimelineState` |
+| `flutter_client/.../timeline_models.dart` | `VideoClip`, `AudioClip`, `OverlayClip`, `SubtitleClip`, `TimelineState`, `TextClip`, `TextTrack`, `SpeedPoint`, `SpeedRamp`, `Transition` |
 | `flutter_client/.../api_client.dart` | HTTP client للباك إند (Dio) |
 | `flutter_client/.../local_storage.dart` | حفظ/تحميل autosave محلياً |
-| `flutter_client/.../home_screen.dart` | الشاشة الرئيسية مع LayoutBuilder + resizable panels |
+| `flutter_client/.../home_screen.dart` | الشاشة الرئيسية مع LayoutBuilder + resizable panels + KeyboardShortcutsWidget |
+| `flutter_client/.../inspector_widget.dart` | تبويبات Inspector مع tab لكير كروم + speed ramp + keyframes |
+| `flutter_client/.../inspector_shared.dart` | **جديد** — `InspectorSectionHeader`, `InspectorPropertySlider`, `InspectorNumberInput`, `InspectorPlaceholder` |
+| `flutter_client/.../color_grading_panel.dart` | **جديد** — `ColorWheel`, `ColorPresets` مع 8 إعدادات جاهزة |
+| `flutter_client/.../timeline_painters.dart` | **جديد** — `TrackConfig`, `RecordingIndicator`, `PlayheadTriangle` |
 | `api.py` | FastAPI backend (port 8000) |
 
 ---

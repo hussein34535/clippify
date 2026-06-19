@@ -1,110 +1,216 @@
-# tracker.py
-# Local Face Tracking & Auto-Framing using OpenCV Haar Cascades
-
+import sys
+import json
 import os
 import cv2
-from typing import List, Dict, Any
+import numpy as np
 
-def track_faces_in_video(video_path: str, start_sec: float, end_sec: float) -> List[Dict[str, Any]]:
-    """
-    Reads the video file between start_sec and end_sec, detects faces using OpenCV,
-    and generates timeline transform position keyframes to keep the face centered.
-    """
-    if not os.path.exists(video_path):
-        return []
-
+def track_point(video_path, init_x, init_y, max_frames=0):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        return []
+        return {"error": "Cannot open video", "keyframes": []}
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920.0
-    height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080.0
-    
-    # Load OpenCV Face Detector cascade
-    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-    face_cascade = cv2.CascadeClassifier(cascade_path)
-    if face_cascade.empty():
-        # Fallback if XML not loaded
-        cap.release()
-        return []
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if max_frames > 0:
+        total_frames = min(total_frames, max_frames)
 
-    # Target aspect ratio is 9:16 (vertical crop)
-    # The active width of a 9:16 crop in a 16:9 1080p frame is height * (9/16)
-    target_crop_width = height * (9.0 / 16.0)
-    center_x_original = width / 2.0
+    ret, frame = cap.read()
+    if not ret:
+        cap.release()
+        return {"error": "Cannot read first frame", "keyframes": []}
+
+    h, w = frame.shape[:2]
+    bbox = (int(init_x - 20), int(init_y - 20), 40, 40)
+    bbox = (
+        max(0, bbox[0]), max(0, bbox[1]),
+        min(w - bbox[0], bbox[2]), min(h - bbox[1], bbox[3])
+    )
+
+    tracker = cv2.TrackerCSRT_create()
+    tracker.init(frame, bbox)
 
     keyframes = []
-    
-    # Fast-forward to start_sec
-    start_frame = int(start_sec * fps)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    
-    current_frame = start_frame
-    end_frame = int(end_sec * fps)
-    
-    raw_positions = []
-    
-    # Sample every 5 frames for speed and stability
-    sample_step = 5
-    
-    while current_frame < end_frame:
+    frame_idx = 0
+
+    while frame_idx < total_frames:
         ret, frame = cap.read()
         if not ret:
             break
-            
-        if (current_frame - start_frame) % sample_step == 0:
-            time_offset = (current_frame - start_frame) / fps
-            
-            # Grayscale frame for cascade detector
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # Detect faces (downscale for speed)
-            gray_small = cv2.resize(gray, (0, 0), fx=0.5, fy=0.5)
-            faces = face_cascade.detectMultiScale(gray_small, scaleFactor=1.2, minNeighbors=3, minSize=(30, 30))
-            
-            if len(faces) > 0:
-                # Get the largest face
-                largest_face = max(faces, key=lambda f: f[2] * f[3])
-                # Scale coordinates back to original frame size
-                fx, fy, fw, fh = [coord * 2 for coord in largest_face]
-                
-                # Face center
-                face_center_x = fx + fw / 2.0
-                
-                # Calculate required delta offset from center to keep face centered
-                # offset_x = center_x_original - face_center_x
-                # Max constraint: crop box must not exceed video left/right edges
-                max_offset = (width - target_crop_width) / 2.0
-                offset_x = center_x_original - face_center_x
-                offset_x = max(-max_offset, min(max_offset, offset_x))
-                
-                raw_positions.append((time_offset, offset_x))
-                
-        current_frame += 1
+
+        success, box = tracker.update(frame)
+        if success:
+            cx = box[0] + box[2] / 2.0
+            cy = box[1] + box[3] / 2.0
+            t = frame_idx / fps
+            keyframes.append({"time": round(t, 3), "x": round(cx, 1), "y": round(cy, 1)})
+
+        frame_idx += 1
 
     cap.release()
+    return {"keyframes": keyframes, "total_frames": frame_idx}
 
-    if not raw_positions:
-        return []
 
-    # Smooth the offsets using rolling average to avoid camera jitters
-    smoothed_positions = []
-    window_size = 5
-    n = len(raw_positions)
-    
-    for i in range(n):
-        t, _ = raw_positions[i]
-        start_idx = max(0, i - window_size // 2)
-        end_idx = min(n, i + window_size // 2 + 1)
-        
-        avg_offset = sum(raw_positions[j][1] for j in range(start_idx, end_idx)) / (end_idx - start_idx)
-        
-        # Add keyframe
+def track_faces(video_path, max_frames=0):
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return {"error": "Cannot open video", "keyframes": []}
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if max_frames > 0:
+        total_frames = min(total_frames, max_frames)
+
+    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    face_cascade = cv2.CascadeClassifier(cascade_path)
+    if face_cascade.empty():
+        cap.release()
+        return {"error": "Face cascade not found", "keyframes": []}
+
+    keyframes = []
+    frame_idx = 0
+
+    while frame_idx < total_frames:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=3, minSize=(30, 30))
+
+        t = frame_idx / fps
+        if len(faces) > 0:
+            largest = max(faces, key=lambda f: f[2] * f[3])
+            fx, fy, fw, fh = [int(v) for v in largest]
+            keyframes.append({
+                "time": round(t, 3),
+                "x": fx, "y": fy, "w": fw, "h": fh,
+                "confidence": 1.0
+            })
+        else:
+            keyframes.append({
+                "time": round(t, 3),
+                "x": 0, "y": 0, "w": 0, "h": 0,
+                "confidence": 0.0
+            })
+
+        frame_idx += 1
+
+    cap.release()
+    return {"keyframes": keyframes, "total_frames": frame_idx}
+
+
+def track_planar(video_path, rx, ry, rw, rh, max_frames=0):
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return {"error": "Cannot open video", "keyframes": []}
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if max_frames > 0:
+        total_frames = min(total_frames, max_frames)
+
+    ret, ref_frame = cap.read()
+    if not ret:
+        cap.release()
+        return {"error": "Cannot read first frame", "keyframes": []}
+
+    ref_pts = np.array([
+        [rx, ry],
+        [rx + rw, ry],
+        [rx + rw, ry + rh],
+        [rx, ry + rh]
+    ], dtype=np.float32)
+
+    ref_gray = cv2.cvtColor(ref_frame, cv2.COLOR_BGR2GRAY)
+    ref_mask = np.zeros(ref_gray.shape, dtype=np.uint8)
+    cv2.fillPoly(ref_mask, [ref_pts.astype(np.int32)], 255)
+    ref_kp, ref_desc = cv2.ORB_create().detectAndCompute(ref_gray, ref_mask)
+
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+
+    keyframes = []
+    frame_idx = 0
+
+    while frame_idx < total_frames:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        kp, desc = cv2.ORB_create().detectAndCompute(gray, None)
+
+        homography = None
+        if ref_desc is not None and desc is not None and len(ref_desc) > 3 and len(desc) > 3:
+            matches = bf.match(ref_desc, desc)
+            matches = sorted(matches, key=lambda x: x.distance)[:50]
+
+            if len(matches) >= 4:
+                src_pts = np.float32([ref_kp[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
+                dst_pts = np.float32([kp[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
+                H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+
+                if H is not None:
+                    homography = H.tolist()
+                    pts = cv2.perspectiveTransform(ref_pts.reshape(-1, 1, 2), H)
+                    pts = pts.reshape(-1, 2).tolist()
+
+        t = frame_idx / fps
         keyframes.append({
-            "time": round(t, 2),
-            "property": "position",
-            "value": {"x": round(avg_offset, 1), "y": 0.0},
-            "easing": "ease-in-out"
+            "time": round(t, 3),
+            "homography": homography,
+            "corners": pts if homography else None
         })
-        
-    return keyframes
+
+        frame_idx += 1
+
+    cap.release()
+    return {"keyframes": keyframes, "total_frames": frame_idx}
+
+
+def main():
+    if len(sys.argv) < 3:
+        print(json.dumps({"error": "Usage: tracker.py <mode> <video> [args...]"}))
+        sys.exit(1)
+
+    mode = sys.argv[1]
+    video_path = sys.argv[2]
+
+    if not os.path.exists(video_path):
+        print(json.dumps({"error": f"Video not found: {video_path}"}))
+        sys.exit(1)
+
+    result = {}
+
+    if mode == "point":
+        if len(sys.argv) < 5:
+            print(json.dumps({"error": "point mode: tracker.py point <video> <x> <y> [max_frames]"}))
+            sys.exit(1)
+        x = float(sys.argv[3])
+        y = float(sys.argv[4])
+        max_frames = int(sys.argv[5]) if len(sys.argv) > 5 else 0
+        result = track_point(video_path, x, y, max_frames)
+
+    elif mode == "faces":
+        max_frames = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+        result = track_faces(video_path, max_frames)
+
+    elif mode == "planar":
+        if len(sys.argv) < 7:
+            print(json.dumps({"error": "planar mode: tracker.py planar <video> <x> <y> <w> <h> [max_frames]"}))
+            sys.exit(1)
+        rx = float(sys.argv[3])
+        ry = float(sys.argv[4])
+        rw = float(sys.argv[5])
+        rh = float(sys.argv[6])
+        max_frames = int(sys.argv[7]) if len(sys.argv) > 7 else 0
+        result = track_planar(video_path, rx, ry, rw, rh, max_frames)
+
+    else:
+        print(json.dumps({"error": f"Unknown mode: {mode}. Use: point, faces, planar"}))
+        sys.exit(1)
+
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()
