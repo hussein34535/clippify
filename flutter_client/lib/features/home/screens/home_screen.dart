@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:window_manager/window_manager.dart';
 import '../../library/widgets/media_library_widget.dart';
 import '../../player/widgets/video_player_widget.dart';
 import '../../timeline/widgets/timeline_widget.dart';
@@ -752,6 +753,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onZoomIn: () { final z = ref.read(timelineProvider).timeline.zoomLevel; ref.read(timelineProvider.notifier).setZoom((z * 1.3).clamp(1.0, 500.0)); },
                   onZoomOut: () { final z = ref.read(timelineProvider).timeline.zoomLevel; ref.read(timelineProvider.notifier).setZoom((z / 1.3).clamp(1.0, 500.0)); },
                   onSnap: () { setState(() => _snapEnabled = !_snapEnabled); },
+                  onSaveAs: _handleSave,
+                  onCut: () { debugPrint('[Menu] Cut'); },
+                  onCopy: () { debugPrint('[Menu] Copy'); },
+                  onPaste: () { debugPrint('[Menu] Paste'); },
+                  onSelectAll: () { debugPrint('[Menu] Select All'); },
+                  onDelete: () { debugPrint('[Menu] Delete'); },
+                  onFullScreen: () async {
+                    await windowManager.setFullScreen(!await windowManager.isFullScreen());
+                  },
+                  onAbout: () => showAboutDialog(context: context, applicationName: 'ClipAI Pro', applicationVersion: '1.0.0'),
                 ),
 
                 // Export progress bar

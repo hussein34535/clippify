@@ -49,6 +49,14 @@ class HeaderWidget extends ConsumerWidget {
   final VoidCallback? onZoomIn;
   final VoidCallback? onZoomOut;
   final VoidCallback? onSnap;
+  final VoidCallback? onSaveAs;
+  final VoidCallback? onCut;
+  final VoidCallback? onCopy;
+  final VoidCallback? onPaste;
+  final VoidCallback? onSelectAll;
+  final VoidCallback? onDelete;
+  final VoidCallback? onFullScreen;
+  final VoidCallback? onAbout;
 
   const HeaderWidget({
     super.key,
@@ -78,13 +86,21 @@ class HeaderWidget extends ConsumerWidget {
     this.onZoomIn,
     this.onZoomOut,
     this.onSnap,
+    this.onSaveAs,
+    this.onCut,
+    this.onCopy,
+    this.onPaste,
+    this.onSelectAll,
+    this.onDelete,
+    this.onFullScreen,
+    this.onAbout,
   });
 
   List<EdgeMenuEntry> _fileMenu() => [
     EdgeMenuEntry(label: 'New Project', shortcut: 'Ctrl+N', icon: Icons.add_rounded, action: onNewProject),
     EdgeMenuEntry(label: 'Open...', shortcut: 'Ctrl+O', icon: Icons.folder_open_rounded, action: onLoad),
     EdgeMenuEntry(label: 'Save', shortcut: 'Ctrl+S', icon: Icons.save_rounded, action: onSave),
-    EdgeMenuEntry(label: 'Save As...', shortcut: 'Ctrl+Shift+S', icon: Icons.save_alt),
+    EdgeMenuEntry(label: 'Save As...', shortcut: 'Ctrl+Shift+S', icon: Icons.save_alt, action: onSaveAs),
     const EdgeMenuEntry.divider(),
     EdgeMenuEntry(label: 'Export...', shortcut: 'Ctrl+E', icon: Icons.file_upload_rounded, action: onExport, enabled: !isExporting),
     const EdgeMenuEntry.divider(),
@@ -95,17 +111,17 @@ class HeaderWidget extends ConsumerWidget {
     EdgeMenuEntry(label: 'Undo', shortcut: 'Ctrl+Z', icon: Icons.undo_rounded, action: onUndo),
     EdgeMenuEntry(label: 'Redo', shortcut: 'Ctrl+Y', icon: Icons.redo_rounded, action: onRedo),
     const EdgeMenuEntry.divider(),
-    EdgeMenuEntry(label: 'Cut', shortcut: 'Ctrl+X', icon: Icons.content_cut_rounded),
-    EdgeMenuEntry(label: 'Copy', shortcut: 'Ctrl+C', icon: Icons.copy_rounded),
-    EdgeMenuEntry(label: 'Paste', shortcut: 'Ctrl+V', icon: Icons.content_paste_rounded),
+    EdgeMenuEntry(label: 'Cut', shortcut: 'Ctrl+X', icon: Icons.content_cut_rounded, action: onCut),
+    EdgeMenuEntry(label: 'Copy', shortcut: 'Ctrl+C', icon: Icons.copy_rounded, action: onCopy),
+    EdgeMenuEntry(label: 'Paste', shortcut: 'Ctrl+V', icon: Icons.content_paste_rounded, action: onPaste),
     const EdgeMenuEntry.divider(),
-    EdgeMenuEntry(label: 'Select All', shortcut: 'Ctrl+A', icon: Icons.select_all),
+    EdgeMenuEntry(label: 'Select All', shortcut: 'Ctrl+A', icon: Icons.select_all, action: onSelectAll),
   ];
 
   List<EdgeMenuEntry> _clipMenu() => [
     EdgeMenuEntry(label: 'Split', shortcut: 'Ctrl+S', icon: Icons.content_cut_rounded, action: onSplit),
     const EdgeMenuEntry.divider(),
-    EdgeMenuEntry(label: 'Delete', shortcut: 'Delete', icon: Icons.delete_rounded),
+    EdgeMenuEntry(label: 'Delete', shortcut: 'Delete', icon: Icons.delete_rounded, action: onDelete),
     EdgeMenuEntry(label: 'Speed/Duration...', shortcut: 'Ctrl+R', icon: Icons.speed_rounded),
     EdgeMenuEntry(label: 'Nest', shortcut: 'Ctrl+G', icon: Icons.group_work_rounded),
   ];
@@ -120,7 +136,7 @@ class HeaderWidget extends ConsumerWidget {
   ];
 
   List<EdgeMenuEntry> _viewMenu() => [
-    EdgeMenuEntry(label: 'Full Screen', shortcut: 'F11', icon: Icons.fullscreen_rounded),
+    EdgeMenuEntry(label: 'Full Screen', shortcut: 'F11', icon: Icons.fullscreen_rounded, action: onFullScreen),
     EdgeMenuEntry(label: 'Second Display', icon: Icons.monitor_rounded, action: onSecondScreen),
     const EdgeMenuEntry.divider(),
     ..._workspacePresets.map((p) => EdgeMenuEntry(
@@ -142,7 +158,7 @@ class HeaderWidget extends ConsumerWidget {
     EdgeMenuEntry(label: 'Recording...', shortcut: 'Ctrl+R', icon: Icons.fiber_manual_record_rounded, action: onCapture),
     EdgeMenuEntry(label: 'Collaboration...', icon: Icons.groups_rounded, action: onShowCollaboration),
     const EdgeMenuEntry.divider(),
-    EdgeMenuEntry(label: 'About ClipAI Pro', icon: Icons.info_outline_rounded),
+    EdgeMenuEntry(label: 'About ClipAI Pro', icon: Icons.info_outline_rounded, action: onAbout),
   ];
 
   @override

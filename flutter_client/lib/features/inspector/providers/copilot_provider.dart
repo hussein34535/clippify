@@ -72,53 +72,61 @@ class CopilotNotifier extends StateNotifier<CopilotStateData> {
     }
   }
 
-  /// تطبيق التعديلات المستلمة من الذكاء الاصطناعي على التايملاين
+  String? _findClipType(String clipId, WidgetRef ref) {
+    final tracks = ref.read(timelineProvider).timeline.tracks;
+    for (final t in tracks.video) { for (final c in t.clips) { if (c.id == clipId) return 'video'; } }
+    for (final t in tracks.audio) { for (final c in t.clips) { if (c.id == clipId) return 'audio'; } }
+    for (final t in tracks.overlays) { for (final c in t.clips) { if (c.id == clipId) return 'overlay'; } }
+    for (final t in tracks.subtitles) { for (final c in t.clips) { if (c.id == clipId) return 'subtitle'; } }
+    for (final t in tracks.text) { for (final c in t.clips) { if (c.id == clipId) return 'text'; } }
+    return null;
+  }
+
   void _applyTimelineActions(List<dynamic> actions, WidgetRef ref) {
-    final timelineNotifier = ref.read(timelineProvider.notifier);
+    final notifier = ref.read(timelineProvider.notifier);
 
     for (var act in actions) {
       final type = act['type'] as String?;
+      final clipId = act['clip_id'] as String?;
+      if (clipId == null) continue;
+      final clipType = _findClipType(clipId, ref);
+
       if (type == 'delete_clip') {
-        final clipId = act['clip_id'] as String?;
-        if (clipId != null) {
-          timelineNotifier.removeVideoClip(clipId);
+        switch (clipType) {
+          case 'video': notifier.removeVideoClip(clipId); break;
+          case 'audio': notifier.removeAudioClip(clipId); break;
+          case 'overlay': notifier.removeOverlayClip(clipId); break;
+          case 'subtitle': notifier.removeSubtitleClip(clipId); break;
+          case 'text': notifier.removeTextClip(clipId); break;
         }
       } else if (type == 'update_clip') {
-        final clipId = act['clip_id'] as String?;
         final fields = act['fields'] as Map<String, dynamic>?;
-        
-        if (clipId != null && fields != null) {
-          timelineNotifier.updateVideoClip(clipId, (clip) {
-            // تحديث الحجم أو ميزات الذكاء الاصطناعي
-            AIFeatures ai = clip.aiFeatures;
-            TransformState trans = clip.transform;
-            ColorGradingState color = clip.colorGrading;
-            double speed = clip.speed;
-            double volume = clip.volume;
+        if (fields == null) continue;
 
-            if (fields.containsKey('ai_features')) {
-              ai = AIFeatures.fromJson(fields['ai_features'] as Map<String, dynamic>);
-            }
-            if (fields.containsKey('transform')) {
-              trans = TransformState.fromJson(fields['transform'] as Map<String, dynamic>);
-            }
-            if (fields.containsKey('color_grading')) {
-              color = ColorGradingState.fromJson(fields['color_grading'] as Map<String, dynamic>);
-            }
-            if (fields.containsKey('speed')) {
-              speed = (fields['speed'] as num).toDouble();
-            }
-            if (fields.containsKey('volume')) {
-              volume = (fields['volume'] as num).toDouble();
-            }
-
+        if (clipType == 'video') {
+          notifier.updateVideoClip(clipId, (clip) {
             return clip.copyWith(
-              aiFeatures: ai,
-              transform: trans,
-              colorGrading: color,
-              speed: speed,
-              volume: volume,
+              aiFeatures: fields.containsKey('ai_features')
+                  ? AIFeatures.fromJson(fields['ai_features'] as Map<String, dynamic>) : clip.aiFeatures,
+              transform: fields.containsKey('transform')
+                  ? TransformState.fromJson(fields['transform'] as Map<String, dynamic>) : clip.transform,
+              colorGrading: fields.containsKey('color_grading')
+                  ? ColorGradingState.fromJson(fields['color_grading'] as Map<String, dynamic>) : clip.colorGrading,
+              speed: fields.containsKey('speed') ? (fields['speed'] as num).toDouble() : clip.speed,
+              volume: fields.containsKey('volume') ? (fields['volume'] as num).toDouble() : clip.volume,
             );
+          });
+        } else if (clipType == 'audio') {
+          notifier.updateAudioClip(clipId, (clip) {
+            return clip.copyWith(volume: fields['volume'] != null ? (fields['volume'] as num).toDouble() : clip.volume);
+          });
+        } else if (clipType == 'overlay') {
+          notifier.updateOverlayClip(clipId, (clip) {
+            return clip.copyWith(volume: fields['volume'] != null ? (fields['volume'] as num).toDouble() : clip.volume);
+          });
+        } else if (clipType == 'subtitle') {
+          notifier.updateSubtitleClip(clipId, (clip) {
+            return clip.copyWith(text: fields['text'] as String? ?? clip.text);
           });
         }
       }

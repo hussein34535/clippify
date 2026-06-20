@@ -1,7 +1,7 @@
 """
 tool_registry.py — Master AI Tool Registry for ClipAI Studio
 ============================================================
-Single source of truth for all 212 AI-controllable features.
+Single source of truth for all 215 AI-controllable features.
 Each tool has: name, description, parameters schema, category, side effects, confirmation required.
 
 Used by:
@@ -20,8 +20,8 @@ from typing import Dict, List, Any, Optional
 
 TOOL_CATEGORIES = {
     "timeline":   "Timeline & Editing (40 tools)",
-    "playback":   "Player & Playback (25 tools)",
-    "effects":    "Effects & Color Grading (30 tools)",
+    "playback":   "Player & Playback (23 tools)",
+    "effects":    "Effects & Color Grading (35 tools)",
     "audio":      "Audio Production (25 tools)",
     "subtitles":  "Subtitles & Captions (22 tools)",
     "ai":         "AI & ML (45 tools)",
@@ -30,7 +30,7 @@ TOOL_CATEGORIES = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL_REGISTRY — 212 entries
+# TOOL_REGISTRY — 215 entries
 # ─────────────────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
@@ -364,7 +364,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # ════════════════════════════════════════════════════════════════════
-    # 2. PLAYBACK (25 tools)
+    # 2. PLAYBACK (23 tools)
     # ════════════════════════════════════════════════════════════════════
     "playback.play": {
         "description": "Start playback",
@@ -568,7 +568,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 
     # ════════════════════════════════════════════════════════════════════
-    # 3. EFFECTS & COLOR (30 tools)
+    # 3. EFFECTS & COLOR (35 tools)
     # ════════════════════════════════════════════════════════════════════
     "effects.apply_lut": {
         "description": "Apply a LUT (.cube file) to selected clip",
