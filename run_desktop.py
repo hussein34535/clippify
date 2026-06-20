@@ -17,7 +17,7 @@ def wait_for_backend(url: str, timeout: int = 15) -> bool:
 
 def main():
     root_dir = os.path.dirname(os.path.abspath(__file__))
-    web_dir = os.path.join(root_dir, "web")
+    flutter_dir = os.path.join(root_dir, "flutter_client")
 
     # 1. Start Python backend
     print("Starting FastAPI backend on port 8000...")
@@ -35,12 +35,12 @@ def main():
     else:
         print("Warning: Backend may not be fully up yet.")
 
-    # 2. Launch Tauri dev
-    print("Launching Tauri desktop app...")
+    # 2. Launch Flutter Desktop
+    print("Launching Flutter desktop app...")
     try:
         subprocess.run(
-            ["npx", "@tauri-apps/cli", "dev"],
-            cwd=web_dir,
+            ["flutter", "run", "-d", "windows"],
+            cwd=flutter_dir,
             shell=True,
         )
     except KeyboardInterrupt:

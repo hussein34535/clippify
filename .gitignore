@@ -70,15 +70,12 @@ campaign.json.disabled
 ClipAI.spec
 dist/clipai-backend*.exe
 
-# Web / Frontend (React + Vite)
-web/node_modules/
-web/dist/
-web/dist-ssr/
-web/*.local
-
-# Tauri
-web/src-tauri/target/
-web/src-tauri/gen/
+# Flutter
+flutter_client/build/
+flutter_client/.dart_tool/
+flutter_client/.pub-cache/
+flutter_client/.flutter-plugins-dependencies
+flutter_client/coverage/
 
 # IDE / OS
 .vscode/

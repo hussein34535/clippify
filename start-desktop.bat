@@ -20,19 +20,8 @@ if errorlevel 1 (
 echo    OK
 echo.
 
-:: Check Node
-echo [2/3] Checking Node.js...
-node --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Node.js not found! Install Node.js 18+ first.
-    pause
-    exit /b 1
-)
-echo    OK
-echo.
-
 :: Start Backend
-echo [3/3] Starting Backend on port 8000...
+echo [2/3] Starting Backend on port 8000...
 cd /d "%~dp0"
 start "ClipAI Backend" /min python api.py
 echo    OK
@@ -47,12 +36,9 @@ if errorlevel 1 goto WAIT_BACKEND
 echo    Backend ready
 echo.
 
-:: Start Tauri Desktop
-echo Starting ClipAI Desktop App...
-echo.
-cd /d "%~dp0web"
-echo Building and launching... (first time takes 3-5 min)
-echo.
-npm run tauri:dev
+:: Start Flutter Desktop
+echo [3/3] Starting Flutter Desktop App...
+cd /d "%~dp0flutter_client"
+flutter run -d windows
 
 pause
