@@ -70,7 +70,7 @@ Built with Flutter 3.44 + FastAPI backend + FFmpeg for a CapCut/Premiere Pro lev
 - Playhead scrubbing with zero Riverpod rebuilds
 
 ### AI & Effects
-- AI Tool Palette (215 tools)
+- AI Tool Palette (219 tools)
 - Copilot chat
 - Color Grading Panel (Color Wheel + 8 presets)
 - Audio EQ (bass/mid/treble) + effects chain

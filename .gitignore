@@ -23,6 +23,10 @@ MANIFEST
 
 # Environment
 .env
+.env.local
+.env.*.local
+!.env.example
+!flutter_client/assets/.env.example
 .venv
 env/
 venv/
@@ -31,14 +35,14 @@ env.bak/
 venv.bak/
 
 # Project Specific Directories (Generated/Temp)
-cache/
-output/
-projects/
-music/
-scratch/
-yt_login_profile/
-agents/
-logs/
+/cache/
+/output/
+/projects/
+/music/
+/scratch/
+/yt_login_profile/
+/agents/
+/logs/
 
 # Database
 *.db

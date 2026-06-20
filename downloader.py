@@ -1,16 +1,27 @@
 """
-downloader.py — YouTube downloader helper for ClipAI
+downloader.py — YouTube downloader helper for Clippify
 Downloads a video from YouTube using yt-dlp and returns its local path.
 """
 
 import os
 import re
-import yt_dlp
+
+# NOTE: yt_dlp is imported LAZILY inside the functions that need it.
+# This keeps validate_url() testable without requiring yt_dlp to be installed.
 
 VALID_YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com",
                        "music.youtube.com", "youtu.be", "youtube-nocookie.com"}
 
+# IPv4 address pattern for SSRF blocking.
+_IP_PATTERN = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+
+
 def validate_url(url: str) -> str:
+    """Validate and normalize a YouTube URL before passing it to yt-dlp.
+
+    Raises ValueError on any disallowed URL. Returns the (stripped) URL on success.
+    This function is safe to call without yt_dlp installed — it only uses stdlib.
+    """
     if not isinstance(url, str) or not url.strip():
         raise ValueError("URL must be a non-empty string")
     url = url.strip()
@@ -21,18 +32,18 @@ def validate_url(url: str) -> str:
     if parsed.hostname not in VALID_YOUTUBE_HOSTS:
         raise ValueError(f"Only YouTube URLs are allowed: {parsed.hostname}")
     # Block IP addresses (SSRF prevention)
-    ip_pattern = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
-    if ip_pattern.match(parsed.hostname or ''):
+    if _IP_PATTERN.match(parsed.hostname or ''):
         raise ValueError(f"IP addresses not allowed: {parsed.hostname}")
-    try:
-        import socket
-        addr = socket.getaddrinfo(parsed.hostname, 80)[0][4][0]
-        if ip_pattern.match(addr):
-            # Resolved to an IP — this is expected for youtube.com, but block raw IPs
-            pass
-    except Exception:
-        pass
+    # Block obvious shell-injection patterns in the path/query
+    if any(c in url for c in ';|&`<>"'):
+        raise ValueError(f"URL contains disallowed characters: {url[:80]}")
     return url
+
+
+def _get_yt_dlp():
+    """Lazy-import yt_dlp so validate_url() can be unit-tested without it."""
+    import yt_dlp  # noqa: WPS433 (intentional local import)
+    return yt_dlp
 
 def download_youtube_video(url: str, output_dir: str, progress_callback=None) -> str:
     """
@@ -46,6 +57,7 @@ def download_youtube_video(url: str, output_dir: str, progress_callback=None) ->
     """
     os.makedirs(output_dir, exist_ok=True)
     url = validate_url(url)
+    yt_dlp = _get_yt_dlp()
 
     class MyLogger:
         def debug(self, msg):

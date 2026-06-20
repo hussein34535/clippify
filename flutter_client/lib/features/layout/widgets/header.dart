@@ -57,6 +57,9 @@ class HeaderWidget extends ConsumerWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onFullScreen;
   final VoidCallback? onAbout;
+  final VoidCallback? onSpeedDuration;
+  final VoidCallback? onNest;
+  final VoidCallback? onAddTrack;
 
   const HeaderWidget({
     super.key,
@@ -94,6 +97,9 @@ class HeaderWidget extends ConsumerWidget {
     this.onDelete,
     this.onFullScreen,
     this.onAbout,
+    this.onSpeedDuration,
+    this.onNest,
+    this.onAddTrack,
   });
 
   List<EdgeMenuEntry> _fileMenu() => [
@@ -122,12 +128,12 @@ class HeaderWidget extends ConsumerWidget {
     EdgeMenuEntry(label: 'Split', shortcut: 'Ctrl+S', icon: Icons.content_cut_rounded, action: onSplit),
     const EdgeMenuEntry.divider(),
     EdgeMenuEntry(label: 'Delete', shortcut: 'Delete', icon: Icons.delete_rounded, action: onDelete),
-    EdgeMenuEntry(label: 'Speed/Duration...', shortcut: 'Ctrl+R', icon: Icons.speed_rounded),
-    EdgeMenuEntry(label: 'Nest', shortcut: 'Ctrl+G', icon: Icons.group_work_rounded),
+    EdgeMenuEntry(label: 'Speed/Duration...', shortcut: 'Ctrl+R', icon: Icons.speed_rounded, action: onSpeedDuration),
+    EdgeMenuEntry(label: 'Nest', shortcut: 'Ctrl+G', icon: Icons.group_work_rounded, action: onNest),
   ];
 
   List<EdgeMenuEntry> _timelineMenu() => [
-    EdgeMenuEntry(label: 'Add Track', shortcut: 'Ctrl+T', icon: Icons.add_circle_outline_rounded),
+    EdgeMenuEntry(label: 'Add Track', shortcut: 'Ctrl+T', icon: Icons.add_circle_outline_rounded, action: onAddTrack),
     const EdgeMenuEntry.divider(),
     EdgeMenuEntry(label: 'Zoom In', shortcut: 'Ctrl+=', icon: Icons.zoom_in_rounded, action: onZoomIn),
     EdgeMenuEntry(label: 'Zoom Out', shortcut: 'Ctrl+-', icon: Icons.zoom_out_rounded, action: onZoomOut),

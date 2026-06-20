@@ -1303,6 +1303,251 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       timeline: state.timeline.copyWith(activeMulticam: null),
     );
   }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Clipboard + selection helpers (used by Edit menu in HeaderWidget)
+  // ─────────────────────────────────────────────────────────────────────
+
+  /// Internal clipboard for cut/copy/paste operations.
+  List<Map<String, dynamic>> _clipboard = [];
+
+  /// Cut: remove selected clips from timeline and stash them in the clipboard.
+  void cutSelectedClips({Set<String>? selectedIds}) {
+    final ids = selectedIds ?? const <String>{};
+    if (ids.isEmpty) return;
+    _saveToUndoStack();
+    _clipboard = _collectClipsByIds(ids).map((c) => c.toJson()).toList();
+    _removeClipsByIds(ids);
+  }
+
+  /// Copy: snapshot selected clips into the clipboard without removing them.
+  void copySelectedClips({Set<String>? selectedIds}) {
+    final ids = selectedIds ?? const <String>{};
+    if (ids.isEmpty) return;
+    _clipboard = _collectClipsByIds(ids).map((c) => c.toJson()).toList();
+  }
+
+  /// Paste: insert clipboard entries at the playhead.
+  void pasteClips() {
+    if (_clipboard.isEmpty) return;
+    _saveToUndoStack();
+    final playhead = state.timeline.playheadSec;
+    final s = state.timeline;
+
+    final videoTracks = List<VideoTrack>.from(s.tracks.video);
+    final audioTracks = List<AudioTrack>.from(s.tracks.audio);
+    final overlayTracks = List<OverlayTrack>.from(s.tracks.overlays);
+    final subtitleTracks = List<SubtitleTrack>.from(s.tracks.subtitles);
+    final textTracks = List<TextTrack>.from(s.tracks.text);
+
+    for (final entry in _clipboard) {
+      final type = entry['type'] as String?;
+      final newId = '${type}_${DateTime.now().millisecondsSinceEpoch}';
+      final reidentified = Map<String, dynamic>.from(entry)..['id'] = newId;
+      switch (type) {
+        case 'video':
+          if (videoTracks.isNotEmpty) {
+            final clip = VideoClip.fromJson(reidentified)
+                .copyWith(startTime: playhead);
+            videoTracks[0] = videoTracks[0].copyWith(clips: [...videoTracks[0].clips, clip]);
+          }
+          break;
+        case 'audio':
+          if (audioTracks.isNotEmpty) {
+            final clip = AudioClip.fromJson(reidentified)
+                .copyWith(startTime: playhead);
+            audioTracks[0] = audioTracks[0].copyWith(clips: [...audioTracks[0].clips, clip]);
+          }
+          break;
+        case 'overlay':
+          if (overlayTracks.isNotEmpty) {
+            final clip = OverlayClip.fromJson(reidentified)
+                .copyWith(startTime: playhead);
+            overlayTracks[0] = overlayTracks[0].copyWith(clips: [...overlayTracks[0].clips, clip]);
+          }
+          break;
+        case 'subtitle':
+          if (subtitleTracks.isNotEmpty) {
+            final clip = SubtitleClip.fromJson(reidentified)
+                .copyWith(startTime: playhead);
+            subtitleTracks[0] = subtitleTracks[0].copyWith(clips: [...subtitleTracks[0].clips, clip]);
+          }
+          break;
+        case 'text':
+          if (textTracks.isNotEmpty) {
+            final clip = TextClip.fromJson(reidentified)
+                .copyWith(startTime: playhead);
+            textTracks[0] = textTracks[0].copyWith(clips: [...textTracks[0].clips, clip]);
+          }
+          break;
+      }
+    }
+
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: s.tracks.copyWith(
+          video: videoTracks,
+          audio: audioTracks,
+          overlays: overlayTracks,
+          subtitles: subtitleTracks,
+          text: textTracks,
+        ),
+      ),
+    );
+  }
+
+  /// Select all clips across all tracks (placeholder).
+  void selectAllClips() {
+  }
+
+  /// Delete all clips identified by [selectedIds].
+  void deleteSelectedClips({Set<String>? selectedIds}) {
+    final ids = selectedIds ?? const <String>{};
+    if (ids.isEmpty) return;
+    _saveToUndoStack();
+    _removeClipsByIds(ids);
+  }
+
+  /// Apply [speed] to every clip in [selectedIds].
+  void setSelectedClipsSpeed(double speed, {Set<String>? selectedIds}) {
+    final ids = selectedIds ?? const <String>{};
+    if (ids.isEmpty) return;
+    _saveToUndoStack();
+    final s = state.timeline;
+    final videoTracks = List<VideoTrack>.from(s.tracks.video);
+    for (int i = 0; i < videoTracks.length; i++) {
+      final clips = List<VideoClip>.from(videoTracks[i].clips);
+      bool changed = false;
+      for (int j = 0; j < clips.length; j++) {
+        if (ids.contains(clips[j].id)) {
+          clips[j] = clips[j].copyWith(speed: speed);
+          changed = true;
+        }
+      }
+      if (changed) videoTracks[i] = videoTracks[i].copyWith(clips: clips);
+    }
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: s.tracks.copyWith(video: videoTracks),
+      ),
+    );
+  }
+
+  /// Nest selected clips into a new NestedSequence.
+  void nestSelectedClipsByIds(Set<String> clipIds) => nestSelectedClips(clipIds);
+
+  /// Append a new empty video track at the end of the video track list.
+  void addVideoTrack() {
+    _saveToUndoStack();
+    final s = state.timeline;
+    final videoTracks = List<VideoTrack>.from(s.tracks.video);
+    final nextIdx = videoTracks.length;
+    videoTracks.add(VideoTrack(
+      id: 'v${nextIdx + 1}_${DateTime.now().millisecondsSinceEpoch}',
+      name: 'V${nextIdx + 1}',
+      index: nextIdx,
+      clips: const [],
+    ));
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: s.tracks.copyWith(video: videoTracks),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Internal helpers for clipboard / selection operations
+  // ─────────────────────────────────────────────────────────────────────
+
+  List<dynamic> _collectClipsByIds(Set<String> ids) {
+    final out = <dynamic>[];
+    final s = state.timeline;
+    for (final t in s.tracks.video) {
+      for (final c in t.clips) {
+        if (ids.contains(c.id)) out.add(_TaggedClip('video', c));
+      }
+    }
+    for (final t in s.tracks.audio) {
+      for (final c in t.clips) {
+        if (ids.contains(c.id)) out.add(_TaggedClip('audio', c));
+      }
+    }
+    for (final t in s.tracks.overlays) {
+      for (final c in t.clips) {
+        if (ids.contains(c.id)) out.add(_TaggedClip('overlay', c));
+      }
+    }
+    for (final t in s.tracks.subtitles) {
+      for (final c in t.clips) {
+        if (ids.contains(c.id)) out.add(_TaggedClip('subtitle', c));
+      }
+    }
+    for (final t in s.tracks.text) {
+      for (final c in t.clips) {
+        if (ids.contains(c.id)) out.add(_TaggedClip('text', c));
+      }
+    }
+    return out;
+  }
+
+  void _removeClipsByIds(Set<String> ids) {
+    final s = state.timeline;
+    final videoTracks = List<VideoTrack>.from(s.tracks.video);
+    final audioTracks = List<AudioTrack>.from(s.tracks.audio);
+    final overlayTracks = List<OverlayTrack>.from(s.tracks.overlays);
+    final subtitleTracks = List<SubtitleTrack>.from(s.tracks.subtitles);
+    final textTracks = List<TextTrack>.from(s.tracks.text);
+
+    for (int i = 0; i < videoTracks.length; i++) {
+      videoTracks[i] = videoTracks[i].copyWith(
+        clips: videoTracks[i].clips.where((c) => !ids.contains(c.id)).toList(),
+      );
+    }
+    for (int i = 0; i < audioTracks.length; i++) {
+      audioTracks[i] = audioTracks[i].copyWith(
+        clips: audioTracks[i].clips.where((c) => !ids.contains(c.id)).toList(),
+      );
+    }
+    for (int i = 0; i < overlayTracks.length; i++) {
+      overlayTracks[i] = overlayTracks[i].copyWith(
+        clips: overlayTracks[i].clips.where((c) => !ids.contains(c.id)).toList(),
+      );
+    }
+    for (int i = 0; i < subtitleTracks.length; i++) {
+      subtitleTracks[i] = subtitleTracks[i].copyWith(
+        clips: subtitleTracks[i].clips.where((c) => !ids.contains(c.id)).toList(),
+      );
+    }
+    for (int i = 0; i < textTracks.length; i++) {
+      textTracks[i] = textTracks[i].copyWith(
+        clips: textTracks[i].clips.where((c) => !ids.contains(c.id)).toList(),
+      );
+    }
+
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: s.tracks.copyWith(
+          video: videoTracks,
+          audio: audioTracks,
+          overlays: overlayTracks,
+          subtitles: subtitleTracks,
+          text: textTracks,
+        ),
+      ),
+    );
+  }
+}
+
+/// Internal helper class used by the clipboard to tag clip JSON with its type.
+class _TaggedClip {
+  final String type;
+  final dynamic clip;
+  _TaggedClip(this.type, this.clip);
+  Map<String, dynamic> toJson() {
+    final out = Map<String, dynamic>.from(clip.toJson() as Map);
+    out['type'] = type;
+    return out;
+  }
 }
 
 final timelineProvider = StateNotifierProvider<TimelineNotifier, TimelineStateData>((ref) {

@@ -38,7 +38,7 @@ def save_ui_prefs(prefs: dict) -> bool:
 
 from audio import extract
 from detector import find_clips
-from downloader import download_youtube_video
+from downloader import download_youtube_video, validate_url
 from orchestrator import (
     generate_subtitles,
     _select_clips_with_ai,
@@ -357,6 +357,11 @@ def stream_video_endpoint(path: str, range: Optional[str] = Header(None)):
 
 @app.post("/api/download-youtube")
 def download_yt(url: str = Body(..., embed=True)):
+    try:
+        validate_url(url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     session_id = str(uuid.uuid4())
     set_session(session_id, 0.0, "Starting download...", [], [])
     
@@ -364,7 +369,7 @@ def download_yt(url: str = Body(..., embed=True)):
         try:
             set_session(session_id, 0.2, "Downloading YouTube Video...")
             
-            # Use ClipAI's existing YouTube downloader
+            # Use Clippify's existing YouTube downloader
             out_folder = "./temp"
             os.makedirs(out_folder, exist_ok=True)
             

@@ -78,7 +78,7 @@
 - Comment system مع tap-to-seek
 
 ### Other Features
-- AI Tool Palette (215 tools)
+- AI Tool Palette (219 tools)
 - Subtitle Editor
 - Export Modal
 - Settings Modal
@@ -105,21 +105,26 @@
 
 | File | Description |
 |------|-------------|
-| `flutter_client/.../timeline_widget.dart` | ~1661 سطر — الهيكل الرئيسي للتايملاين مع السايدبار الخارجي |
+| `flutter_client/.../timeline_widget.dart` | ~1752 سطر — الهيكل الرئيسي للتايملاين مع السايدبار الخارجي |
 | `flutter_client/.../timeline_painters.dart` | `TrackConfig`, `RecordingIndicator`, `PlayheadTriangle` |
-| `flutter_client/.../clip_item_widget.dart` | ~441 سطر — عرض الكليبات بالتدرجات + المقابض |
-| `flutter_client/.../timeline_provider.dart` | ~1208 سطر — حالة التايملاين + Command Pattern + undo/redo |
-| `flutter_client/.../video_player_widget.dart` | ~811 سطر — مشغل الفيديو مع الربط الثنائي |
-| `flutter_client/.../backend_controller.dart` | ~184 سطر — إدارة الباك إند مع التحقق من الصحة |
+| `flutter_client/.../clip_item_widget.dart` | ~463 سطر — عرض الكليبات بالتدرجات + المقابض |
+| `flutter_client/.../timeline_provider.dart` | ~1566 سطر — حالة التايملاين + Command Pattern + undo/redo + clipboard/selection helpers |
+| `flutter_client/.../video_player_widget.dart` | ~882 سطر — مشغل الفيديو مع الربط الثنائي |
+| `flutter_client/.../backend_controller.dart` | ~202 سطر — إدارة الباك إند مع التحقق من الصحة |
 | `flutter_client/.../app_theme.dart` | الثيم (داكن/فاتح) + `AppColors` |
 | `flutter_client/.../timeline_models.dart` | `VideoClip`, `AudioClip`, `OverlayClip`, `SubtitleClip`, `TimelineState`, `TextClip`, `TextTrack`, `SpeedPoint`, `SpeedRamp`, `Transition` |
-| `flutter_client/.../api_client.dart` | HTTP client للباك إند (Dio) |
+| `flutter_client/.../api_client.dart` | HTTP client للباك إند (Dio) — مع `ApiResult<T>` sealed class |
 | `flutter_client/.../local_storage.dart` | حفظ/تحميل autosave محلياً |
 | `flutter_client/.../home_screen.dart` | الشاشة الرئيسية مع LayoutBuilder + resizable panels + KeyboardShortcutsWidget |
 | `flutter_client/.../inspector_widget.dart` | تبويبات Inspector مع tab لكير كروم + speed ramp + keyframes |
-| `flutter_client/.../inspector_shared.dart` | **جديد** — `InspectorSectionHeader`, `InspectorPropertySlider`, `InspectorNumberInput`, `InspectorPlaceholder` |
-| `flutter_client/.../color_grading_panel.dart` | **جديد** — `ColorWheel`, `ColorPresets` مع 8 إعدادات جاهزة |
-| `flutter_client/.../timeline_painters.dart` | **جديد** — `TrackConfig`, `RecordingIndicator`, `PlayheadTriangle` |
+| `flutter_client/.../inspector_shared.dart` | `InspectorSectionHeader`, `InspectorPropertySlider`, `InspectorNumberInput`, `InspectorPlaceholder` |
+| `flutter_client/.../color_grading_panel.dart` | `ColorWheel`, `ColorPresets` مع 8 إعدادات جاهزة |
+| `flutter_client/.../timeline_painters.dart` | `TrackConfig`, `RecordingIndicator`, `PlayheadTriangle` |
+| `flutter_client/.../core/cache/cache_manager.dart` | **جديد** — `CacheManager` singleton (thumbnails/proxy cache) |
+| `flutter_client/.../core/constants/timeline_constants.dart` | **جديد** — ثوابت التايملاين (track heights, zoom, snap, ...) |
+| `flutter_client/.../core/models/timeline_templates.dart` | **جديد** — BUILTIN_TEMPLATES (intro/outro/podcast) منقول من web |
+| `flutter_client/.../core/services/analytics_service.dart` | **جديد** — analytics tracking منقول من web |
+| `flutter_client/.../core/services/midi_service.dart` | **جديد** — MIDI mapping (stub — يحتاج flutter_midi_command) |
 | `api.py` | FastAPI backend (port 8000) |
 
 ---

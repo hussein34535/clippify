@@ -2,8 +2,9 @@ from tool_registry import TOOL_REGISTRY, TOOL_CATEGORIES, count_tools, list_tool
 
 
 def test_count_matches_header():
+    """Verify the actual tool count matches the documented 219."""
     total = count_tools()
-    assert total == 215, f"Expected 215 tools, got {total}"
+    assert total == 219, f"Expected 219 tools, got {total}"
 
 
 def test_categories_match_tool_counts():

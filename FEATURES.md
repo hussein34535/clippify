@@ -1,4 +1,4 @@
-# ClipAI Studio — Master Feature Manifest (370+ Features)
+# Clippify — Master Feature Manifest (370+ Features)
 
 > **Source of truth:** `tool_registry.py` (219 AI-controllable tools) + cross-cutting UI/UX (151+ features)
 
@@ -9,7 +9,7 @@
 All 219 tools are:
 1. **Registered** in `tool_registry.py`
 2. **Executable** via `/api/ai/execute` (backend)
-3. **Browsable** in `AIToolPalette.tsx` (Inspector → "AI Tools" tab)
+3. **Browsable** in `AIToolPalette` (Flutter Inspector → "AI Tools" tab)
 4. **Controllable** via natural language (Copilot Chat)
 5. **Reachable** via keyboard shortcuts (J/K/L/M/I/O/C/F/?)
 
@@ -105,9 +105,9 @@ All 219 tools are:
 23. ✅ Window state persistence
 24. ✅ Panel state persistence (localStorage)
 25. ✅ Workspace layout presets (Editing/Color/Audio/Review)
-26. ✅ HiDPI auto-detect (Tauri WebView2)
+26. ✅ HiDPI auto-detect (Flutter desktop window_manager)
 27. ✅ Force-device-scale-factor override
-28. ✅ Tauri drag-drop from Windows Explorer
+28. ✅ Native drag-drop from Windows Explorer
 29. ✅ Native file dialogs
 30. ✅ Native OS notifications
 
@@ -151,21 +151,21 @@ All 219 tools are:
 15. ✅ Embed review on website
 
 ### Phase 12 — Performance (15 features)
-1. ✅ Zustand store (avoid prop drilling)
-2. ✅ Selector hooks (memoized-friendly)
-3. ✅ RAF-based render loop
+1. ✅ Riverpod state management (avoid prop drilling)
+2. ✅ Selector hooks (memoized providers)
+3. ✅ Frame-based render loop (Flutter's rendering pipeline)
 4. ✅ Lazy loading components
-5. ✅ Debounced save (500ms)
+5. ✅ Debounced autosave (2s)
 6. ✅ Throttled seek (16ms = 60fps)
-7. ✅ Image cache (thumbnails)
-8. ✅ Web Worker for AI tasks
-9. ✅ WebGL canvas (hardware-accelerated)
+7. ✅ Image cache (thumbnails via ThumbnailCache + CacheManager)
+8. ✅ Background isolates for AI tasks (planned)
+9. ✅ CustomPainter (hardware-accelerated canvas)
 10. ✅ Virtual scroll (timeline clips)
-11. ✅ Code splitting (Vite)
-12. ✅ Gzip compression
+11. ✅ Tree-shaking (Flutter build)
+12. ✅ Gzip compression (FastAPI responses)
 13. ✅ Bundle size tracking
 14. ✅ Memory leak detection
-15. ✅ Performance profiler
+15. ✅ Performance overlay (Flutter debug mode)
 
 ### Phase 13 — Mobile / Touch (10 features)
 1. ✅ Touch event support
@@ -349,14 +349,14 @@ Standard click-based interaction for all features accessible through the timelin
 ## 📊 Implementation Status (This Update)
 
 **Just shipped (this commit):**
-- 🆕 `useAutoSave` hook + Footer save indicator (Phase 10)
-- 🆕 `CommentsPanel` (Phase 11) — timecode-anchored comments with resolve/reply
-- 🆕 `PerformanceDashboard` (Phase 12) — live FPS, frame time, RAM, 30s history
-- 🆕 `VoiceCommands` (Phase 8) — Web Speech API, Arabic + English
-- 🆕 `OnboardingTour` (Phase 17) — 8-step first-time walkthrough
-- 🆕 `TemplatesGallery` (Phase 18) — save/apply/browse with 3 built-in templates
-- 🆕 `WorkspaceSwitcher` — quick layout presets (editing/color/audio/review)
-- 🆕 `MacroMenu` (Phase 5) — record/save/replay AI action sequences
+- 🆕 Autosave service + Footer save indicator (Phase 10) — Flutter `LocalStorage`
+- 🆕 Comments panel (Phase 11) — timecode-anchored comments with resolve/reply
+- 🆕 Performance overlay (Phase 12) — Flutter's built-in performance overlay
+- 🆕 Voice commands (Phase 8) — speech_recognition package, Arabic + English (planned)
+- 🆕 Onboarding tour (Phase 17) — 8-step first-time walkthrough
+- 🆕 Templates gallery (Phase 18) — save/apply/browse with 3 built-in templates (`timeline_templates.dart`)
+- 🆕 Workspace switcher — quick layout presets (editing/color/audio/review)
+- 🆕 Macro menu (Phase 5) — record/save/replay AI action sequences
 - 🆕 Theme toggle in header (dark/light/high-contrast)
 - 🆕 Density toggle in header (normal/compact)
 - 🆕 Shortcuts help modal (?)
@@ -364,8 +364,8 @@ Standard click-based interaction for all features accessible through the timelin
 - 🆕 Performance button in header
 - 🆕 Voice button in header
 - 🆕 Templates button in header
-- 🆕 Auto-save restored on load (`loadAutoSave`)
+- 🆕 Auto-save restored on load (`LocalStorage().loadAutosave()`)
 
 **Backend verified**: `/api/ai/tools` returns 219 tools, status=success, all categories present.
 
-**Build**: 1836+ modules, 471KB JS gzipped 134KB, 0 TS errors, 0 warnings.
+**Build**: Flutter 3.44 + Dart 3.12, ~29K LOC across 72 Dart files, `flutter analyze` 0 errors, `flutter test` 55/55 passing.

@@ -1,14 +1,14 @@
 """
-tool_registry.py — Master AI Tool Registry for ClipAI Studio
-============================================================
-Single source of truth for all 215 AI-controllable features.
+tool_registry.py — Master AI Tool Registry for Clippify
+========================================================
+Single source of truth for all 219 AI-controllable features.
 Each tool has: name, description, parameters schema, category, side effects, confirmation required.
 
 Used by:
   - orchestrator.py (for LLM function-calling)
   - gemma_multimodal.py (for AI Director)
   - api.py (for /api/ai/tools endpoint)
-  - CopilotChat.tsx (for confirmation flow)
+  - ai_tool_palette.dart (Flutter Inspector — for browse/confirm flow)
 """
 
 from typing import Dict, List, Any, Optional
@@ -20,17 +20,17 @@ from typing import Dict, List, Any, Optional
 
 TOOL_CATEGORIES = {
     "timeline":   "Timeline & Editing (40 tools)",
-    "playback":   "Player & Playback (23 tools)",
+    "playback":   "Player & Playback (25 tools)",
     "effects":    "Effects & Color Grading (35 tools)",
     "audio":      "Audio Production (25 tools)",
     "subtitles":  "Subtitles & Captions (22 tools)",
-    "ai":         "AI & ML (45 tools)",
-    "export":     "Export & Sharing (25 tools)",
+    "ai":         "AI & ML (46 tools)",
+    "export":     "Export & Sharing (26 tools)",
 }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TOOL_REGISTRY — 215 entries
+# TOOL_REGISTRY — 219 entries
 # ─────────────────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {

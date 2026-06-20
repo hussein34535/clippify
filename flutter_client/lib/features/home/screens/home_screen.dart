@@ -754,11 +754,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onZoomOut: () { final z = ref.read(timelineProvider).timeline.zoomLevel; ref.read(timelineProvider.notifier).setZoom((z / 1.3).clamp(1.0, 500.0)); },
                   onSnap: () { setState(() => _snapEnabled = !_snapEnabled); },
                   onSaveAs: _handleSave,
-                  onCut: () { debugPrint('[Menu] Cut'); },
-                  onCopy: () { debugPrint('[Menu] Copy'); },
-                  onPaste: () { debugPrint('[Menu] Paste'); },
-                  onSelectAll: () { debugPrint('[Menu] Select All'); },
-                  onDelete: () { debugPrint('[Menu] Delete'); },
+                  onCut: () { ref.read(timelineProvider.notifier).cutSelectedClips(); },
+                  onCopy: () { ref.read(timelineProvider.notifier).copySelectedClips(); },
+                  onPaste: () { ref.read(timelineProvider.notifier).pasteClips(); },
+                  onSelectAll: () { ref.read(timelineProvider.notifier).selectAllClips(); },
+                  onDelete: () { ref.read(timelineProvider.notifier).deleteSelectedClips(); },
+                  onSpeedDuration: () {
+                    final ctrl = TextEditingController(text: '1.0');
+                    showDialog<void>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Speed / Duration'),
+                        content: TextField(
+                          controller: ctrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(labelText: 'Speed (0.25 – 4.0)'),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                          TextButton(
+                            onPressed: () {
+                              final speed = double.tryParse(ctrl.text) ?? 1.0;
+                              ref.read(timelineProvider.notifier).setSelectedClipsSpeed(speed.clamp(0.25, 4.0));
+                              Navigator.pop(ctx);
+                            },
+                            child: const Text('Apply'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  onNest: () { ref.read(timelineProvider.notifier).nestSelectedClipsByIds(const <String>{}); },
+                  onAddTrack: () { ref.read(timelineProvider.notifier).addVideoTrack(); },
                   onFullScreen: () async {
                     await windowManager.setFullScreen(!await windowManager.isFullScreen());
                   },
