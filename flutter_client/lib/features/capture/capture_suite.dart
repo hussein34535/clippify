@@ -366,21 +366,18 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
   late TabController _tabController;
 
   // Screen recorder state
-  String _screenOutputPath = '';
   bool _screenIncludeAudio = true;
   bool _screenFullscreen = true;
 
   // Webcam state
   List<String> _cameraList = [];
   String _selectedCamera = '';
-  String _webcamOutputPath = '';
   bool _webcamPip = false;
   double _pipX = 0, _pipY = 0, _pipW = 240, _pipH = 180;
 
   // Audio state
   List<String> _audioDeviceList = [];
   String _selectedAudioDevice = '';
-  String _audioOutputPath = '';
   double _audioLevel = 0.0;
   Timer? _audioLevelTimer;
 

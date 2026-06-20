@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../../shared/providers/toast_provider.dart';
 import '../../../shared/providers/theme_provider.dart';
 import '../../ui/edge_ui.dart';
@@ -22,18 +21,6 @@ const _themePresets = <String>[
   'Forest',
   'Ocean',
 ];
-
-Color _themePresetColor(String name) {
-  switch (name) {
-    case 'ClipAI Dark': return const Color(0xFF7C6AF7);
-    case 'ClipAI Light': return const Color(0xFF7C6AF7);
-    case 'Midnight': return const Color(0xFF00D4FF);
-    case 'Sunset': return const Color(0xFFFF6B6B);
-    case 'Forest': return const Color(0xFF10B981);
-    case 'Ocean': return const Color(0xFF38BDF8);
-    default: return AppColors.primary;
-  }
-}
 
 class HeaderWidget extends ConsumerWidget {
   final VoidCallback? onExport;
@@ -229,7 +216,12 @@ class HeaderWidget extends ConsumerWidget {
             icon: Icons.cleaning_services_rounded, tooltip: 'Clear Cache',
             onTap: () async {
               final res = await ApiClient().clearCache();
-              ref.read(toastProvider.notifier).info(res['message'] ?? 'Cache cleared');
+              switch (res) {
+                case Success(data: final data):
+                  ref.read(toastProvider.notifier).info(data['message'] ?? 'Cache cleared');
+                case Failure(message: final msg):
+                  ref.read(toastProvider.notifier).error('Cache clear failed: $msg');
+              }
             },
           ),
           if (onSettings != null)

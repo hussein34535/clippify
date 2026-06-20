@@ -843,7 +843,7 @@ class EdgeWorkspaceManager {
 
   String get currentId => _currentId;
   EdgeWorkspace get current =>
-      EdgeWorkspace.defaults.firstWhere((w) => w.id == _currentId, orElse: () => EdgeWorkspace.defaults.first);
+      _customWorkspace ?? EdgeWorkspace.defaults.firstWhere((w) => w.id == _currentId, orElse: () => EdgeWorkspace.defaults.first);
 
   Map<String, double> get fractions => current.panelFractions;
 

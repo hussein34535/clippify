@@ -60,6 +60,46 @@ class BackendController {
     }
   }
 
+  /// قتل أي عملية غير الباك إند على port 8000
+  Future<bool> _killRogueProcessOnPort8000() async {
+    try {
+      if (Platform.isWindows) {
+        final result = await Process.run('cmd', ['/c', 'netstat -ano | findstr :8000']);
+        final lines = result.stdout.toString().split('\n');
+        for (final line in lines) {
+          if (line.contains('LISTENING')) {
+            final parts = line.trim().split(RegExp(r'\s+'));
+            if (parts.length >= 5) {
+              final pid = parts.last;
+              if (pid.isNotEmpty && int.tryParse(pid) != null) {
+                Process.killPid(int.parse(pid));
+                debugPrint('[BackendController] تم قتل العملية PID $pid');
+              }
+            }
+          }
+        }
+      } else {
+        final result = await Process.run('lsof', ['-ti:8000']);
+        final stdout = result.stdout.toString().trim();
+        if (stdout.isNotEmpty) {
+          final pids = stdout.split('\n');
+          for (final pid in pids) {
+            final trimmed = pid.trim();
+            if (trimmed.isNotEmpty && int.tryParse(trimmed) != null) {
+              Process.killPid(int.parse(trimmed));
+              debugPrint('[BackendController] تم قتل العملية PID $trimmed');
+            }
+          }
+        }
+      }
+      await Future.delayed(const Duration(milliseconds: 500));
+      return true;
+    } catch (e) {
+      debugPrint('[BackendController] فشل قتل العملية: $e');
+      return false;
+    }
+  }
+
   /// تشغيل عملية الباك إند
   Future<void> startBackend() async {
     if (await isPortInUse(8000)) {
@@ -71,22 +111,8 @@ class BackendController {
       }
       debugPrint('[BackendController] تحذير: البورت 8000 مشغول بعملية أخرى غير الباك إند!');
       debugPrint('[BackendController] محاولة قتل العملية المخالفة وإعادة تشغيل الباك إند...');
-      try {
-        final result = await Process.run('netstat', ['-ano', '|', 'findstr', ':8000'], runInShell: true);
-        final lines = result.stdout.toString().split('\n');
-        for (final line in lines) {
-          if (line.contains('LISTENING')) {
-            final parts = line.trim().split(RegExp(r'\s+'));
-            final pid = parts.last;
-            if (pid.isNotEmpty && int.tryParse(pid) != null) {
-              Process.killPid(int.parse(pid));
-              debugPrint('[BackendController] تم قتل العملية PID $pid');
-            }
-          }
-        }
-        await Future.delayed(const Duration(milliseconds: 500));
-      } catch (e) {
-        debugPrint('[BackendController] فشل قتل العملية: $e');
+      final killed = await _killRogueProcessOnPort8000();
+      if (!killed) {
         _isStarted = false;
         return;
       }

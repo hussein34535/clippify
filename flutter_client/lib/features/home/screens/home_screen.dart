@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -16,7 +15,6 @@ import '../../../core/plugins/plugin_system.dart';
 import '../../cloud/collaboration.dart';
 import '../../layout/widgets/header.dart';
 import '../../../shared/providers/toast_provider.dart';
-import '../../../shared/widgets/resizable_panel.dart';
 import '../../../shared/widgets/keyboard_shortcuts.dart';
 import '../../layout/widgets/export_modal.dart';
 import '../../layout/widgets/settings_modal.dart';
@@ -201,10 +199,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (outputFile == null) return;
     if (!outputFile.endsWith('.clipai')) outputFile += '.clipai';
     final res = await ApiClient().saveProject(timelineState.toJson(), outputPath: outputFile);
-    if (res != null && res['status'] == 'success') {
-      ref.read(toastProvider.notifier).success('Project saved!');
-    } else {
-      ref.read(toastProvider.notifier).error('Failed to save project.');
+    switch (res) {
+      case Success(data: final data):
+        if (data['status'] == 'success') {
+          ref.read(toastProvider.notifier).success('Project saved!');
+        } else {
+          ref.read(toastProvider.notifier).error('Failed to save project.');
+        }
+      case Failure():
+        ref.read(toastProvider.notifier).error('Failed to save project.');
     }
   }
 
@@ -214,17 +217,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     if (result == null || result.files.single.path == null) return;
     final String path = result.files.single.path!;
-    final data = await ApiClient().loadProject(path);
-    if (data != null && data['status'] == 'success' && data['timeline'] != null) {
-      final newProject = TimelineState.fromJson(data['timeline'] as Map<String, dynamic>);
-      ref.read(timelineProvider.notifier).loadProject(newProject);
-      ref.read(toastProvider.notifier).success('Project loaded!');
-      final videoClips = newProject.tracks.video.isNotEmpty ? newProject.tracks.video[0].clips : [];
-      if (videoClips.isNotEmpty && videoClips[0].sourcePath.isNotEmpty) {
-        _onSelectVideo(videoClips[0].sourcePath);
-      }
-    } else {
-      ref.read(toastProvider.notifier).error('Failed to load project.');
+    final loadResult = await ApiClient().loadProject(path);
+    switch (loadResult) {
+      case Success(data: final data):
+        if (data['status'] == 'success' && data['timeline'] != null) {
+          final newProject = TimelineState.fromJson(data['timeline'] as Map<String, dynamic>);
+          ref.read(timelineProvider.notifier).loadProject(newProject);
+          ref.read(toastProvider.notifier).success('Project loaded!');
+          final videoClips = newProject.tracks.video.isNotEmpty ? newProject.tracks.video[0].clips : [];
+          if (videoClips.isNotEmpty && videoClips[0].sourcePath.isNotEmpty) {
+            _onSelectVideo(videoClips[0].sourcePath);
+          }
+        } else {
+          ref.read(toastProvider.notifier).error('Failed to load project.');
+        }
+      case Failure():
+        ref.read(toastProvider.notifier).error('Failed to load project.');
     }
   }
 
@@ -356,29 +364,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() { _isExporting = true; _exportProgress = 0.1; _exportStatus = 'Running AutoCut...'; });
     final apiClient = ApiClient();
     final response = await apiClient.transcribe(_currentPreviewVideo!);
-    if (response != null && response['status'] == 'success') {
+    late bool transcribeOk;
+    switch (response) {
+      case Success(data: final data):
+        transcribeOk = data['status'] == 'success';
+      case Failure():
+        transcribeOk = false;
+    }
+    if (transcribeOk) {
       final cutResponse = await apiClient.detectSilence(_currentPreviewVideo!);
-      if (cutResponse != null && cutResponse['status'] == 'success') {
-        final silences = cutResponse['silences'] as List<dynamic>? ?? [];
-        final List<VideoClip> newClips = [];
-        double lastStart = 0.0;
-        int index = 0;
-        for (var sil in silences) {
-          final startSilence = (sil['start'] as num).toDouble();
-          final endSilence = (sil['end'] as num).toDouble();
-          if (startSilence > lastStart) {
-            newClips.add(VideoClip(id: 'clip_autocut_$index', sourcePath: _currentPreviewVideo!,
-              startTimeInTimeline: lastStart, endTimeInTimeline: startSilence,
-              sourceTrimStart: lastStart, sourceTrimEnd: startSilence,
-              transform: TransformState.defaultState(), colorGrading: ColorGradingState(),
-              filters: [], aiFeatures: AIFeatures()));
-            index++;
+      switch (cutResponse) {
+        case Success(data: final data):
+          if (data['status'] == 'success') {
+            final silences = data['silences'] as List<dynamic>? ?? [];
+            final List<VideoClip> newClips = [];
+            double lastStart = 0.0;
+            int index = 0;
+            for (var sil in silences) {
+              final startSilence = (sil['start'] as num).toDouble();
+              final endSilence = (sil['end'] as num).toDouble();
+              if (startSilence > lastStart) {
+                newClips.add(VideoClip(id: 'clip_autocut_$index', sourcePath: _currentPreviewVideo!,
+                  startTimeInTimeline: lastStart, endTimeInTimeline: startSilence,
+                  sourceTrimStart: lastStart, sourceTrimEnd: startSilence,
+                  transform: TransformState.defaultState(), colorGrading: ColorGradingState(),
+                  filters: [], aiFeatures: AIFeatures()));
+                index++;
+              }
+              lastStart = endSilence;
+            }
+            ref.read(timelineProvider.notifier).setClips(newClips);
+            setState(() { _isExporting = false; _exportStatus = ''; });
+            ref.read(toastProvider.notifier).success('${newClips.length} clips created!');
+          } else {
+            setState(() { _isExporting = false; _exportStatus = ''; });
+            ref.read(toastProvider.notifier).error('AutoCut failed.');
           }
-          lastStart = endSilence;
-        }
-        ref.read(timelineProvider.notifier).setClips(newClips);
-        setState(() { _isExporting = false; _exportStatus = ''; });
-        ref.read(toastProvider.notifier).success('${newClips.length} clips created!');
+        case Failure():
+          setState(() { _isExporting = false; _exportStatus = ''; });
+          ref.read(toastProvider.notifier).error('AutoCut failed.');
       }
     } else {
       setState(() { _isExporting = false; _exportStatus = ''; });
@@ -402,15 +426,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final res = await apiClient.exportXml(timelineData, outputPath: settings.xmlOutputPath, format: settings.xmlFormat);
       setState(() { _isExporting = false; _exportStatus = ''; });
       if (!mounted) return;
-      if (res != null && res['status'] == 'success') {
-        showDialog(context: context, builder: (context) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: const Text('XML Exported!', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
-          content: SelectableText('XML saved in:\n${res['output_path']}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-        ));
-        ref.read(toastProvider.notifier).success('XML exported!');
-      } else { ref.read(toastProvider.notifier).error('XML export failed.'); }
+      switch (res) {
+        case Success(data: final data):
+          if (data['status'] == 'success') {
+            showDialog(context: context, builder: (context) => AlertDialog(
+              backgroundColor: AppColors.surface,
+              title: const Text('XML Exported!', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
+              content: SelectableText('XML saved in:\n${data['output_path']}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+            ));
+            ref.read(toastProvider.notifier).success('XML exported!');
+          } else { ref.read(toastProvider.notifier).error('XML export failed.'); }
+        case Failure():
+          ref.read(toastProvider.notifier).error('XML export failed.');
+      }
       return;
     }
 
@@ -445,17 +474,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     final apiClient = ApiClient();
-    final sessionId = await apiClient.renderPlan(
+    final sidResult = await apiClient.renderPlan(
       videoPath: _currentPreviewVideo ?? clips[0].sourcePath, clips: clipJsonList,
       exportQuality: settings.exportQuality, exportMode: 'ffmpeg',
       presetName: settings.presetName, codec: settings.codec, pixelFormat: settings.pixelFormat,
     );
-    if (sessionId == null) {
-      setState(() { _isExporting = false; _exportStatus = 'Export failed.'; });
-      ref.read(toastProvider.notifier).error('Failed to start export.');
-      return;
+    switch (sidResult) {
+      case Success(data: final sessionId):
+        _pollExportStatus(sessionId);
+      case Failure():
+        setState(() { _isExporting = false; _exportStatus = 'Export failed.'; });
+        ref.read(toastProvider.notifier).error('Failed to start export.');
     }
-    _pollExportStatus(sessionId);
   }
 
   void _pollExportStatus(String sessionId) async {
@@ -465,36 +495,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       await Future.delayed(const Duration(seconds: 1));
       if (!mounted) return;
       final statusData = await apiClient.getSessionStatus(sessionId);
-      if (statusData != null) {
-        failedAttempts = 0;
-        final progress = (statusData['progress'] as num?)?.toDouble() ?? 0.0;
-        final status = statusData['status'] as String? ?? '';
-        final results = statusData['results'] as List<dynamic>? ?? [];
-        final errors = statusData['errors'] as List<dynamic>? ?? [];
-        setState(() { _exportProgress = progress; _exportStatus = status; });
-        if (status.toLowerCase().startsWith('done') && results.isNotEmpty) {
-          setState(() { _isExporting = false; _exportStatus = ''; });
-          if (!mounted) return;
-          showDialog(context: context, builder: (context) => AlertDialog(
-            title: const Text('Export Complete!', style: TextStyle(fontFamily: 'Outfit')),
-            content: SelectableText('Video saved in:\n${results.first}'),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-          ));
-          break;
-        }
-        if (status.toLowerCase() == 'failed' || errors.isNotEmpty) {
-          setState(() { _isExporting = false; _exportStatus = ''; });
-          if (!mounted) return;
-          showDialog(context: context, builder: (context) => AlertDialog(
-            title: const Text('Export Error', style: TextStyle(fontFamily: 'Outfit')),
-            content: Text(errors.isNotEmpty ? errors.join('\n') : 'FFmpeg processing error.'),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-          ));
-          break;
-        }
-      } else {
-        failedAttempts++;
-        if (failedAttempts > 10) { setState(() { _isExporting = false; _exportStatus = ''; }); break; }
+      switch (statusData) {
+        case Success(data: final data):
+          failedAttempts = 0;
+          final progress = (data['progress'] as num?)?.toDouble() ?? 0.0;
+          final status = data['status'] as String? ?? '';
+          final results = data['results'] as List<dynamic>? ?? [];
+          final errors = data['errors'] as List<dynamic>? ?? [];
+          setState(() { _exportProgress = progress; _exportStatus = status; });
+          if (status.toLowerCase().startsWith('done') && results.isNotEmpty) {
+            setState(() { _isExporting = false; _exportStatus = ''; });
+            if (!mounted) return;
+            showDialog(context: context, builder: (context) => AlertDialog(
+              title: const Text('Export Complete!', style: TextStyle(fontFamily: 'Outfit')),
+              content: SelectableText('Video saved in:\n${results.first}'),
+              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+            ));
+            return;
+          }
+          if (status.toLowerCase() == 'failed' || errors.isNotEmpty) {
+            setState(() { _isExporting = false; _exportStatus = ''; });
+            if (!mounted) return;
+            showDialog(context: context, builder: (context) => AlertDialog(
+              title: const Text('Export Error', style: TextStyle(fontFamily: 'Outfit')),
+              content: Text(errors.isNotEmpty ? errors.join('\n') : 'FFmpeg processing error.'),
+              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+            ));
+            return;
+          }
+        case Failure():
+          failedAttempts++;
+          if (failedAttempts > 10) { setState(() { _isExporting = false; _exportStatus = ''; }); return; }
       }
     }
   }

@@ -118,12 +118,18 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
         double duration = 0.0;
         String? thumbPath;
 
-        if (mediaInfo != null && mediaInfo['status'] == 'success') {
-          duration = (mediaInfo['duration'] as num?)?.toDouble() ?? 0.0;
-          thumbPath = mediaInfo['thumbnail_path'] as String?;
-        } else {
-          thumbPath = await _generateThumbnail(path);
-          duration = await _getVideoDuration(path);
+        switch (mediaInfo) {
+          case Success(data: final data):
+            if (data['status'] == 'success') {
+              duration = (data['duration'] as num?)?.toDouble() ?? 0.0;
+              thumbPath = data['thumbnail_path'] as String?;
+            } else {
+              thumbPath = await _generateThumbnail(path);
+              duration = await _getVideoDuration(path);
+            }
+          case Failure():
+            thumbPath = await _generateThumbnail(path);
+            duration = await _getVideoDuration(path);
         }
 
         final media = MediaFile(path: path, name: name, thumbnailPath: thumbPath, duration: duration);
@@ -145,18 +151,17 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
     });
 
     final apiClient = ApiClient();
-    final sessionId = await apiClient.downloadYoutube(url);
+    final downloadResult = await apiClient.downloadYoutube(url);
 
-    if (sessionId == null) {
-      setState(() {
-        _isDownloading = false;
-        _downloadStatus = 'فشل بدء التحميل. تأكد من اتصالك بالإنترنت والباك إند.';
-      });
-      return;
+    switch (downloadResult) {
+      case Success(data: final sessionId):
+        _pollDownloadStatus(sessionId);
+      case Failure():
+        setState(() {
+          _isDownloading = false;
+          _downloadStatus = 'فشل بدء التحميل. تأكد من اتصالك بالإنترنت والباك إند.';
+        });
     }
-
-    // الاستماع لتقدم التحميل عبر البولينج البسيط
-    _pollDownloadStatus(sessionId);
   }
 
   void _pollDownloadStatus(String sessionId) async {
@@ -168,62 +173,69 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
       if (!mounted) return;
 
       final statusData = await apiClient.getSessionStatus(sessionId);
-      if (statusData != null) {
-        failedAttempts = 0;
-        final progress = (statusData['progress'] as num?)?.toDouble() ?? 0.0;
-        final status = statusData['status'] as String? ?? '';
-        final results = statusData['results'] as List<dynamic>? ?? [];
-        final errors = statusData['errors'] as List<dynamic>? ?? [];
-
-        setState(() {
-          _downloadProgress = progress;
-          _downloadStatus = status;
-        });
-
-        if (status.toLowerCase() == 'done' && results.isNotEmpty) {
-          final videoPath = results.first as String;
-          final name = videoPath.split('/').last.split('\\').last;
+      switch (statusData) {
+        case Success(data: final data):
+          failedAttempts = 0;
+          final progress = (data['progress'] as num?)?.toDouble() ?? 0.0;
+          final status = data['status'] as String? ?? '';
+          final results = data['results'] as List<dynamic>? ?? [];
+          final errors = data['errors'] as List<dynamic>? ?? [];
 
           setState(() {
-            _isDownloading = false;
+            _downloadProgress = progress;
+            _downloadStatus = status;
           });
 
-          final apiClient = ApiClient();
-          final mediaInfo = await apiClient.getMediaInfo(videoPath);
+          if (status.toLowerCase() == 'done' && results.isNotEmpty) {
+            final videoPath = results.first as String;
+            final name = videoPath.split('/').last.split('\\').last;
 
-          double duration = 0.0;
-          String? thumbPath;
+            setState(() {
+              _isDownloading = false;
+            });
 
-          if (mediaInfo != null && mediaInfo['status'] == 'success') {
-            duration = (mediaInfo['duration'] as num?)?.toDouble() ?? 0.0;
-            thumbPath = mediaInfo['thumbnail_path'] as String?;
-          } else {
-            thumbPath = await _generateThumbnail(videoPath);
-            duration = await _getVideoDuration(videoPath);
+            final apiClient = ApiClient();
+            final mediaInfo = await apiClient.getMediaInfo(videoPath);
+
+            double duration = 0.0;
+            String? thumbPath;
+
+            switch (mediaInfo) {
+              case Success(data: final mi):
+                if (mi['status'] == 'success') {
+                  duration = (mi['duration'] as num?)?.toDouble() ?? 0.0;
+                  thumbPath = mi['thumbnail_path'] as String?;
+                } else {
+                  thumbPath = await _generateThumbnail(videoPath);
+                  duration = await _getVideoDuration(videoPath);
+                }
+              case Failure():
+                thumbPath = await _generateThumbnail(videoPath);
+                duration = await _getVideoDuration(videoPath);
+            }
+
+            final media = MediaFile(path: videoPath, name: name, isYoutube: true, thumbnailPath: thumbPath, duration: duration);
+            widget.onFileAdded(media);
+            widget.onSelectVideo(videoPath);
+            return;
           }
 
-          final media = MediaFile(path: videoPath, name: name, isYoutube: true, thumbnailPath: thumbPath, duration: duration);
-          widget.onFileAdded(media);
-          widget.onSelectVideo(videoPath);
-          break;
-        }
-
-        if (status.toLowerCase() == 'failed' || errors.isNotEmpty) {
-          setState(() {
-            _isDownloading = false;
-            _downloadStatus = 'فشل التحميل: ${errors.isNotEmpty ? errors.join(', ') : 'خطأ غير معروف'}';
-          });
-          break;
-        }
-      } else {
-        failedAttempts++;
-        if (failedAttempts > 10) {
-          setState(() {
-            _isDownloading = false;
-            _downloadStatus = 'انقطع الاتصال بالخادم أثناء التحميل.';
-          });
-          break;
-        }
+          if (status.toLowerCase() == 'failed' || errors.isNotEmpty) {
+            setState(() {
+              _isDownloading = false;
+              _downloadStatus = 'فشل التحميل: ${errors.isNotEmpty ? errors.join(', ') : 'خطأ غير معروف'}';
+            });
+            return;
+          }
+        case Failure():
+          failedAttempts++;
+          if (failedAttempts > 10) {
+            setState(() {
+              _isDownloading = false;
+              _downloadStatus = 'انقطع الاتصال بالخادم أثناء التحميل.';
+            });
+            return;
+          }
       }
     }
   }

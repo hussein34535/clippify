@@ -61,14 +61,19 @@ class MacroNotifier extends StateNotifier<MacroState> {
         timelineState.toJson(),
       );
 
-      if (response != null && response['status'] == 'success') {
-        if (response['new_state'] != null) {
-          final newState = TimelineState.fromJson(response['new_state'] as Map<String, dynamic>);
-          ref.read(timelineProvider.notifier).updateTimelineState(newState);
-        }
-        ref.read(toastProvider.notifier).success('تم تطبيق الماكرو بنجاح! 🎉');
-      } else {
-        ref.read(toastProvider.notifier).error('فشل تطبيق الماكرو بالخادم.');
+      switch (response) {
+        case Success(data: final data):
+          if (data['status'] == 'success') {
+            if (data['new_state'] != null) {
+              final newState = TimelineState.fromJson(data['new_state'] as Map<String, dynamic>);
+              ref.read(timelineProvider.notifier).updateTimelineState(newState);
+            }
+            ref.read(toastProvider.notifier).success('تم تطبيق الماكرو بنجاح! 🎉');
+          } else {
+            ref.read(toastProvider.notifier).error('فشل تطبيق الماكرو بالخادم.');
+          }
+        case Failure(message: final msg):
+          ref.read(toastProvider.notifier).error('خطأ أثناء تشغيل الماكرو: $msg');
       }
     } catch (e) {
       ref.read(toastProvider.notifier).error('خطأ أثناء تشغيل الماكرو: $e');

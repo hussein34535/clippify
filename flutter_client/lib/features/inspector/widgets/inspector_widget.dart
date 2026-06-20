@@ -6,7 +6,6 @@ import '../../../core/models/timeline_models.dart';
 import '../../../core/theme/app_theme.dart';
 import 'ai_tool_palette.dart';
 import 'subtitle_editor.dart';
-import 'keyframe_editor.dart';
 import 'speed_ramp_editor.dart';
 import 'color_grading_panel.dart';
 import 'inspector_shared.dart';
@@ -14,7 +13,6 @@ import '../../../shared/providers/comments_provider.dart';
 import '../../../shared/widgets/audio_mixer.dart';
 import '../../ai/widgets/ai_panels.dart';
 import '../../audio/widgets/audio_automation.dart';
-import '../../audio/providers/audio_mixer_provider.dart';
 import '../../tracking/tracker_system.dart';
 import '../../color/pro_color_wheels.dart';
 import '../../keyframes/curve_editor.dart';
@@ -562,38 +560,14 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
       }
     }
     if (clip == null) return const SizedBox.shrink();
+    final clipId = clip.id;
     return AudioEQControls(
-      bass: clip!.bass, mid: clip!.mid, treble: clip!.treble,
-      volume: clip!.volume,
-      onVolumeChanged: (v) => notifier.updateVideoClip(clip!.id, (c) => c.copyWith(volume: v)),
-      onBassChanged: (v) => notifier.updateVideoClip(clip!.id, (c) => c.copyWith(bass: v)),
-      onMidChanged: (v) => notifier.updateVideoClip(clip!.id, (c) => c.copyWith(mid: v)),
-      onTrebleChanged: (v) => notifier.updateVideoClip(clip!.id, (c) => c.copyWith(treble: v)),
-    );
-  }
-
-  Widget _buildEffectToggle(VideoClip clip, String effectId, String label, IconData icon) {
-    final isOn = clip.audioEffects.contains(effectId);
-    final notifier = ref.read(timelineProvider.notifier);
-    return SwitchListTile(
-      title: Row(
-        children: [
-          Icon(icon, size: 14, color: AppColors.textSecondary),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(fontSize: 12)),
-        ],
-      ),
-      value: isOn,
-      onChanged: (v) {
-        final updated = List<String>.from(clip.audioEffects);
-        if (v) {
-          updated.add(effectId);
-        } else {
-          updated.remove(effectId);
-        }
-        notifier.updateVideoClip(clip.id, (c) => c.copyWith(audioEffects: updated));
-      },
-      activeTrackColor: AppColors.primary,
+      bass: clip.bass, mid: clip.mid, treble: clip.treble,
+      volume: clip.volume,
+      onVolumeChanged: (v) => notifier.updateVideoClip(clipId, (c) => c.copyWith(volume: v)),
+      onBassChanged: (v) => notifier.updateVideoClip(clipId, (c) => c.copyWith(bass: v)),
+      onMidChanged: (v) => notifier.updateVideoClip(clipId, (c) => c.copyWith(mid: v)),
+      onTrebleChanged: (v) => notifier.updateVideoClip(clipId, (c) => c.copyWith(treble: v)),
     );
   }
 

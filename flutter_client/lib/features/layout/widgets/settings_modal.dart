@@ -54,30 +54,31 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
     setState(() {
       _loading = true;
     });
-    try {
-      final settings = await ApiClient().getSettings();
-      setState(() {
-        _outputDirController.text = settings['output_dir'] as String? ?? './output';
-        _nClipsController.text = (settings['n_clips'] ?? 5).toString();
-        _durationController.text = (settings['duration'] ?? 60).toString();
-        _pexelsKeyController.text = settings['pexels_api_key'] as String? ?? '';
-        _pixabayKeyController.text = settings['pixabay_api_key'] as String? ?? '';
-        
-        _subtitleStyle = settings['subtitle_style'] as String? ?? 'TikTok Yellow';
-        _exportMode = settings['export_mode'] as String? ?? 'ffmpeg';
-        _whisperModel = settings['whisper_model'] as String? ?? 'tiny';
-        _translateToArabic = settings['translate_to_arabic'] as bool? ?? false;
-        _autoBroll = settings['auto_broll'] as bool? ?? false;
-        _autosaveIntervalMin = settings['autosave_interval_min'] as int? ?? 5;
-        _cacheSizeMB = settings['cache_size_mb'] as int? ?? 500;
-        
-        _loading = false;
-      });
-    } catch (e) {
-      ref.read(toastProvider.notifier).error('فشل تحميل الإعدادات من السيرفر: $e');
-      setState(() {
-        _loading = false;
-      });
+    final result = await ApiClient().getSettings();
+    switch (result) {
+      case Success(data: final settings):
+        setState(() {
+          _outputDirController.text = settings['output_dir'] as String? ?? './output';
+          _nClipsController.text = (settings['n_clips'] ?? 5).toString();
+          _durationController.text = (settings['duration'] ?? 60).toString();
+          _pexelsKeyController.text = settings['pexels_api_key'] as String? ?? '';
+          _pixabayKeyController.text = settings['pixabay_api_key'] as String? ?? '';
+          
+          _subtitleStyle = settings['subtitle_style'] as String? ?? 'TikTok Yellow';
+          _exportMode = settings['export_mode'] as String? ?? 'ffmpeg';
+          _whisperModel = settings['whisper_model'] as String? ?? 'tiny';
+          _translateToArabic = settings['translate_to_arabic'] as bool? ?? false;
+          _autoBroll = settings['auto_broll'] as bool? ?? false;
+          _autosaveIntervalMin = settings['autosave_interval_min'] as int? ?? 5;
+          _cacheSizeMB = settings['cache_size_mb'] as int? ?? 500;
+          
+          _loading = false;
+        });
+      case Failure(message: final msg):
+        ref.read(toastProvider.notifier).error('فشل تحميل الإعدادات من السيرفر: $msg');
+        setState(() {
+          _loading = false;
+        });
     }
   }
 
@@ -101,12 +102,15 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
         'cache_size_mb': _cacheSizeMB,
       };
 
-      final success = await ApiClient().postSettings(settingsData);
-      if (success) {
-        ref.read(toastProvider.notifier).success('تم حفظ الإعدادات بنجاح! 💾');
-        if (mounted) Navigator.pop(context, true);
-      } else {
-        ref.read(toastProvider.notifier).error('فشل حفظ الإعدادات بالخادم.');
+      final postResult = await ApiClient().postSettings(settingsData);
+      switch (postResult) {
+        case Success(data: true):
+          ref.read(toastProvider.notifier).success('تم حفظ الإعدادات بنجاح! 💾');
+          if (mounted) Navigator.pop(context, true);
+        case Success(data: false):
+          ref.read(toastProvider.notifier).error('فشل حفظ الإعدادات بالخادم.');
+        case Failure(message: final msg):
+          ref.read(toastProvider.notifier).error('خطأ أثناء حفظ الإعدادات: $msg');
       }
     } catch (e) {
       ref.read(toastProvider.notifier).error('خطأ أثناء حفظ الإعدادات: $e');
@@ -145,7 +149,12 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
 
     try {
       final res = await ApiClient().clearCache();
-      ref.read(toastProvider.notifier).info(res['message'] ?? 'تم تفريغ الذاكرة المؤقتة بنجاح.');
+      switch (res) {
+        case Success(data: final data):
+          ref.read(toastProvider.notifier).info(data['message'] ?? 'تم تفريغ الذاكرة المؤقتة بنجاح.');
+        case Failure(message: final msg):
+          ref.read(toastProvider.notifier).error('فشل تنظيف الذاكرة المؤقتة: $msg');
+      }
     } catch (e) {
       ref.read(toastProvider.notifier).error('فشل تنظيف الذاكرة المؤقتة: $e');
     }

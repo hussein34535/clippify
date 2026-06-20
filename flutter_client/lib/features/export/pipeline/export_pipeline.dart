@@ -674,7 +674,6 @@ class _ExportPipelinePanelState extends State<ExportPipelinePanel> {
   EncoderConfig? _selectedEncoder;
   FormatConfig? _selectedFormat;
   ExportPreset? _selectedPreset;
-  String _pixelFormat = 'yuv420p';
   int _bitrateMbps = 8;
   int _maxBitrateMbps = 50;
   int _estimatedDurationSec = 60;
@@ -682,10 +681,11 @@ class _ExportPipelinePanelState extends State<ExportPipelinePanel> {
   bool _includeMetadata = true;
   String? _watermarkPath;
   String _watermarkPosition = 'bottom-right';
+  // ignore: unused_field
+  String _pixelFormat = '';
   bool _isDetecting = true;
   bool _isExporting = false;
   final Set<String> _completedJobs = {};
-  final Set<String> _failedJobs = {};
   late final TextEditingController _durationController;
 
   @override

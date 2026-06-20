@@ -176,3 +176,40 @@ python api.py
 cd flutter_client
 flutter run -d windows
 ```
+
+---
+
+## Phase 2 — Feature Expansion & Polish (قيد التنفيذ)
+
+### Status
+| Metric | Value |
+|--------|-------|
+| `flutter analyze` | 0 errors, 0 warnings, 198 infos |
+| `flutter test` | 55/55 passed |
+| `flutter build windows --release` | نجح (58s) |
+| New tests added | 18 (constants, api_result, timeline_provider) |
+| GitHub Actions CI | Added `.github/workflows/flutter_ci.yml` |
+| Constants refactored | `timeline_constants.dart` with 18 named constants |
+
+### Completed
+| # | Task |
+|---|------|
+| ✅ | README.md rewritten for Flutter Desktop + FastAPI |
+| ✅ | `timeline_constants.dart` created with track heights, zoom, snap, grid, playhead constants |
+| ✅ | Magic numbers replaced in `timeline_widget.dart` (track configs, zoom, sidebar, grid, snap, borders) |
+| ✅ | Magic numbers replaced in `clip_item_widget.dart` (thumbnail, borders) |
+| ✅ | Magic numbers replaced in `timeline_provider.dart` (zoom clamp) |
+| ✅ | `ApiClient` singleton test + `ApiResult<T>` sealed class pattern matching tests |
+| ✅ | `TimelineConstants` unit test (all values verified) |
+| ✅ | `TimelineNotifier` unit test (setPlayhead, setZoom, clamps, undo) |
+| ✅ | `TimelineStateData` copyWith unit test |
+| ✅ | GitHub Actions CI workflow (analyze + test + build Windows) |
+| ✅ | `pubspec.yaml` description updated |
+
+### Remaining (Phase 2.5+)
+| # | Task | Priority |
+|---|------|----------|
+| 1 | توحيد اسم المشروع (flutter_client → clipai) عبر الـ package | Low |
+| 2 | إضافة المزيد من Widget Tests (ClipItemWidget, VideoPlayer, HomeScreen) | Medium |
+| 3 | تحسينات الأداء (استخراج الـ 4 resize handlers المكررة في _buildTrackLane) | Medium |
+| 4 | إضافة الترجمة (i18n) مع دعم العربية والإنجليزية | Low |

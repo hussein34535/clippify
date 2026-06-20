@@ -1,268 +1,198 @@
-# 🎬 ClipAI — Local Video Clipper + YouTube Uploader
+# ClipAI — Professional NLE Desktop Editor
 
-> Automatically extract the best short vertical clips (9:16) from any long video,
-> then upload them to YouTube — **100% offline processing, no AI APIs, no cloud costs.**
-
----
-
-## How it works
-
-```
-Audio waveform → RMS energy per 0.5s window → Normalise → Peak detection → Clip windows → Export → YouTube
-```
-
-| Stage | Module | Description |
-|---|---|---|
-| Extract | `audio.py` | Pull audio as mono 16kHz WAV via moviepy |
-| Analyse | `audio.py` | Compute RMS energy per 0.5s window, normalise 0→1 |
-| Detect | `detector.py` | Smooth curve, find peaks, remove overlaps |
-| Export | `editor.py` | Cut → 9:16 crop → caption bar → mp4 |
-| Upload | `uploader.py` | OAuth2 → YouTube API v3 resumable upload |
+**Flutter Desktop video editor** — professional-grade, AI-powered, 100% offline.
+Built with Flutter 3.44 + FastAPI backend + FFmpeg for a CapCut/Premiere Pro level editing experience.
 
 ---
 
-## Requirements
+## Architecture
 
-### System
-- **Python 3.9+**
-- **ffmpeg** — must be installed separately:
-  - Windows: `choco install ffmpeg` or download from https://ffmpeg.org/download.html
-  - macOS: `brew install ffmpeg`
-  - Linux: `sudo apt install ffmpeg`
+```
+┌─────────────────────────────────────────────────┐
+│              Flutter Desktop App                 │
+│  ┌─────────┐  ┌──────────┐  ┌────────────────┐ │
+│  │ Timeline │  │  Player  │  │  Inspector     │ │
+│  │  (NLE)   │  │ (media_kit)│  │  (AI + Effects)│ │
+│  └─────────┘  └──────────┘  └────────────────┘ │
+│  ┌─────────┐  ┌──────────┐  ┌────────────────┐ │
+│  │ Library │  │ Subtitle │  │  Export/Render │ │
+│  └─────────┘  └──────────┘  └────────────────┘ │
+│         │            │             │            │
+│         ▼            ▼             ▼            │
+│  ┌──────────────────────────────────────────┐   │
+│  │           BackendController              │   │
+│  │    (Process management, health check)     │   │
+│  └──────────────────────────────────────────┘   │
+└──────────────────────┬──────────────────────────┘
+                       │ HTTP (port 8000)
+┌──────────────────────▼──────────────────────────┐
+│              FastAPI Backend (api.py)             │
+│  Media-info  │  Transcription  │  AI Tools      │
+│  Silence     │  Copilot        │  Project I/O   │
+│  Detection   │                 │  Render/Export  │
+│  YouTube DL  │                 │  Settings       │
+└──────────────────────────────────────────────────┘
+```
 
-### Python packages
+### Key Technologies
+
+| Layer | Technology |
+|-------|-----------|
+| UI Framework | Flutter 3.44.2 (stable, Dart 3.12.2) |
+| Video Playback | media_kit (libmpv backend) |
+| State Management | Riverpod 2.x |
+| Backend | Python FastAPI (port 8000) |
+| Media Engine | FFmpeg / FFprobe |
+| AI | Transformers, Torch (local, no cloud) |
+
+---
+
+## Features
+
+### Timeline (Full NLE)
+- Multi-track video/audio/overlay/subtitle/text
+- Sidebar outside scroll — fixed 110px + horizontal scroll
+- Track heights: 78/58/48/38 with 4px gaps
+- Grid lines (every 5s), time ruler with timecode
+- Playhead (white) + Snap line (orange)
+- Zoom: Ctrl+scroll / pinch / slider (1x–500x)
+- Clip resize (left/right handles) + drag-to-move
+- Snap-to-playhead + snap-to-clips
+- Vertical scroll for tracks, auto-scroll playhead
+- Undo/Redo (Command Pattern)
+
+### Video Player
+- media_kit with libmpv
+- Bidirectional sync: position → playhead / playhead → seek
+- Safe seek with debounce (prevents thrashing)
+- Cache settings (500MB)
+- Play/pause, mute, volume, timecode, seek slider
+- Playhead scrubbing with zero Riverpod rebuilds
+
+### AI & Effects
+- AI Tool Palette (219 tools)
+- Copilot chat
+- Color Grading Panel (Color Wheel + 8 presets)
+- Audio EQ (bass/mid/treble) + effects chain
+- Speed ramping with keyframes
+- Transitions engine
+- Inspector with keyframe editor
+
+### Media Library
+- Drag & drop from library to timeline
+- Thumbnails via FFmpeg
+- YouTube import (dialog)
+- Local file browser
+
+### Project Management
+- Save/Load projects (JSON)
+- Autosave every 5 minutes (local, no API needed)
+- Export modal with encoder/format/preset selection
+
+### Additional
+- Dark/Light Theme toggle
+- Keyboard shortcuts system
+- Toast notifications
+- Resizable panels (LayoutBuilder)
+- Macros (record/playback)
+- Subtitle editor
+- Export pipeline (batch processing)
+
+---
+
+## Quick Start
+
+### Prerequisites
+
 ```bash
+# Flutter 3.44+ (stable channel)
+flutter --version
+
+# FFmpeg + FFprobe
+ffmpeg -version
+
+# Python 3.9+
+python --version
+```
+
+### Install & Run
+
+```bash
+# 1. Backend
 pip install -r requirements.txt
+python api.py &
+
+# 2. Flutter app
+cd flutter_client
+flutter pub get
+flutter run -d windows
 ```
 
----
+Or run everything from Flutter: the `BackendController` automatically starts/verifies the backend.
 
-## Desktop App
+### Build Release
 
 ```bash
-python app.py
-```
-
-### Features
-- 🎬 Drop or browse any video file
-- ⚡ Sliders for clip count (1–10) and duration (15–120s)
-- 📊 Real-time progress bar
-- ✅ Results list with timestamps
-- 📁 Open output folder button
-- ☀/🌙 Dark/Light mode toggle
-- 📤 **Auto-upload to YouTube** (see setup below)
-
----
-
-## 🎯 Settings Guide — Best Settings Per Video Type
-
-> ClipAI uses **audio energy** to detect the best moments.
-> Different content types have very different energy patterns — use this guide to get the best results.
-
----
-
-### 📻 Podcast / Talk Show
-
-Long conversations between 2–3 people. Energy spikes happen at debates, laughs, surprising facts.
-
-| Setting | Recommended | Reason |
-|---|---|---|
-| **Clips** | 5–8 | Podcasts have many good moments |
-| **Duration** | 45–90s | Enough to capture the full thought |
-| **Best moments** | Debate, reaction, storytelling peaks |
-
-```bash
-python clipper.py --video podcast.mp4 --clips 6 --duration 60
+cd flutter_client
+flutter build windows --release
+# Output: build\windows\x64\runner\Release\flutter_client.exe
 ```
 
 ---
 
-### 🎓 Lecture / Educational Video
+## Project Structure
 
-One speaker, steady pace. Energy peaks mark key points, definitions, or examples.
-
-| Setting | Recommended | Reason |
-|---|---|---|
-| **Clips** | 3–5 | Fewer but denser information moments |
-| **Duration** | 30–60s | One concept per clip |
-| **Best moments** | "The key idea is…", formula explanations |
-
-```bash
-python clipper.py --video lecture.mp4 --clips 4 --duration 45
-```
-
----
-
-### 🎤 Interview (YouTube / News)
-
-Q&A format. Good clips = strong answers or emotional reactions.
-
-| Setting | Recommended | Reason |
-|---|---|---|
-| **Clips** | 4–6 | Each answer = one clip |
-| **Duration** | 30–60s | Short punchy answers work best for Shorts |
-| **Best moments** | Direct answers, personal stories |
-
-```bash
-python clipper.py --video interview.mp4 --clips 5 --duration 40
-```
-
----
-
-### 🎮 Gaming / Reaction Video
-
-Very dynamic audio — spikes everywhere. High energy = hype moments.
-
-| Setting | Recommended | Reason |
-|---|---|---|
-| **Clips** | 5–10 | Lots of good moments |
-| **Duration** | 15–30s | Short clips = more viral potential |
-| **Best moments** | Clutch plays, wins, jump scares |
-
-```bash
-python clipper.py --video gameplay.mp4 --clips 8 --duration 20
-```
-
----
-
-### 🏋️ Motivational Speech / TED Talk
-
-One speaker, strong emotional peaks. Best moments = call to action, key quotes.
-
-| Setting | Recommended | Reason |
-|---|---|---|
-| **Clips** | 3–5 | Only the strongest moments |
-| **Duration** | 30–60s | One powerful idea per clip |
-| **Best moments** | "This is why…", emotional crescendos |
-
-```bash
-python clipper.py --video tedtalk.mp4 --clips 4 --duration 50
-```
-
----
-
-### 🎵 Music / Concert / Performance
-
-Audio energy is very high throughout. Look for peak moments: drops, solos, choruses.
-
-| Setting | Recommended | Reason |
-|---|---|---|
-| **Clips** | 3–6 | Highlight best musical moments |
-| **Duration** | 30–60s | Enough to feel the vibe |
-| **Best moments** | Drop, chorus, key change, crowd reaction |
-
-```bash
-python clipper.py --video concert.mp4 --clips 4 --duration 45
-```
-
----
-
-### ⚠️ When results are not great
-
-| Problem | Solution |
-|---|---|
-| All clips look the same | Reduce `--clips`, the video has few truly "peak" moments |
-| Clips cut off mid-sentence | Increase `--duration` by 15–20s |
-| Clips start with silence | The energy window is correct — it starts just before the peak, this is normal |
-| Too many similar clips | Reduce `--clips` to 3 and use longer duration |
-| Video is mostly quiet/music-only | ClipAI works best on speech; evenly-spaced clips will be used instead |
-
----
-
-## YouTube Upload Setup (one-time, ~5 minutes)
-
-> [!NOTE]
-> You only need to do this once. After the first login, a `token.json` is saved
-> and you never need to log in again.
-
-### Steps
-
-**1. Go to Google Cloud Console**
-```
-https://console.cloud.google.com
-```
-
-**2. Create a new project**
-- Click the project dropdown (top-left) → "New Project"
-- Name it `ClipAI` → Create
-
-**3. Enable YouTube Data API v3**
-- APIs & Services → Enable APIs & Services
-- Search: `YouTube Data API v3` → Enable
-
-**4. Create OAuth 2.0 credentials**
-- APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID
-- Application type: **Desktop App**
-- Name: `ClipAI` → Create
-
-**5. Download & rename**
-- Click the download icon (⬇) next to your new credential
-- Rename the file to: **`client_secrets.json`**
-
-**6. Place the file**
 ```
 clipai/
-├── app.py
-├── client_secrets.json   ← put it here
+├── api.py                          # FastAPI backend (port 8000)
+├── requirements.txt                # Python dependencies
+├── AGENTS.md                       # AI development guide
+├── flutter_client/
+│   ├── lib/
+│   │   ├── main.dart               # Entry point
+│   │   ├── app.dart                # MaterialApp
+│   │   ├── launch/
+│   │   │   └── backend_controller.dart  # Backend lifecycle
+│   │   ├── core/
+│   │   │   ├── api/
+│   │   │   │   └── api_client.dart      # Dio HTTP client + ApiResult<T>
+│   │   │   ├── models/
+│   │   │   │   └── timeline_models.dart # All data models
+│   │   │   ├── theme/
+│   │   │   │   └── app_theme.dart       # Dark/Light theme
+│   │   │   └── cache/
+│   │   │       └── cache_manager.dart   # Disk cache
+│   │   ├── features/
+│   │   │   ├── timeline/   # providers/, widgets/, painters/
+│   │   │   ├── player/     # Video player widget
+│   │   │   ├── library/    # Media library
+│   │   │   ├── inspector/  # Inspector dashboard
+│   │   │   ├── home/       # Main screen + layout
+│   │   │   ├── export/     # Export pipeline
+│   │   │   ├── subtitle/   # Subtitle editor
+│   │   │   ├── ai/         # AI tools + copilot
+│   │   │   └── audio/      # Audio effects engine
+│   │   └── shared/         # Macros, keyboard shortcuts, utils
+│   ├── test/
+│   │   └── ...             # 37 unit tests
+│   └── pubspec.yaml
 └── ...
 ```
 
-**7. First upload**
-- Generate clips in the app
-- YouTube section appears → pick privacy → click "Upload All Clips to YouTube"
-- Browser opens → log in with your Google account → done
-- `token.json` is saved automatically for future sessions
+---
+
+## Development Status
+
+| Metric | Current |
+|--------|---------|
+| `flutter analyze` | 0 errors, 0 warnings |
+| `flutter test` | 37/37 passed |
+| `flutter build windows --release` | ✅ Success |
+| Flutter SDK | 3.44.2 (stable) |
+| Backend | FastAPI 0.136.1 on port 8000 |
 
 ---
 
-## CLI Usage
+## License
 
-```bash
-# Basic — 5 clips of 60 seconds each
-python clipper.py --video podcast.mp4
-
-# Custom
-python clipper.py --video interview.mp4 --clips 3 --duration 30 --output my_clips/
-```
-
-### Arguments
-
-| Argument | Default | Description |
-|---|---|---|
-| `--video` | *(required)* | Path to the input video file |
-| `--clips` | `5` | Number of clips to generate |
-| `--duration` | `60` | Duration of each clip in seconds |
-| `--output` | `./output` | Output folder for clips |
-
----
-
-## File Structure
-
-```
-clipai/
-├── clipper.py            CLI entry point
-├── audio.py              Audio extraction + RMS energy analysis
-├── detector.py           Peak detection + overlap removal
-├── editor.py             Cutting + 9:16 crop + caption + export
-├── uploader.py           YouTube OAuth2 + resumable upload
-├── app.py                Desktop GUI (CustomTkinter)
-├── requirements.txt      Python dependencies
-├── client_secrets.json   [YOU ADD THIS] Google OAuth credentials
-├── token.json            [AUTO-GENERATED] Saved login token
-└── output/               Generated clips land here
-```
-
----
-
-## Edge Cases Handled
-
-| Situation | Behaviour |
-|---|---|
-| Video shorter than `--duration` | Exports the entire video as one clip |
-| No audio track | Creates evenly-spaced clips |
-| Caption fails (Windows) | Skips caption, still exports video |
-| `client_secrets.json` missing | Shows step-by-step popup with instructions |
-| Token expired | Silent auto-refresh; re-auth if that fails |
-| No internet during upload | Shows error per clip, continues with the rest |
-| Google packages not installed | Friendly error with pip install command |
-| pyperclip unavailable | Falls back to tkinter clipboard |
+MIT

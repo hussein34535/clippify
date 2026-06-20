@@ -487,7 +487,7 @@ class _MulticamTrackPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
-      textPainter.paint(canvas, const Offset(4, size.height / 2 - textPainter.height / 2));
+      textPainter.paint(canvas, Offset(4, size.height / 2 - textPainter.height / 2));
     }
 
     final playheadX = playheadSec * pxPerSec;
@@ -670,7 +670,7 @@ class _CreateMulticamDialogState extends ConsumerState<CreateMulticamDialog> {
                         label: const Text('اختيار ملفات الفيديو'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+                          side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
                         ),
@@ -944,5 +944,5 @@ class _AngleEntry {
   String? path;
   double offset;
 
-  _AngleEntry({required this.name, this.path, this.offset = 0.0});
+  _AngleEntry({required this.name, this.path}) : offset = 0.0;
 }

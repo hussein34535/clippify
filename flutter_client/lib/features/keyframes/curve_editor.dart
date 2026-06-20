@@ -70,7 +70,6 @@ class _CurveEditorWidgetState extends State<CurveEditorWidget> {
   int? _draggingKeyframeOriginalIndex;
   bool _isDragging = false;
   String? _draggingHandle; // 'in' or 'out'
-  Offset? _dragStart;
   double _handleOutX = 0.42;
   double _handleOutY = 0.0;
   double _handleInX = 0.58;
@@ -163,30 +162,6 @@ class _CurveEditorWidgetState extends State<CurveEditorWidget> {
   }
 
   // --- Easing Helpers ---
-
-  void _getBezierControls(String easing, {double? customOutX, double? customOutY, double? customInX, double? customInY}) {
-    if (easing == 'custom' && customOutX != null) {
-      _handleOutX = customOutX;
-      _handleOutY = customOutY ?? 0.0;
-      _handleInX = customInX ?? 0.58;
-      _handleInY = customInY ?? 1.0;
-      return;
-    }
-    switch (easing) {
-      case 'ease-in':
-        _handleOutX = 0.42; _handleOutY = 0.0; _handleInX = 1.0; _handleInY = 1.0;
-      case 'ease-out':
-        _handleOutX = 0.0; _handleOutY = 0.0; _handleInX = 0.58; _handleInY = 1.0;
-      case 'ease-in-out':
-        _handleOutX = 0.42; _handleOutY = 0.0; _handleInX = 0.58; _handleInY = 1.0;
-      case 'bounce':
-        _handleOutX = 0.33; _handleOutY = 0.33; _handleInX = 0.67; _handleInY = 0.67;
-      case 'elastic':
-        _handleOutX = 0.25; _handleOutY = 0.25; _handleInX = 0.75; _handleInY = 0.75;
-      default:
-        _handleOutX = 0.33; _handleOutY = 0.33; _handleInX = 0.67; _handleInY = 0.67;
-    }
-  }
 
   void _applyEasingPresetToSelected(String easing) {
     if (_selectedOriginalIndices.isEmpty) return;
@@ -286,40 +261,6 @@ class _CurveEditorWidgetState extends State<CurveEditorWidget> {
     return null;
   }
 
-  Offset _getHandleScreenPos(int propIdx, String which, Rect graphRect) {
-    final kfs = _propertyKeyframes;
-    if (propIdx < 0 || propIdx >= kfs.length) return Offset.zero;
-    final kf = kfs[propIdx];
-    final origIdx = _originalIndexForPropertyIndex(propIdx);
-    if (origIdx == null) return Offset.zero;
-
-    if (which == 'out' && propIdx < kfs.length - 1) {
-      final next = kfs[propIdx + 1];
-      final dt = next.time - kf.time;
-      final dv = _toDouble(next.value) - _toDouble(kf.value);
-      final bx = _keyframes[origIdx].bezierOutX ?? _handleOutX;
-      final by = _keyframes[origIdx].bezierOutY ?? _handleOutY;
-      return Offset(
-        _timeToX(kf.time + bx * dt, graphRect),
-        _valueToY(_toDouble(kf.value) + by * dv, graphRect),
-      );
-    }
-
-    if (which == 'in' && propIdx > 0) {
-      final prev = kfs[propIdx - 1];
-      final dt = kf.time - prev.time;
-      final dv = _toDouble(kf.value) - _toDouble(prev.value);
-      final bx = _keyframes[origIdx].bezierInX ?? _handleInX;
-      final by = _keyframes[origIdx].bezierInY ?? _handleInY;
-      return Offset(
-        _timeToX(prev.time + bx * dt, graphRect),
-        _valueToY(_toDouble(prev.value) + by * dv, graphRect),
-      );
-    }
-
-    return Offset.zero;
-  }
-
   // --- Gesture Handling ---
 
   void _handleTapDown(TapDownDetails details, Rect graphRect) {
@@ -330,7 +271,6 @@ class _CurveEditorWidgetState extends State<CurveEditorWidget> {
     );
 
     setState(() {
-      final propIndices = _propertyOriginalIndices;
       if (hit != null) {
         final origIdx = _originalIndexForPropertyIndex(hit);
         if (origIdx != null) {
@@ -361,7 +301,6 @@ class _CurveEditorWidgetState extends State<CurveEditorWidget> {
       _draggingHandle = handleHit;
       _draggingKeyframeOriginalIndex = origIdx;
       _isDragging = true;
-      _dragStart = pos;
       return;
     }
 
@@ -371,7 +310,6 @@ class _CurveEditorWidgetState extends State<CurveEditorWidget> {
       }
       _draggingKeyframeOriginalIndex = origIdx;
       _isDragging = true;
-      _dragStart = pos;
     }
   }
 
@@ -485,7 +423,7 @@ class _CurveEditorWidgetState extends State<CurveEditorWidget> {
     // Check if tapping near a curve segment between keyframes
     final kfs = _propertyKeyframes;
     final segmentIdx = _findNearestSegment(pos, graphRect);
-    final insertTime = segmentIdx != null ? _snapTimeBetween(kfs[segmentIdx!].time, kfs[segmentIdx + 1].time, pos, graphRect) : time;
+    final insertTime = segmentIdx != null ? _snapTimeBetween(kfs[segmentIdx].time, kfs[segmentIdx + 1].time, pos, graphRect) : time;
 
     setState(() {
       _keyframes.add(_makeKeyframe(insertTime, value));
@@ -521,7 +459,6 @@ class _CurveEditorWidgetState extends State<CurveEditorWidget> {
   }
 
   double _snapTimeBetween(double t1, double t2, Offset pos, Rect graphRect) {
-    final dur = widget.clipDuration > 0 ? widget.clipDuration : 1.0;
     final time = _xToTime(pos.dx, graphRect);
     return time.clamp(t1, t2);
   }
@@ -1097,7 +1034,6 @@ class _GraphPainter extends CustomPainter {
       final x = _timeToX(kf.time, gr);
       final y = _valueToY(_toDouble(kf.value), gr);
 
-      final color = isSelected ? AppColors.primary : const Color(0xFFBF5AF2);
       final fillColor = isSelected ? AppColors.primary : const Color(0xFF2C2C30);
       final borderColor = isSelected ? AppColors.primary : const Color(0xFF8E8E93);
 

@@ -582,9 +582,8 @@ class _AutomationCurvePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     final fillPaint = Paint();
-
     final path = Path();
-    Path? fillPath;
+    final fillPath = Path();
 
     final sorted = List<AutomationPoint>.from(points)..sort((a, b) => a.time.compareTo(b.time));
 
@@ -593,7 +592,6 @@ class _AutomationCurvePainter extends CustomPainter {
 
     if (sorted.isEmpty) return;
 
-    fillPath = Path();
     fillPath.moveTo(xToPos(sorted.first.time), size.height);
     fillPath.lineTo(xToPos(sorted.first.time), yToPos(sorted.first.value));
 
@@ -610,12 +608,10 @@ class _AutomationCurvePainter extends CustomPainter {
         path.quadraticBezierTo(ctrlX, prevY, x, y);
       }
 
-      if (fillPath != null) {
-        fillPath.lineTo(x, y);
-      }
+      fillPath.lineTo(x, y);
     }
 
-    if (fillPath != null && sorted.isNotEmpty) {
+    if (sorted.isNotEmpty) {
       fillPath.lineTo(xToPos(sorted.last.time), size.height);
       fillPath.close();
       fillPaint.shader = LinearGradient(
@@ -1302,7 +1298,6 @@ class _AudioMixerProState extends ConsumerState<AudioMixerPro> {
 
   Widget _buildChannelStrip(String trackId, String trackName, AudioMixerState mixerState) {
     final ch = mixerState.channels[trackId] ?? const ChannelState();
-    final isAudible = mixerState.isAudible(trackId);
 
     return Container(
       width: 72,

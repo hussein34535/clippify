@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../core/models/timeline_models.dart';
+import '../../../core/constants/timeline_constants.dart';
 import '../../../shared/widgets/audio_waveform.dart';
 import '../../../shared/utils/thumbnail_generator.dart';
 
@@ -157,7 +158,7 @@ class ClipItemWidget extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(2),
-                      border: Border.all(color: const Color(0xFF8B5CF6), width: 0.5),
+                      border: Border.all(color: const Color(0xFF8B5CF6), width: TimelineConstants.borderWidth),
                     ),
                     child: Row(
                       children: [
@@ -203,7 +204,7 @@ class ClipItemWidget extends StatelessWidget {
     if (clipType == 'video') {
       final videoClip = clip as VideoClip;
       final clipWidth = _getClipWidth();
-      final int thumbCount = (clipWidth / 60.0).ceil().clamp(1, 50);
+      final int thumbCount = (clipWidth / TimelineConstants.thumbnailCellWidth).ceil().clamp(1, TimelineConstants.maxThumbnailCount);
       return Expanded(
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
@@ -216,7 +217,7 @@ class ClipItemWidget extends StatelessWidget {
             return Container(
               width: 60,
               decoration: const BoxDecoration(
-                border: Border(right: BorderSide(color: Colors.black12, width: 0.5)),
+                border: Border(right: BorderSide(color: Colors.black12, width: TimelineConstants.borderWidth)),
               ),
               child: TimelineVideoThumbnail(
                 videoPath: videoClip.sourcePath,

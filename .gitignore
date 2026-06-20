@@ -40,6 +40,18 @@ yt_login_profile/
 agents/
 logs/
 
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Build artifacts and analysis
+analysis.json
+analysis_options.json.bak
+
+# Help dumps
+ythelp.txt
+
 # Secrets and Local configs
 cookies.txt
 pexels_key.txt

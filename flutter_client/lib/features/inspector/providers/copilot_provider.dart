@@ -49,26 +49,26 @@ class CopilotNotifier extends StateNotifier<CopilotStateData> {
       timelineState: timelineState.toJson(),
     );
 
-    if (response != null) {
-      final responseMessage = response['response_message'] as String? ?? 'تمت المعالجة بنجاح.';
-      final actions = response['actions'] as List<dynamic>? ?? [];
+    switch (response) {
+      case Success(data: final data):
+        final responseMessage = data['response_message'] as String? ?? 'تمت المعالجة بنجاح.';
+        final actions = data['actions'] as List<dynamic>? ?? [];
 
-      final aiMessage = ChatMessage(text: responseMessage, isUser: false);
-      state = state.copyWith(
-        messages: [...state.messages, aiMessage],
-        isLoading: false,
-      );
+        final aiMessage = ChatMessage(text: responseMessage, isUser: false);
+        state = state.copyWith(
+          messages: [...state.messages, aiMessage],
+          isLoading: false,
+        );
 
-      // تطبيق التعديلات (Actions) على التايملاين
-      if (actions.isNotEmpty) {
-        _applyTimelineActions(actions, ref);
-      }
-    } else {
-      final errorMessage = ChatMessage(text: 'عذراً، فشل الاتصال بالمساعد الذكي للباك إند.', isUser: false);
-      state = state.copyWith(
-        messages: [...state.messages, errorMessage],
-        isLoading: false,
-      );
+        if (actions.isNotEmpty) {
+          _applyTimelineActions(actions, ref);
+        }
+      case Failure():
+        final errorMessage = ChatMessage(text: 'عذراً، فشل الاتصال بالمساعد الذكي للباك إند.', isUser: false);
+        state = state.copyWith(
+          messages: [...state.messages, errorMessage],
+          isLoading: false,
+        );
     }
   }
 

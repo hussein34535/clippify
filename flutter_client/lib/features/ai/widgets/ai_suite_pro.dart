@@ -34,13 +34,18 @@ class _AIUpscalePanelState extends ConsumerState<AIUpscalePanel> {
         factor: _factor,
         model: _model,
       );
-      if (result != null && result['output_path'] != null) {
-        setState(() {
-          _outputPath = result['output_path'] as String;
-          _status = 'اكتمل التحسين';
-        });
-      } else {
-        setState(() => _status = 'فشلت العملية');
+      switch (result) {
+        case Success(data: final data):
+          if (data['output_path'] != null) {
+            setState(() {
+              _outputPath = data['output_path'] as String;
+              _status = 'اكتمل التحسين';
+            });
+          } else {
+            setState(() => _status = 'فشلت العملية');
+          }
+        case Failure():
+          setState(() => _status = 'فشلت العملية');
       }
     } catch (e) {
       setState(() => _status = 'خطأ: $e');
@@ -109,10 +114,15 @@ class _AIFrameInterpolationPanelState extends ConsumerState<AIFrameInterpolation
     setState(() { _processing = true; _status = 'جاري تعبئة الإطارات...'; });
     try {
       final result = await ApiClient().aiInterpolate(widget.videoPath, fps: _fps, method: _method);
-      if (result != null && result['output_path'] != null) {
-        setState(() => _status = 'اكتملت التعبئة');
-      } else {
-        setState(() => _status = 'فشلت العملية');
+      switch (result) {
+        case Success(data: final data):
+          if (data['output_path'] != null) {
+            setState(() => _status = 'اكتملت التعبئة');
+          } else {
+            setState(() => _status = 'فشلت العملية');
+          }
+        case Failure():
+          setState(() => _status = 'فشلت العملية');
       }
     } catch (e) {
       setState(() => _status = 'خطأ: $e');
@@ -194,10 +204,15 @@ class _AIObjectRemovalPanelState extends ConsumerState<AIObjectRemovalPanel> {
         {'x': _region!.left, 'y': _region!.top, 'w': _region!.width, 'h': _region!.height},
         method: _method,
       );
-      if (result != null && result['status'] == 'success') {
-        setState(() => _status = 'تمت الإزالة بنجاح');
-      } else {
-        setState(() => _status = 'فشلت العملية');
+      switch (result) {
+        case Success(data: final data):
+          if (data['status'] == 'success') {
+            setState(() => _status = 'تمت الإزالة بنجاح');
+          } else {
+            setState(() => _status = 'فشلت العملية');
+          }
+        case Failure():
+          setState(() => _status = 'فشلت العملية');
       }
     } catch (e) {
       setState(() => _status = 'خطأ: $e');
@@ -305,10 +320,15 @@ class _AIBackgroundReplacementPanelState extends ConsumerState<AIBackgroundRepla
         'background_type': _bgType,
         'solid_color': '#${_solidColor.toARGB32().toRadixString(16).padLeft(8, '0')}',
       });
-      if (result != null && result['status'] == 'success') {
-        setState(() => _status = 'تم استبدال الخلفية');
-      } else {
-        setState(() => _status = 'فشلت العملية');
+      switch (result) {
+        case Success(data: final data):
+          if (data['status'] == 'success') {
+            setState(() => _status = 'تم استبدال الخلفية');
+          } else {
+            setState(() => _status = 'فشلت العملية');
+          }
+        case Failure():
+          setState(() => _status = 'فشلت العملية');
       }
     } catch (e) {
       setState(() => _status = 'خطأ: $e');
@@ -444,10 +464,15 @@ class _AIVideoGenerationPanelState extends ConsumerState<AIVideoGenerationPanel>
         duration: _duration,
         resolution: _resolution,
       );
-      if (result != null && result['output_path'] != null) {
-        setState(() => _status = 'تم التوليد');
-      } else {
-        setState(() => _status = 'فشلت العملية');
+      switch (result) {
+        case Success(data: final data):
+          if (data['output_path'] != null) {
+            setState(() => _status = 'تم التوليد');
+          } else {
+            setState(() => _status = 'فشلت العملية');
+          }
+        case Failure():
+          setState(() => _status = 'فشلت العملية');
       }
     } catch (e) {
       setState(() => _status = 'خطأ: $e');
@@ -571,10 +596,15 @@ class _AIAudioEnhancementPanelState extends ConsumerState<AIAudioEnhancementPane
         'voice_isolation': _voiceIsolation,
         'lufs_target': _lufsTarget,
       });
-      if (result != null && result['status'] == 'success') {
-        setState(() => _status = 'تم تحسين الصوت');
-      } else {
-        setState(() => _status = 'فشلت العملية');
+      switch (result) {
+        case Success(data: final data):
+          if (data['status'] == 'success') {
+            setState(() => _status = 'تم تحسين الصوت');
+          } else {
+            setState(() => _status = 'فشلت العملية');
+          }
+        case Failure():
+          setState(() => _status = 'فشلت العملية');
       }
     } catch (e) {
       setState(() => _status = 'خطأ: $e');

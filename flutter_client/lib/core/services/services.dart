@@ -106,11 +106,16 @@ class ExportService {
   }) async {
     try {
       final res = await _api.exportXml(timelineData, outputPath: outputPath, format: format);
-      _lastResult = ExportResult(
-        success: res?['status'] == 'success',
-        outputPath: outputPath,
-        error: res?['error'] as String?,
-      );
+      switch (res) {
+        case Success(data: final data):
+          _lastResult = ExportResult(
+            success: data['status'] == 'success',
+            outputPath: outputPath,
+            error: data['error'] as String?,
+          );
+        case Failure():
+          _lastResult = ExportResult(success: false, error: 'Export XML failed');
+      }
       return _lastResult!;
     } catch (e) {
       _lastResult = ExportResult(success: false, error: e.toString());
@@ -139,12 +144,17 @@ class ExportService {
         codec: codec,
         pixelFormat: pixelFormat,
       );
-      _lastResult = ExportResult(
-        success: sid != null,
-        outputPath: outputPath,
-        sessionId: sid,
-        error: sid == null ? 'Render plan returned null' : null,
-      );
+      switch (sid) {
+        case Success(data: final sessionId):
+          _lastResult = ExportResult(
+            success: true,
+            outputPath: outputPath,
+            sessionId: sessionId,
+            error: null,
+          );
+        case Failure():
+          _lastResult = ExportResult(success: false, outputPath: outputPath, error: 'Render plan failed');
+      }
       return _lastResult!;
     } catch (e) {
       _lastResult = ExportResult(success: false, error: e.toString());

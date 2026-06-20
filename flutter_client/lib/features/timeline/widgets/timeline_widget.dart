@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/timeline_provider.dart';
 import '../../../core/models/timeline_models.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/constants/timeline_constants.dart';
 import 'clip_item_widget.dart';
 import 'text_clip_item_widget.dart';
 import 'transition_picker.dart';
@@ -40,7 +41,7 @@ class TimelineWidget extends ConsumerStatefulWidget {
 
 class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   final ScrollController _scrollController = ScrollController();
-  double _scaleStartZoom = 30.0;
+  double _scaleStartZoom = TimelineConstants.defaultZoom;
 
   final Set<String> _mutedTracks = {};
   final Set<String> _lockedTracks = {};
@@ -68,7 +69,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         height: cfg.height,
       ));
       if (i < configs.length - 1) {
-        widgets.add(const SizedBox(height: 4));
+        widgets.add(const SizedBox(height: TimelineConstants.trackGap));
       }
     }
     return widgets;
@@ -78,7 +79,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final lanes = <Widget>[];
     final configs = _getTrackConfigs(tracks, nestedSequences: nestedSequences);
     for (final cfg in configs) {
-      if (lanes.isNotEmpty) lanes.add(const SizedBox(height: 4));
+      if (lanes.isNotEmpty) lanes.add(const SizedBox(height: TimelineConstants.trackGap));
       lanes.add(_buildTrackLane(
         title: cfg.name,
         color: cfg.color,
@@ -89,7 +90,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         height: cfg.height,
       ));
     }
-    lanes.add(const SizedBox(height: 12));
+    lanes.add(const SizedBox(height: TimelineConstants.tracksBottomPadding));
     return lanes;
   }
 
@@ -99,55 +100,55 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       configs.add(TrackConfig(
         name: track.name,
         icon: Icons.videocam_outlined,
-        color: const Color(0xFF7c6af7).withValues(alpha: 0.06),
+        color: TimelineConstants.videoTrackColor.withValues(alpha: 0.06),
         clips: track.clips, type: 'video',
-        height: 78,
+        height: TimelineConstants.videoTrackHeight,
       ));
     }
     for (final track in tracks.audio) {
       configs.add(TrackConfig(
         name: track.name,
         icon: Icons.mic_outlined,
-        color: const Color(0xFF0d9488).withValues(alpha: 0.06),
+        color: TimelineConstants.audioTrackColor.withValues(alpha: 0.06),
         clips: track.clips, type: 'audio',
-        height: 58,
+        height: TimelineConstants.audioTrackHeight,
       ));
     }
     for (final track in tracks.overlays) {
       configs.add(TrackConfig(
         name: 'Overlay ${tracks.overlays.indexOf(track)}',
         icon: Icons.layers_outlined,
-        color: const Color(0xFFc2410c).withValues(alpha: 0.06),
+        color: TimelineConstants.overlayTrackColor.withValues(alpha: 0.06),
         clips: track.clips, type: 'overlay',
-        height: 48,
+        height: TimelineConstants.overlayTrackHeight,
       ));
     }
     for (final track in tracks.subtitles) {
       configs.add(TrackConfig(
         name: 'Subtitle ${tracks.subtitles.indexOf(track)}',
         icon: Icons.subtitles_outlined,
-        color: const Color(0xFF059669).withValues(alpha: 0.06),
+        color: TimelineConstants.subtitleTrackColor.withValues(alpha: 0.06),
         clips: track.clips, type: 'subtitle',
-        height: 38,
+        height: TimelineConstants.subtitleTrackHeight,
       ));
     }
     for (final track in tracks.text) {
       configs.add(TrackConfig(
         name: 'Text ${tracks.text.indexOf(track)}',
         icon: Icons.text_fields,
-        color: const Color(0xFFEC4899).withValues(alpha: 0.06),
+        color: TimelineConstants.textTrackColor.withValues(alpha: 0.06),
         clips: track.clips, type: 'text',
-        height: 50,
+        height: TimelineConstants.textTrackHeight,
       ));
     }
     for (final ns in nestedSequences) {
       configs.add(TrackConfig(
         name: ns.name,
         icon: Icons.subdirectory_arrow_right,
-        color: const Color(0xFF7C3AED).withValues(alpha: 0.06),
+        color: TimelineConstants.nestedTrackColor.withValues(alpha: 0.06),
         clips: [ns],
         type: 'nested',
-        height: 58,
+        height: TimelineConstants.nestedTrackHeight,
       ));
     }
     return configs;
@@ -280,6 +281,78 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       }
     }
     return null;
+  }
+
+  void _handleClipMove(String clipId, double deltaSec, double zoomLevel, double playhead) {
+    final notifier = ref.read(timelineProvider.notifier);
+    dynamic cur;
+    double start = 0, end = 0;
+    void Function(String, double) moveFn = notifier.moveVideoClip;
+
+    cur = _findClipById(clipId);
+    if (cur != null) { start = cur.startTimeInTimeline; end = cur.endTimeInTimeline; moveFn = notifier.moveVideoClip; }
+    if (cur == null) { cur = _findAudioClipById(clipId); if (cur != null) { start = cur.startTimeInTimeline; end = cur.endTimeInTimeline; moveFn = notifier.moveAudioClip; } }
+    if (cur == null) { cur = _findOverlayClipById(clipId); if (cur != null) { start = cur.startTimeInTimeline; end = cur.endTimeInTimeline; moveFn = notifier.moveOverlayClip; } }
+    if (cur == null) { cur = _findSubtitleClipById(clipId); if (cur != null) { start = cur.startTime; end = cur.endTime; moveFn = notifier.moveSubtitleClip; } }
+    if (cur == null) return;
+
+    final targetStart = start + deltaSec;
+    final snapped = _getSnappedOffset(targetStart, end - start, clipId, zoomLevel, playhead);
+    moveFn(clipId, snapped);
+  }
+
+  void _handleClipResizeLeft(String clipId, double deltaSec, double zoomLevel, double playhead) {
+    final notifier = ref.read(timelineProvider.notifier);
+    dynamic cur;
+    double start = 0;
+    void Function(String, double) resizeFn = notifier.resizeVideoClipLeft;
+
+    cur = _findClipById(clipId);
+    if (cur != null) { start = cur.startTimeInTimeline; resizeFn = notifier.resizeVideoClipLeft; }
+    if (cur == null) { cur = _findAudioClipById(clipId); if (cur != null) { start = cur.startTimeInTimeline; resizeFn = notifier.resizeAudioClipLeft; } }
+    if (cur == null) { cur = _findOverlayClipById(clipId); if (cur != null) { start = cur.startTimeInTimeline; resizeFn = notifier.resizeOverlayClipLeft; } }
+    if (cur == null) { cur = _findSubtitleClipById(clipId); if (cur != null) { start = cur.startTime; resizeFn = notifier.resizeSubtitleClipLeft; } }
+    if (cur == null) return;
+
+    final targetStart = start + deltaSec;
+    final toleranceSec = TimelineConstants.snapTolerancePixels / zoomLevel;
+    final snapPoints = [0.0, playhead];
+    double snappedStart = targetStart;
+    double minDiff = toleranceSec;
+    double? snapLine;
+    for (final point in snapPoints) {
+      final diff = (targetStart - point).abs();
+      if (diff < minDiff) { minDiff = diff; snappedStart = point; snapLine = point; }
+    }
+    setState(() => _snapLinePositionSec = snapLine);
+    resizeFn(clipId, snappedStart);
+  }
+
+  void _handleClipResizeRight(String clipId, double deltaSec, double zoomLevel, double playhead) {
+    final notifier = ref.read(timelineProvider.notifier);
+    dynamic cur;
+    double end = 0;
+    void Function(String, double) resizeFn = notifier.resizeVideoClip;
+
+    cur = _findClipById(clipId);
+    if (cur != null) { end = cur.endTimeInTimeline; resizeFn = notifier.resizeVideoClip; }
+    if (cur == null) { cur = _findAudioClipById(clipId); if (cur != null) { end = cur.endTimeInTimeline; resizeFn = notifier.resizeAudioClip; } }
+    if (cur == null) { cur = _findOverlayClipById(clipId); if (cur != null) { end = cur.endTimeInTimeline; resizeFn = notifier.resizeOverlayClip; } }
+    if (cur == null) { cur = _findSubtitleClipById(clipId); if (cur != null) { end = cur.endTime; resizeFn = notifier.resizeSubtitleClip; } }
+    if (cur == null) return;
+
+    final targetEnd = end + deltaSec;
+    final toleranceSec = TimelineConstants.snapTolerancePixels / zoomLevel;
+    final snapPoints = [0.0, playhead];
+    double snappedEnd = targetEnd;
+    double minDiff = toleranceSec;
+    double? snapLine;
+    for (final point in snapPoints) {
+      final diff = (targetEnd - point).abs();
+      if (diff < minDiff) { minDiff = diff; snappedEnd = point; snapLine = point; }
+    }
+    setState(() => _snapLinePositionSec = snapLine);
+    resizeFn(clipId, snappedEnd);
   }
 
   void _showClipContextMenu(BuildContext context, String clipId, String trackType, String clipType) {
@@ -467,13 +540,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   }
 
   double _getSnappedOffset(double targetStart, double clipDuration, String excludeClipId, double zoomLevel, double playheadSec) {
-    final double toleranceSec = 8.0 / zoomLevel;
+    final double toleranceSec = TimelineConstants.snapTolerancePixels / zoomLevel;
     final List<double> snapPoints = [0.0, playheadSec];
 
     final timelineState = ref.read(timelineProvider).timeline;
 
-    // Snap to grid lines (كل 5 ثوان)
-    for (double g = 0; g <= ref.read(timelineProvider.notifier).totalDuration; g += 5.0) {
+    // Snap to grid lines
+    for (double g = 0; g <= ref.read(timelineProvider.notifier).totalDuration; g += TimelineConstants.gridIntervalSec.toDouble()) {
       snapPoints.add(g);
     }
 
@@ -676,7 +749,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                       }
                       _zoomAnchorSec = (localX + scrollOffset) / ref.read(timelineProvider).timeline.zoomLevel;
 
-                      final double newZoom = (_scaleStartZoom * event.scale).clamp(1.0, 500.0);
+                      final double newZoom = (_scaleStartZoom * event.scale).clamp(TimelineConstants.minZoom, TimelineConstants.maxZoom);
                       ref.read(timelineProvider.notifier).setZoom(newZoom);
                     } else {
                       if (_scrollController.hasClients) {
@@ -711,7 +784,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
                           final double speedFactor = 1.0 + (dy.abs() * 0.0015).clamp(0.005, 0.15);
                           final double zoomChange = dy < 0 ? speedFactor : 1.0 / speedFactor;
-                          final double newZoom = (currentZoom * zoomChange).clamp(1.0, 500.0);
+                          final double newZoom = (currentZoom * zoomChange).clamp(TimelineConstants.minZoom, TimelineConstants.maxZoom);
                           ref.read(timelineProvider.notifier).setZoom(newZoom);
                         }
                       } else {
@@ -763,7 +836,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                         }
                         _zoomAnchorSec = (localX + scrollOffset) / ref.read(timelineProvider).timeline.zoomLevel;
 
-                        final newZoom = (_scaleStartZoom * details.scale).clamp(1.0, 500.0);
+                        final newZoom = (_scaleStartZoom * details.scale).clamp(TimelineConstants.minZoom, TimelineConstants.maxZoom);
                         ref.read(timelineProvider.notifier).setZoom(newZoom);
                       } else {
                         if (_isZooming) {
@@ -810,10 +883,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                           final double startSec = (scrollOffset - 100.0) / zoomLevel;
                           final double endSec = (scrollOffset + viewportWidth + 100.0) / zoomLevel;
 
-                          int startGrid = ((startSec / 5).floor() * 5).clamp(0, (maxDuration + 5).toInt());
-                          int endGrid = ((endSec / 5).ceil() * 5).clamp(0, (maxDuration + 5).toInt());
+                          final g = TimelineConstants.gridIntervalSec;
+                          int startGrid = ((startSec / g).floor() * g).clamp(0, (maxDuration + g).toInt());
+                          int endGrid = ((endSec / g).ceil() * g).clamp(0, (maxDuration + g).toInt());
 
-                          final int count = ((endGrid - startGrid) / 5).floor() + 1;
+                          final int count = ((endGrid - startGrid) / g).floor() + 1;
 
                           return SizedBox(
                             width: actualTimelineWidth,
@@ -825,7 +899,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                     child: RepaintBoundary(
                                       child: Stack(
                                         children: List.generate(count, (i) {
-                                          final int index = startGrid + i * 5;
+                                          final int index = startGrid + i * g;
                                           if (index > maxDuration + 5) return const SizedBox.shrink();
                                           final double leftPosition = index * zoomLevel;
                                           return Positioned(
@@ -833,7 +907,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                             top: 24,
                                             bottom: 0,
                                             child: Container(
-                                              width: 0.5,
+                                              width: TimelineConstants.borderWidth,
                                               color: Colors.white.withValues(alpha: 0.04),
                                             ),
                                           );
@@ -966,7 +1040,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final macroState = ref.watch(macroProvider);
 
     return Container(
-      height: 48,
+              height: TimelineConstants.toolbarHeight,
       decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: AppColors.divider)),
@@ -1077,9 +1151,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                       overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
                     ),
                     child: Slider(
-                      value: timelineState.zoomLevel.clamp(1.0, 500.0),
-                      min: 1.0,
-                      max: 500.0,
+              value: timelineState.zoomLevel.clamp(TimelineConstants.minZoom, TimelineConstants.maxZoom),
+              min: TimelineConstants.minZoom,
+              max: TimelineConstants.maxZoom,
                       onChanged: (v) => notifier.setZoom(v),
                     ),
                   ),
@@ -1108,7 +1182,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final timelineState = ref.read(timelineProvider).timeline;
     final nestedSequences = timelineState.nestedSequences;
     return SizedBox(
-      width: 110,
+        width: TimelineConstants.sidebarWidth,
       child: Column(
         children: [
           Container(
@@ -1181,11 +1255,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         color: Color(0xFF131317),
         border: Border(
           right: BorderSide(color: AppColors.divider),
-          bottom: BorderSide(color: AppColors.divider, width: 0.5),
+            bottom: BorderSide(color: AppColors.divider, width: TimelineConstants.borderWidth),
+          ),
         ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      child: Row(
+        child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, size: 13, color: Colors.white54),
@@ -1312,7 +1385,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                   height: 12,
                   width: 1,
                   color: AppColors.border,
-                  child: index % 5 == 0
+                      child: index % TimelineConstants.rulerMajorTickInterval == 0
                       ? OverflowBox(
                           maxWidth: 60,
                           alignment: Alignment.topLeft,
@@ -1354,16 +1427,19 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         final playhead = ref.read(timelineProvider).timeline.playheadSec;
 
         double mediaDuration = 10.0;
-        try {
-          final info = await ApiClient().getMediaInfo(filePath);
-          if (!mounted) return;
-          if (info != null && info['status'] == 'success' && info['duration'] != null) {
-            final double actDur = (info['duration'] as num).toDouble();
-            if (actDur > 0) {
-              mediaDuration = actDur;
+        final infoResult = await ApiClient().getMediaInfo(filePath);
+        if (!mounted) return;
+        switch (infoResult) {
+          case Success(data: final info):
+            if (info['status'] == 'success' && info['duration'] != null) {
+              final double actDur = (info['duration'] as num).toDouble();
+              if (actDur > 0) {
+                mediaDuration = actDur;
+              }
             }
-          }
-        } catch (_) {}
+          case Failure():
+            break;
+        }
 
         final double dur = mediaDuration < 10.0 ? mediaDuration : 10.0;
 
@@ -1419,7 +1495,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           duration: const Duration(milliseconds: 150),
           height: height,
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+            border: Border(bottom: BorderSide(color: AppColors.divider, width: TimelineConstants.borderWidth)),
             color: isHovering ? color : null,
           ),
           child: Stack(
@@ -1554,7 +1630,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                   final cur = _findTextClipById(clipId);
                                   if (cur != null) {
                                     final double targetStart = cur.startTime + deltaSec;
-                                    final double toleranceSec = 8.0 / zoomLevel;
+                                    final double toleranceSec = TimelineConstants.snapTolerancePixels / zoomLevel;
                                     final List<double> snapPoints = [0.0, playhead];
                                     for (final track in ref.read(timelineProvider).timeline.tracks.text) {
                                       for (final c in track.clips) {
@@ -1580,7 +1656,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                   final cur = _findTextClipById(clipId);
                                   if (cur != null) {
                                     final double targetEnd = cur.endTime + deltaSec;
-                                    final double toleranceSec = 8.0 / zoomLevel;
+                                    final double toleranceSec = TimelineConstants.snapTolerancePixels / zoomLevel;
                                     final List<double> snapPoints = [0.0, playhead];
                                     for (final track in ref.read(timelineProvider).timeline.tracks.text) {
                                       for (final c in track.clips) {
@@ -1648,243 +1724,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                    }
                                  } : null,
                                  onContextMenu: () => _showClipContextMenu(context, clipId, trackType, trackType),
-                          onMove: (deltaSec) {
-                            if (clip is VideoClip) {
-                              final cur = _findClipById(clipId);
-                              if (cur != null) {
-                                final double targetStart = cur.startTimeInTimeline + deltaSec;
-                                final double snappedStart = _getSnappedOffset(
-                                  targetStart,
-                                  cur.endTimeInTimeline - cur.startTimeInTimeline,
-                                  clipId,
-                                  zoomLevel,
-                                  playhead,
-                                );
-                                notifier.moveVideoClip(clipId, snappedStart);
-                              }
-                            } else if (clip is AudioClip) {
-                              final cur = _findAudioClipById(clipId);
-                              if (cur != null) {
-                                final double targetStart = cur.startTimeInTimeline + deltaSec;
-                                final double snappedStart = _getSnappedOffset(
-                                  targetStart,
-                                  cur.endTimeInTimeline - cur.startTimeInTimeline,
-                                  clipId,
-                                  zoomLevel,
-                                  playhead,
-                                );
-                                notifier.moveAudioClip(clipId, snappedStart);
-                              }
-                            } else if (clip is OverlayClip) {
-                              final cur = _findOverlayClipById(clipId);
-                              if (cur != null) {
-                                final double targetStart = cur.startTimeInTimeline + deltaSec;
-                                final double snappedStart = _getSnappedOffset(
-                                  targetStart,
-                                  cur.endTimeInTimeline - cur.startTimeInTimeline,
-                                  clipId,
-                                  zoomLevel,
-                                  playhead,
-                                );
-                                notifier.moveOverlayClip(clipId, snappedStart);
-                              }
-                            } else if (clip is SubtitleClip) {
-                              final cur = _findSubtitleClipById(clipId);
-                              if (cur != null) {
-                                final double targetStart = cur.startTime + deltaSec;
-                                final double snappedStart = _getSnappedOffset(
-                                  targetStart,
-                                  cur.endTime - cur.startTime,
-                                  clipId,
-                                  zoomLevel,
-                                  playhead,
-                                );
-                                notifier.moveSubtitleClip(clipId, snappedStart);
-                              }
-                            }
-                          },
-                          onResizeLeft: (deltaSec) {
-                            if (clip is VideoClip) {
-                              final cur = _findClipById(clipId);
-                              if (cur != null) {
-                                final double targetStart = cur.startTimeInTimeline + deltaSec;
-                                final double toleranceSec = 8.0 / zoomLevel;
-                                final List<double> snapPoints = [0.0, playhead];
-                                double snappedStart = targetStart;
-                                double minDiff = toleranceSec;
-                                double? snapLine;
-                                for (final point in snapPoints) {
-                                  final diff = (targetStart - point).abs();
-                                  if (diff < minDiff) {
-                                    minDiff = diff;
-                                    snappedStart = point;
-                                    snapLine = point;
-                                  }
-                                }
-                                setState(() {
-                                  _snapLinePositionSec = snapLine;
-                                });
-                                notifier.resizeVideoClipLeft(clipId, snappedStart);
-                              }
-                            } else if (clip is AudioClip) {
-                              final cur = _findAudioClipById(clipId);
-                              if (cur != null) {
-                                final double targetStart = cur.startTimeInTimeline + deltaSec;
-                                final double toleranceSec = 8.0 / zoomLevel;
-                                final List<double> snapPoints = [0.0, playhead];
-                                double snappedStart = targetStart;
-                                double minDiff = toleranceSec;
-                                double? snapLine;
-                                for (final point in snapPoints) {
-                                  final diff = (targetStart - point).abs();
-                                  if (diff < minDiff) {
-                                    minDiff = diff;
-                                    snappedStart = point;
-                                    snapLine = point;
-                                  }
-                                }
-                                setState(() {
-                                  _snapLinePositionSec = snapLine;
-                                });
-                                notifier.resizeAudioClipLeft(clipId, snappedStart);
-                              }
-                            } else if (clip is OverlayClip) {
-                              final cur = _findOverlayClipById(clipId);
-                              if (cur != null) {
-                                final double targetStart = cur.startTimeInTimeline + deltaSec;
-                                final double toleranceSec = 8.0 / zoomLevel;
-                                final List<double> snapPoints = [0.0, playhead];
-                                double snappedStart = targetStart;
-                                double minDiff = toleranceSec;
-                                double? snapLine;
-                                for (final point in snapPoints) {
-                                  final diff = (targetStart - point).abs();
-                                  if (diff < minDiff) {
-                                    minDiff = diff;
-                                    snappedStart = point;
-                                    snapLine = point;
-                                  }
-                                }
-                                setState(() {
-                                  _snapLinePositionSec = snapLine;
-                                });
-                                notifier.resizeOverlayClipLeft(clipId, snappedStart);
-                              }
-                            } else if (clip is SubtitleClip) {
-                              final cur = _findSubtitleClipById(clipId);
-                              if (cur != null) {
-                                final double targetStart = cur.startTime + deltaSec;
-                                final double toleranceSec = 8.0 / zoomLevel;
-                                final List<double> snapPoints = [0.0, playhead];
-                                double snappedStart = targetStart;
-                                double minDiff = toleranceSec;
-                                double? snapLine;
-                                for (final point in snapPoints) {
-                                  final diff = (targetStart - point).abs();
-                                  if (diff < minDiff) {
-                                    minDiff = diff;
-                                    snappedStart = point;
-                                    snapLine = point;
-                                  }
-                                }
-                                setState(() {
-                                  _snapLinePositionSec = snapLine;
-                                });
-                                notifier.resizeSubtitleClipLeft(clipId, snappedStart);
-                              }
-                            }
-                          },
-                          onResizeRight: (deltaSec) {
-                            if (clip is VideoClip) {
-                              final cur = _findClipById(clipId);
-                              if (cur != null) {
-                                final double targetEnd = cur.endTimeInTimeline + deltaSec;
-                                final double toleranceSec = 8.0 / zoomLevel;
-                                final List<double> snapPoints = [0.0, playhead];
-                                double snappedEnd = targetEnd;
-                                double minDiff = toleranceSec;
-                                double? snapLine;
-                                for (final point in snapPoints) {
-                                  final diff = (targetEnd - point).abs();
-                                  if (diff < minDiff) {
-                                    minDiff = diff;
-                                    snappedEnd = point;
-                                    snapLine = point;
-                                  }
-                                }
-                                setState(() {
-                                  _snapLinePositionSec = snapLine;
-                                });
-                                notifier.resizeVideoClip(clipId, snappedEnd);
-                              }
-                            } else if (clip is AudioClip) {
-                              final cur = _findAudioClipById(clipId);
-                              if (cur != null) {
-                                final double targetEnd = cur.endTimeInTimeline + deltaSec;
-                                final double toleranceSec = 8.0 / zoomLevel;
-                                final List<double> snapPoints = [0.0, playhead];
-                                double snappedEnd = targetEnd;
-                                double minDiff = toleranceSec;
-                                double? snapLine;
-                                for (final point in snapPoints) {
-                                  final diff = (targetEnd - point).abs();
-                                  if (diff < minDiff) {
-                                    minDiff = diff;
-                                    snappedEnd = point;
-                                    snapLine = point;
-                                  }
-                                }
-                                setState(() {
-                                  _snapLinePositionSec = snapLine;
-                                });
-                                notifier.resizeAudioClip(clipId, snappedEnd);
-                              }
-                            } else if (clip is OverlayClip) {
-                              final cur = _findOverlayClipById(clipId);
-                              if (cur != null) {
-                                final double targetEnd = cur.endTimeInTimeline + deltaSec;
-                                final double toleranceSec = 8.0 / zoomLevel;
-                                final List<double> snapPoints = [0.0, playhead];
-                                double snappedEnd = targetEnd;
-                                double minDiff = toleranceSec;
-                                double? snapLine;
-                                for (final point in snapPoints) {
-                                  final diff = (targetEnd - point).abs();
-                                  if (diff < minDiff) {
-                                    minDiff = diff;
-                                    snappedEnd = point;
-                                    snapLine = point;
-                                  }
-                                }
-                                setState(() {
-                                  _snapLinePositionSec = snapLine;
-                                });
-                                notifier.resizeOverlayClip(clipId, snappedEnd);
-                              }
-                            } else if (clip is SubtitleClip) {
-                              final cur = _findSubtitleClipById(clipId);
-                              if (cur != null) {
-                                final double targetEnd = cur.endTime + deltaSec;
-                                final double toleranceSec = 8.0 / zoomLevel;
-                                final List<double> snapPoints = [0.0, playhead];
-                                double snappedEnd = targetEnd;
-                                double minDiff = toleranceSec;
-                                double? snapLine;
-                                for (final point in snapPoints) {
-                                  final diff = (targetEnd - point).abs();
-                                  if (diff < minDiff) {
-                                    minDiff = diff;
-                                    snappedEnd = point;
-                                    snapLine = point;
-                                  }
-                                }
-                                setState(() {
-                                  _snapLinePositionSec = snapLine;
-                                });
-                                notifier.resizeSubtitleClip(clipId, snappedEnd);
-                              }
-                            }
-                          },
+                           onMove: (deltaSec) => _handleClipMove(clipId, deltaSec, zoomLevel, playhead),
+                          onResizeLeft: (deltaSec) => _handleClipResizeLeft(clipId, deltaSec, zoomLevel, playhead),
+                          onResizeRight: (deltaSec) => _handleClipResizeRight(clipId, deltaSec, zoomLevel, playhead),
                         ),
                       );
                     }),
@@ -1894,7 +1736,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                         top: 0,
                         bottom: 0,
                         child: Container(
-                          width: 2,
+                          width: TimelineConstants.playheadWidth,
                           color: AppColors.primary,
                         ),
                       ),

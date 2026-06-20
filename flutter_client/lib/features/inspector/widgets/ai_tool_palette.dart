@@ -115,35 +115,36 @@ class _AIToolPaletteState extends ConsumerState<AIToolPalette> {
       _loading = true;
       _error = null;
     });
-    try {
-      final data = await ApiClient().getAITools();
-      if (data != null && data['status'] == 'success') {
-        final toolsMap = data['tools'] as Map<String, dynamic>? ?? {};
-        final Map<String, List<ToolInfo>> parsedTools = {};
-        
-        toolsMap.forEach((category, list) {
-          if (list is List) {
-            parsedTools[category] = list
-                .map((t) => ToolInfo.fromJson(t as Map<String, dynamic>))
-                .toList();
-          }
-        });
-        
+    final result = await ApiClient().getAITools();
+    switch (result) {
+      case Success(data: final data):
+        if (data['status'] == 'success') {
+          final toolsMap = data['tools'] as Map<String, dynamic>? ?? {};
+          final Map<String, List<ToolInfo>> parsedTools = {};
+          
+          toolsMap.forEach((category, list) {
+            if (list is List) {
+              parsedTools[category] = list
+                  .map((t) => ToolInfo.fromJson(t as Map<String, dynamic>))
+                  .toList();
+            }
+          });
+          
+          setState(() {
+            _tools = parsedTools;
+            _loading = false;
+          });
+        } else {
+          setState(() {
+            _error = 'فشل جلب أدوات الذكاء الاصطناعي من السيرفر.';
+            _loading = false;
+          });
+        }
+      case Failure(message: final msg):
         setState(() {
-          _tools = parsedTools;
+          _error = 'حدث خطأ أثناء الاتصال بالخادم: $msg';
           _loading = false;
         });
-      } else {
-        setState(() {
-          _error = 'فشل جلب أدوات الذكاء الاصطناعي من السيرفر.';
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'حدث خطأ أثناء الاتصال بالخادم: $e';
-        _loading = false;
-      });
     }
   }
 
@@ -230,23 +231,27 @@ class _AIToolPaletteState extends ConsumerState<AIToolPalette> {
         timelineState.toJson(),
       );
 
-      if (response != null && response['status'] == 'success') {
-        if (response['new_state'] != null) {
-          final newState = TimelineState.fromJson(response['new_state'] as Map<String, dynamic>);
-          ref.read(timelineProvider.notifier).updateTimelineState(newState);
-        }
-        
-        // تسجيل الإجراء في الماكرو إذا كان قيد التسجيل
-        ref.read(macroProvider.notifier).recordAction(tool.name, args);
-        
-        final messages = response['messages'] as List<dynamic>? ?? [];
-        final summary = messages.isNotEmpty ? messages.join(' • ') : 'تم تنفيذ الأداة بنجاح';
-        ref.read(toastProvider.notifier).success(summary);
-      } else {
-        final errors = response != null && response['errors'] is List 
-            ? (response['errors'] as List).join('\n') 
-            : 'فشل تنفيذ الإجراء بالباك إند.';
-        ref.read(toastProvider.notifier).error('❌ $errors');
+      switch (response) {
+        case Success(data: final data):
+          if (data['status'] == 'success') {
+            if (data['new_state'] != null) {
+              final newState = TimelineState.fromJson(data['new_state'] as Map<String, dynamic>);
+              ref.read(timelineProvider.notifier).updateTimelineState(newState);
+            }
+            
+            ref.read(macroProvider.notifier).recordAction(tool.name, args);
+            
+            final messages = data['messages'] as List<dynamic>? ?? [];
+            final summary = messages.isNotEmpty ? messages.join(' • ') : 'تم تنفيذ الأداة بنجاح';
+            ref.read(toastProvider.notifier).success(summary);
+          } else {
+            final errors = data['errors'] is List 
+                ? (data['errors'] as List).join('\n') 
+                : 'فشل تنفيذ الإجراء بالباك إند.';
+            ref.read(toastProvider.notifier).error('❌ $errors');
+          }
+        case Failure(message: final msg):
+          ref.read(toastProvider.notifier).error('❌ $msg');
       }
     } catch (e) {
       ref.read(toastProvider.notifier).error('❌ حدث خطأ أثناء إرسال الطلب: $e');

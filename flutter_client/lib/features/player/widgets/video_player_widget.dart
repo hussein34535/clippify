@@ -42,7 +42,12 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   int? _pendingSeekPos;
 
   VideoClip? _currentClip;
+  // ignore: unused_field
   AudioEffectChain? _effectChain;
+
+  ProviderSubscription? _isPlayingSub;
+  ProviderSubscription? _playheadSub;
+  ProviderSubscription? _scrubSub;
 
   Future<void> _safeSeek(int targetPosMs) async {
     if (_isSeeking) {
@@ -482,6 +487,41 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     });
 
     _loadVideo();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _isPlayingSub = ref.listenManual<bool>(isPlayingProvider, (oldVal, newVal) {
+        if (newVal != _isPlaying) {
+          if (newVal) {
+            _player.play();
+          } else {
+            _player.pause();
+          }
+        }
+      });
+
+      _playheadSub = ref.listenManual(
+        timelineProvider.select((value) => value.timeline.playheadSec),
+        (oldSec, newSec) {
+          _currentClip = _findClipAtPlayhead(newSec);
+          _applyClipSettings();
+          if (!_isPlaying) {
+            final targetPosMs = (newSec * 1000.0).round();
+            _safeSeek(targetPosMs);
+          }
+        },
+      );
+
+      _scrubSub = ref.listenManual<double>(scrubPlayheadProvider, (oldVal, newVal) {
+        if (!_isPlaying) {
+          _currentClip = _findClipAtPlayhead(newVal);
+          _applyClipSettings();
+          _safeSeek((newVal * 1000.0).round());
+        }
+      });
+
+      _currentClip = _findClipAtPlayhead(ref.read(timelineProvider).timeline.playheadSec);
+      _applyClipSettings();
+    });
   }
 
   @override
@@ -504,6 +544,9 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
 
   @override
   void dispose() {
+    _isPlayingSub?.close();
+    _playheadSub?.close();
+    _scrubSub?.close();
     _player.dispose();
     super.dispose();
   }
@@ -529,22 +572,11 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<bool>(isPlayingProvider, (oldVal, newVal) {
-      if (newVal != _isPlaying) {
-        if (newVal) {
-          _player.play();
-        } else {
-          _player.pause();
-        }
-      }
-    });
-
     final timelineData = ref.watch(timelineProvider);
     final playhead = timelineData.timeline.playheadSec;
     final maxDuration = ref.read(timelineProvider.notifier).totalDuration;
 
     _currentClip = _findClipAtPlayhead(playhead);
-    _applyClipSettings();
 
     // Keyframe animation interpolation
     TransformState animatedTransform = _currentClip?.transform ?? TransformState.defaultState();
@@ -610,19 +642,6 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         clipTransform.position.x != 0 || clipTransform.position.y != 0 ||
         clipTransform.scale.x != 100 || clipTransform.scale.y != 100 ||
         clipTransform.rotation != 0.0;
-
-    ref.listen(timelineProvider.select((value) => value.timeline.playheadSec), (oldSec, newSec) {
-      if (!_isPlaying) {
-        final targetPosMs = (newSec * 1000.0).round();
-        _safeSeek(targetPosMs);
-      }
-    });
-
-    ref.listen<double>(scrubPlayheadProvider, (oldVal, newVal) {
-      if (!_isPlaying) {
-        _safeSeek((newVal * 1000.0).round());
-      }
-    });
 
     return LayoutBuilder(
       builder: (context, constraints) {

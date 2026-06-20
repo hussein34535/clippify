@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/timeline_models.dart';
+import '../../../core/constants/timeline_constants.dart';
 import '../../../core/storage/local_storage.dart';
 
 class TimelineStateData {
@@ -134,7 +135,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   /// تحديث مستوى التكبير/التصغير (Zoom) بدون حفظ للتراجع
   void setZoom(double zoom) {
     state = state.copyWith(
-      timeline: state.timeline.copyWith(zoomLevel: zoom.clamp(1.0, 500.0)),
+      timeline: state.timeline.copyWith(zoomLevel: zoom.clamp(TimelineConstants.minZoom, TimelineConstants.maxZoom)),
     );
   }
 

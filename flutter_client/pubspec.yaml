@@ -1,5 +1,5 @@
 name: flutter_client
-description: "A new Flutter project."
+description: "ClipAI — Professional NLE Desktop Video Editor"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.2
+  sdk: ">=3.9.2 <4.0.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -48,13 +48,12 @@ dependencies:
   flutter_animate: ^4.5.0
   shared_preferences: ^2.3.0
   flutter_dotenv: ^5.1.0
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  build_runner: ^2.4.9
-  riverpod_generator: ^2.4.0
   flutter_lints: ^5.0.0
 
 # For information on the generic Dart part of this file, see the
