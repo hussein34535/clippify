@@ -12,8 +12,11 @@ on:
       - 'flutter_client/**'
 
 jobs:
-  analyze_test_build:
-    runs-on: windows-latest
+  analyze_test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     defaults:
       run:
         working-directory: flutter_client
@@ -40,6 +43,3 @@ jobs:
 
       - name: Test
         run: flutter test
-
-      - name: Build (Windows)
-        run: flutter build windows --release
