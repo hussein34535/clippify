@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 sealed class ApiResult<T> {
   const ApiResult();
@@ -25,7 +26,7 @@ class ApiClient {
   
   ApiClient._internal() {
     _dio = Dio(BaseOptions(
-      baseUrl: 'http://localhost:8000',
+      baseUrl: dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000',
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(minutes: 5),
       headers: {
@@ -41,7 +42,7 @@ class ApiClient {
       final response = await _dio.get('/api/settings');
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] getSettings error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/settings');
     }
   }
@@ -51,7 +52,7 @@ class ApiClient {
       final response = await _dio.post('/api/settings', data: settings);
       return Success(response.data['status'] == 'success');
     } catch (e) {
-      debugPrint('[ApiClient] postSettings error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/settings');
     }
   }
@@ -61,7 +62,7 @@ class ApiClient {
       final response = await _dio.post('/api/clear-cache');
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] clearCache error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/clear-cache');
     }
   }
@@ -71,7 +72,7 @@ class ApiClient {
       final response = await _dio.post('/api/download-youtube', data: {'url': url});
       return Success(response.data['session_id'] as String);
     } catch (e) {
-      debugPrint('[ApiClient] downloadYoutube error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/download-youtube');
     }
   }
@@ -81,7 +82,7 @@ class ApiClient {
       final response = await _dio.get('/api/status', queryParameters: {'session_id': sessionId});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] getSessionStatus error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/status');
     }
   }
@@ -91,7 +92,7 @@ class ApiClient {
       final response = await _dio.post('/api/transcribe', data: {'video_path': videoPath});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] transcribe error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/transcribe');
     }
   }
@@ -105,7 +106,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] detectSilence error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/detect-silence');
     }
   }
@@ -123,7 +124,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] copilotChat error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/copilot/chat');
     }
   }
@@ -136,7 +137,7 @@ class ApiClient {
       });
       return Success(response.data['session_id'] as String);
     } catch (e) {
-      debugPrint('[ApiClient] analyzeVideo error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/analyze-video');
     }
   }
@@ -160,7 +161,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] generatePlan error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/generate-plan');
     }
   }
@@ -225,7 +226,7 @@ class ApiClient {
       final response = await _dio.post('/api/render-plan', data: data);
       return Success(response.data['session_id'] as String);
     } catch (e) {
-      debugPrint('[ApiClient] renderPlan error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/render-plan');
     }
   }
@@ -235,7 +236,7 @@ class ApiClient {
       final response = await _dio.get('/api/ai/tools');
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] getAITools error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/ai/tools');
     }
   }
@@ -248,7 +249,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] executeAIActions error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/ai/execute');
     }
   }
@@ -261,7 +262,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] saveProject error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/project/save');
     }
   }
@@ -271,7 +272,7 @@ class ApiClient {
       final response = await _dio.get('/api/project/load', queryParameters: {'path': path});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] loadProject error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/project/load');
     }
   }
@@ -281,7 +282,7 @@ class ApiClient {
       final response = await _dio.get('/api/project/recent');
       return Success(response.data as List<dynamic>? ?? []);
     } catch (e) {
-      debugPrint('[ApiClient] getRecentProjects error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/project/recent');
     }
   }
@@ -294,7 +295,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] renderTimeline error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/project/render/timeline');
     }
   }
@@ -308,7 +309,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] exportXml error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/project/export/xml');
     }
   }
@@ -322,7 +323,7 @@ class ApiClient {
       final response = await _dio.post('/api/media-info', data: payload);
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] getMediaInfo error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/media-info');
     }
   }
@@ -332,7 +333,7 @@ class ApiClient {
       final response = await _dio.post('/api/analyze-beats', data: {'audio_path': audioPath});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] analyzeBeats error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/analyze-beats');
     }
   }
@@ -342,7 +343,7 @@ class ApiClient {
       final response = await _dio.post('/api/style/analyze-reference', data: {'video_path': videoPath});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] styleAnalyze error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/style/analyze-reference');
     }
   }
@@ -352,7 +353,7 @@ class ApiClient {
       final response = await _dio.post('/api/style/imitate', data: {'video_path': videoPath, 'style_profile': styleProfile});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] styleImitate error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/style/imitate');
     }
   }
@@ -362,7 +363,7 @@ class ApiClient {
       final response = await _dio.post('/api/broll/search', data: {'query': query});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] brollSearch error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/broll/search');
     }
   }
@@ -372,7 +373,7 @@ class ApiClient {
       final response = await _dio.post('/api/broll/download', data: {'url': url});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] brollDownload error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/broll/download');
     }
   }
@@ -382,7 +383,7 @@ class ApiClient {
       final response = await _dio.post('/api/audio/separate', data: {'video_path': videoPath});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] audioSeparate error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/audio/separate');
     }
   }
@@ -392,7 +393,7 @@ class ApiClient {
       final response = await _dio.post('/api/audio/ducking', data: {'video_path': videoPath});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] audioDucking error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/audio/ducking');
     }
   }
@@ -402,7 +403,7 @@ class ApiClient {
       final response = await _dio.post('/api/viral/recommendations', data: {'video_path': videoPath});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] viralRecommendations error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/viral/recommendations');
     }
   }
@@ -412,7 +413,7 @@ class ApiClient {
       final response = await _dio.post('/api/project/ai/autoframing', data: {'video_path': videoPath});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] autoFraming error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/project/ai/autoframing');
     }
   }
@@ -426,7 +427,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] aiUpscale error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/ai/upscale');
     }
   }
@@ -440,7 +441,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] aiInterpolate error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/ai/interpolate');
     }
   }
@@ -454,7 +455,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] aiRemoveObject error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/ai/remove-object');
     }
   }
@@ -467,7 +468,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] aiBackgroundReplace error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/ai/background-replace');
     }
   }
@@ -482,7 +483,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] aiGenerateVideo error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/ai/generate-video');
     }
   }
@@ -495,7 +496,7 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-      debugPrint('[ApiClient] aiEnhanceAudio error: $e');
+
       return Failure(_parseError(e), endpoint: '/api/ai/enhance-audio');
     }
   }

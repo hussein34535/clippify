@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class BackendController {
   static final BackendController _instance = BackendController._internal();
@@ -44,12 +45,14 @@ class BackendController {
     return exeDir;
   }
 
+  String get _apiBaseUrl => dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000';
+
   /// التحقق من أن الخادم على البورت هو الباك إند الصحيح (وليس خادم HTTP عشوائي)
   Future<bool> _verifyIsOurBackend() async {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 2);
-      final request = await client.getUrl(Uri.parse('http://localhost:8000/docs'));
+      final request = await client.getUrl(Uri.parse('$_apiBaseUrl/docs'));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
       client.close();

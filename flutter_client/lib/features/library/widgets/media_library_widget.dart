@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -58,7 +59,7 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
   Future<String?> _generateThumbnail(String videoPath) async {
     try {
       final tempDir = await getTemporaryDirectory();
-      final thumbPath = '${tempDir.path}\\${videoPath.hashCode}_thumb.jpg';
+      final thumbPath = p.join(tempDir.path, '${videoPath.hashCode}_thumb.jpg');
       if (await File(thumbPath).exists()) return thumbPath;
 
       final result = await Process.run('ffmpeg', [

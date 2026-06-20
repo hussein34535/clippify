@@ -40,7 +40,7 @@ class ThumbnailCache {
 
     final cacheDir = await _dir;
     final filePath = p.join(cacheDir, '$key.jpg');
-    if (await File(filePath).exists() || CacheManager().has(key)) {
+    if (await File(filePath).exists() || await CacheManager().has(key)) {
       _memoryCache[key] = filePath;
       return filePath;
     }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../library/widgets/media_library_widget.dart';
 import '../../player/widgets/video_player_widget.dart';
 import '../../timeline/widgets/timeline_widget.dart';
@@ -612,7 +613,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final current = ref.read(timelineProvider).timeline;
     if (!current.collaborationEnabled) {
       _collabManager = CollaborationManager(userId: 'user_${DateTime.now().millisecondsSinceEpoch}', userName: 'User');
-      _collabManager!.connect('ws://localhost:8000/ws');
+      final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000';
+      final wsUrl = baseUrl.replaceFirst('http://', 'ws://').replaceFirst('https://', 'wss://');
+      _collabManager!.connect('$wsUrl/ws');
       setState(() => _collaborationConnected = true);
       state.updateTimelineState(current.copyWith(collaborationEnabled: true));
       ref.read(toastProvider.notifier).success('Collaboration enabled');

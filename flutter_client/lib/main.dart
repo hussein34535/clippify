@@ -16,12 +16,7 @@ void main() async {
   // تهيئة window_manager لسطح المكتب
   await windowManager.ensureInitialized();
 
-  // محاولة قراءة ملف .env إذا كان موجوداً
-  try {
-    await dotenv.load(fileName: "../.env");
-  } catch (e) {
-    debugPrint('[Main] تحذير: لم يتم تحميل ملف .env: $e');
-  }
+  await dotenv.load(fileName: "assets/.env");
 
   // تشغيل خادم الباك إند (بايثون) قبل تحميل واجهة المستخدم
   final backendController = BackendController();

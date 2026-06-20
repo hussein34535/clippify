@@ -4,7 +4,35 @@ Downloads a video from YouTube using yt-dlp and returns its local path.
 """
 
 import os
+import re
 import yt_dlp
+
+VALID_YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com",
+                       "music.youtube.com", "youtu.be", "youtube-nocookie.com"}
+
+def validate_url(url: str) -> str:
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("URL must be a non-empty string")
+    url = url.strip()
+    if not url.startswith("https://"):
+        raise ValueError(f"Only HTTPS URLs are allowed: {url[:80]}")
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.hostname not in VALID_YOUTUBE_HOSTS:
+        raise ValueError(f"Only YouTube URLs are allowed: {parsed.hostname}")
+    # Block IP addresses (SSRF prevention)
+    ip_pattern = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+    if ip_pattern.match(parsed.hostname or ''):
+        raise ValueError(f"IP addresses not allowed: {parsed.hostname}")
+    try:
+        import socket
+        addr = socket.getaddrinfo(parsed.hostname, 80)[0][4][0]
+        if ip_pattern.match(addr):
+            # Resolved to an IP — this is expected for youtube.com, but block raw IPs
+            pass
+    except Exception:
+        pass
+    return url
 
 def download_youtube_video(url: str, output_dir: str, progress_callback=None) -> str:
     """
@@ -17,6 +45,7 @@ def download_youtube_video(url: str, output_dir: str, progress_callback=None) ->
     :return: Absolute path of the downloaded video file
     """
     os.makedirs(output_dir, exist_ok=True)
+    url = validate_url(url)
 
     class MyLogger:
         def debug(self, msg):
