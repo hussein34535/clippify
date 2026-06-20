@@ -302,13 +302,13 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   }
 
   void _removeClipFromTrack(String clipId, int trackIndex,
-      List<T> Function(TimelineTracks) getTracks,
-      TimelineTracks Function(TimelineTracks, List<T>) setTracks) {
+      List<dynamic> Function(Tracks) getTracks,
+      Tracks Function(Tracks, List<dynamic>) setTracks) {
     final tracks = getTracks(state.timeline.tracks);
     if (trackIndex >= tracks.length) return;
     final updated = tracks[trackIndex].clips.where((c) => c.id != clipId).toList();
-    final copy = List<T>.from(tracks);
-    copy[trackIndex] = tracks[trackIndex].copyWith(clips: updated) as T;
+    final copy = List<dynamic>.from(tracks);
+    copy[trackIndex] = tracks[trackIndex].copyWith(clips: updated);
     state = state.copyWith(
       timeline: state.timeline.copyWith(tracks: setTracks(state.timeline.tracks, copy)),
     );
@@ -317,29 +317,29 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   void removeVideoClip(String clipId, {int trackIndex = 0}) {
     _saveToUndoStack();
     _removeClipFromTrack(clipId, trackIndex,
-      (t) => t.video as List,
-      (t, l) => t.copyWith(video: l as List<VideoTrack>));
+      (t) => t.video,
+      (t, l) => t.copyWith(video: l.cast<VideoTrack>()));
   }
 
   void removeAudioClip(String clipId, {int trackIndex = 0}) {
     _saveToUndoStack();
     _removeClipFromTrack(clipId, trackIndex,
-      (t) => t.audio as List,
-      (t, l) => t.copyWith(audio: l as List<AudioTrack>));
+      (t) => t.audio,
+      (t, l) => t.copyWith(audio: l.cast<AudioTrack>()));
   }
 
   void removeOverlayClip(String clipId, {int trackIndex = 0}) {
     _saveToUndoStack();
     _removeClipFromTrack(clipId, trackIndex,
-      (t) => t.overlays as List,
-      (t, l) => t.copyWith(overlays: l as List<OverlayTrack>));
+      (t) => t.overlays,
+      (t, l) => t.copyWith(overlays: l.cast<OverlayTrack>()));
   }
 
   void removeSubtitleClip(String clipId, {int trackIndex = 0}) {
     _saveToUndoStack();
     _removeClipFromTrack(clipId, trackIndex,
-      (t) => t.subtitles as List,
-      (t, l) => t.copyWith(subtitles: l as List<SubtitleTrack>));
+      (t) => t.subtitles,
+      (t, l) => t.copyWith(subtitles: l.cast<SubtitleTrack>()));
   }
 
   /// إزالة أي كليب بناءً على معرفه ونوعه
@@ -363,10 +363,9 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     }
   }
 
-  /// تحديث كليب فيديو محدد
   void _updateClipInTrack(String clipId, int trackIndex,
-      List<T> Function(TimelineTracks) getTracks,
-      TimelineTracks Function(TimelineTracks, List<T>) setTracks,
+      List<dynamic> Function(Tracks) getTracks,
+      Tracks Function(Tracks, List<dynamic>) setTracks,
       dynamic Function(dynamic) updateFn) {
     final tracks = getTracks(state.timeline.tracks);
     if (trackIndex >= tracks.length) return;
@@ -375,8 +374,8 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       if (clip.id == clipId) return updateFn(clip);
       return clip;
     }).toList();
-    final copy = List<T>.from(tracks);
-    copy[trackIndex] = targetTrack.copyWith(clips: updatedClips) as T;
+    final copy = List<dynamic>.from(tracks);
+    copy[trackIndex] = targetTrack.copyWith(clips: updatedClips);
     state = state.copyWith(
       timeline: state.timeline.copyWith(tracks: setTracks(state.timeline.tracks, copy)),
     );
@@ -385,32 +384,32 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   void updateVideoClip(String clipId, VideoClip Function(VideoClip) updateFn, {int trackIndex = 0}) {
     _saveToUndoStack();
     _updateClipInTrack(clipId, trackIndex,
-      (t) => t.video as List,
-      (t, l) => t.copyWith(video: l as List<VideoTrack>),
+      (t) => t.video,
+      (t, l) => t.copyWith(video: l.cast<VideoTrack>()),
       (c) => updateFn(c as VideoClip));
   }
 
   void updateSubtitleClip(String clipId, SubtitleClip Function(SubtitleClip) updateFn, {int trackIndex = 0}) {
     _saveToUndoStack();
     _updateClipInTrack(clipId, trackIndex,
-      (t) => t.subtitles as List,
-      (t, l) => t.copyWith(subtitles: l as List<SubtitleTrack>),
+      (t) => t.subtitles,
+      (t, l) => t.copyWith(subtitles: l.cast<SubtitleTrack>()),
       (c) => updateFn(c as SubtitleClip));
   }
 
   void updateAudioClip(String clipId, AudioClip Function(AudioClip) updateFn, {int trackIndex = 0}) {
     _saveToUndoStack();
     _updateClipInTrack(clipId, trackIndex,
-      (t) => t.audio as List,
-      (t, l) => t.copyWith(audio: l as List<AudioTrack>),
+      (t) => t.audio,
+      (t, l) => t.copyWith(audio: l.cast<AudioTrack>()),
       (c) => updateFn(c as AudioClip));
   }
 
   void updateOverlayClip(String clipId, OverlayClip Function(OverlayClip) updateFn, {int trackIndex = 0}) {
     _saveToUndoStack();
     _updateClipInTrack(clipId, trackIndex,
-      (t) => t.overlays as List,
-      (t, l) => t.copyWith(overlays: l as List<OverlayTrack>),
+      (t) => t.overlays,
+      (t, l) => t.copyWith(overlays: l.cast<OverlayTrack>()),
       (c) => updateFn(c as OverlayClip));
   }
 

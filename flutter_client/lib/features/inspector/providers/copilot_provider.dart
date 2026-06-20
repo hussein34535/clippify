@@ -121,9 +121,7 @@ class CopilotNotifier extends StateNotifier<CopilotStateData> {
             return clip.copyWith(volume: fields['volume'] != null ? (fields['volume'] as num).toDouble() : clip.volume);
           });
         } else if (clipType == 'overlay') {
-          notifier.updateOverlayClip(clipId, (clip) {
-            return clip.copyWith(volume: fields['volume'] != null ? (fields['volume'] as num).toDouble() : clip.volume);
-          });
+          notifier.updateOverlayClip(clipId, (clip) => clip);
         } else if (clipType == 'subtitle') {
           notifier.updateSubtitleClip(clipId, (clip) {
             return clip.copyWith(text: fields['text'] as String? ?? clip.text);
