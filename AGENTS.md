@@ -1,4 +1,4 @@
-# ClipAI — Project Summary
+# clippify — Project Summary
 
 ## Goal
 تحويل تطبيق ClipAI إلى Flutter Desktop بأعلى معايير NLE الاحترافية (CapCut/Premiere Pro level)
@@ -78,7 +78,7 @@
 - Comment system مع tap-to-seek
 
 ### Other Features
-- AI Tool Palette (219 tool)
+- AI Tool Palette (215 tools)
 - Subtitle Editor
 - Export Modal
 - Settings Modal
@@ -105,12 +105,12 @@
 
 | File | Description |
 |------|-------------|
-| `flutter_client/.../timeline_widget.dart` | ~1430 سطر — الهيكل الرئيسي للتايملاين مع السايدبار الخارجي |
-| `flutter_client/.../timeline_painters.dart` | **جديد** — `TrackConfig`, `RecordingIndicator`, `PlayheadTriangle` |
-| `flutter_client/.../clip_item_widget.dart` | ~500 سطر — عرض الكليبات بالتدرجات + المقابض |
-| `flutter_client/.../timeline_provider.dart` | ~1020 سطر — حالة التايملاين + Command Pattern + undo/redo |
-| `flutter_client/.../video_player_widget.dart` | ~270 سطر — مشغل الفيديو مع الربط الثنائي |
-| `flutter_client/.../backend_controller.dart` | ~180 سطر — إدارة الباك إند مع التحقق من الصحة |
+| `flutter_client/.../timeline_widget.dart` | ~1661 سطر — الهيكل الرئيسي للتايملاين مع السايدبار الخارجي |
+| `flutter_client/.../timeline_painters.dart` | `TrackConfig`, `RecordingIndicator`, `PlayheadTriangle` |
+| `flutter_client/.../clip_item_widget.dart` | ~441 سطر — عرض الكليبات بالتدرجات + المقابض |
+| `flutter_client/.../timeline_provider.dart` | ~1208 سطر — حالة التايملاين + Command Pattern + undo/redo |
+| `flutter_client/.../video_player_widget.dart` | ~811 سطر — مشغل الفيديو مع الربط الثنائي |
+| `flutter_client/.../backend_controller.dart` | ~184 سطر — إدارة الباك إند مع التحقق من الصحة |
 | `flutter_client/.../app_theme.dart` | الثيم (داكن/فاتح) + `AppColors` |
 | `flutter_client/.../timeline_models.dart` | `VideoClip`, `AudioClip`, `OverlayClip`, `SubtitleClip`, `TimelineState`, `TextClip`, `TextTrack`, `SpeedPoint`, `SpeedRamp`, `Transition` |
 | `flutter_client/.../api_client.dart` | HTTP client للباك إند (Dio) |
@@ -184,27 +184,20 @@ flutter run -d windows
 ### Status
 | Metric | Value |
 |--------|-------|
-| `flutter analyze` | 0 errors, 0 warnings, 198 infos |
+| `flutter analyze` | 0 errors, 0 warnings |
 | `flutter test` | 55/55 passed |
-| `flutter build windows --release` | نجح (58s) |
-| New tests added | 18 (constants, api_result, timeline_provider) |
-| GitHub Actions CI | Added `.github/workflows/flutter_ci.yml` |
-| Constants refactored | `timeline_constants.dart` with 18 named constants |
+| `flutter build windows --release` | نجح |
+| GitHub Actions CI | `flutter_ci.yml` (multi-OS) + `python_ci.yml` |
+| Python tests | URL validation + tool registry counts |
 
 ### Completed
 | # | Task |
 |---|------|
-| ✅ | README.md rewritten for Flutter Desktop + FastAPI |
-| ✅ | `timeline_constants.dart` created with track heights, zoom, snap, grid, playhead constants |
-| ✅ | Magic numbers replaced in `timeline_widget.dart` (track configs, zoom, sidebar, grid, snap, borders) |
-| ✅ | Magic numbers replaced in `clip_item_widget.dart` (thumbnail, borders) |
-| ✅ | Magic numbers replaced in `timeline_provider.dart` (zoom clamp) |
-| ✅ | `ApiClient` singleton test + `ApiResult<T>` sealed class pattern matching tests |
-| ✅ | `TimelineConstants` unit test (all values verified) |
-| ✅ | `TimelineNotifier` unit test (setPlayhead, setZoom, clamps, undo) |
-| ✅ | `TimelineStateData` copyWith unit test |
-| ✅ | GitHub Actions CI workflow (analyze + test + build Windows) |
-| ✅ | `pubspec.yaml` description updated |
+| ✅ | Phase 1: Remove React/Tauri layer, port 3 files to Dart |
+| ✅ | Phase 2: Fix 6 critical blockers (cache_manager, dotenv, debugPrint, downloader, backslash, riverpod) |
+| ✅ | Phase 3: Refactor code smells (TimelineNotifier, menu callbacks, tool counts, copilot) |
+| ✅ | Phase 4: Add Python tests + CI/CD |
+| ✅ | Phase 5: Reconcile docs |
 
 ### Remaining (Phase 2.5+)
 | # | Task | Priority |

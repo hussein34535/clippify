@@ -1,6 +1,6 @@
-# ClipAI — Professional NLE Desktop Editor
+# clippify — Professional NLE Desktop Editor
 
-**Flutter Desktop video editor** — professional-grade, AI-powered, 100% offline.
+**Flutter Desktop video editor** — professional-grade, AI-powered.
 Built with Flutter 3.44 + FastAPI backend + FFmpeg for a CapCut/Premiere Pro level editing experience.
 
 ---
@@ -70,7 +70,7 @@ Built with Flutter 3.44 + FastAPI backend + FFmpeg for a CapCut/Premiere Pro lev
 - Playhead scrubbing with zero Riverpod rebuilds
 
 ### AI & Effects
-- AI Tool Palette (219 tools)
+- AI Tool Palette (215 tools)
 - Copilot chat
 - Color Grading Panel (Color Wheel + 8 presets)
 - Audio EQ (bass/mid/treble) + effects chain
@@ -174,7 +174,7 @@ clipai/
 │   │   │   └── audio/      # Audio effects engine
 │   │   └── shared/         # Macros, keyboard shortcuts, utils
 │   ├── test/
-│   │   └── ...             # 37 unit tests
+│   │   └── ...             # 55+ unit tests
 │   └── pubspec.yaml
 └── ...
 ```
@@ -186,10 +186,10 @@ clipai/
 | Metric | Current |
 |--------|---------|
 | `flutter analyze` | 0 errors, 0 warnings |
-| `flutter test` | 37/37 passed |
+| `flutter test` | 55/55 passed |
 | `flutter build windows --release` | ✅ Success |
 | Flutter SDK | 3.44.2 (stable) |
-| Backend | FastAPI 0.136.1 on port 8000 |
+| Backend | FastAPI on port 8000 |
 
 ---
 

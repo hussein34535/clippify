@@ -66,6 +66,10 @@ campaign.json.disabled
 *.wav
 *.mkv
 
+# Testing
+.pytest_cache/
+tests/__pycache__/
+
 # PyInstaller / Build
 ClipAI.spec
 dist/clipai-backend*.exe
