@@ -777,89 +777,80 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       }
                       if (bottomH > totalHeight - 120) { bottomH = totalHeight - 120; if (bottomH < 0) bottomH = 0; }
 
-                      final topFlex = ((1 - layoutPrefs.timelineFraction) * 10).round();
-                      final bottomFlex = (layoutPrefs.timelineFraction * 10).round();
+                      final topFlex = ((1 - layoutPrefs.timelineFraction) * 10).round().clamp(1, 10);
+                      final bottomFlex = (layoutPrefs.timelineFraction * 10).round().clamp(1, 10);
 
                       return Container(
                         color: EdgeTheme.canvas,
                         padding: EdgeInsets.all(layoutPrefs.workspacePadding),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                        child: Column(
                           children: [
-                            // Left panel: Media Browser
-                            Container(
-                              width: leftW,
-                              clipBehavior: Clip.antiAlias,
-                              decoration: BoxDecoration(
-                                color: EdgeTheme.panelBg,
-                                borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
-                                border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
-                              ),
-                              child: Column(
+                            // Top row: Media | Viewer | Inspector
+                            Expanded(
+                              flex: topFlex,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
+                                  // Left panel: Media Browser
                                   Container(
-                                    height: 28,
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    decoration: const BoxDecoration(
-                                      color: EdgeTheme.toolbar,
-                                      border: Border(bottom: BorderSide(color: EdgeTheme.divider)),
+                                    width: leftW,
+                                    clipBehavior: Clip.antiAlias,
+                                    decoration: BoxDecoration(
+                                      color: EdgeTheme.panelBg,
+                                      borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
+                                      border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
                                     ),
-                                    child: Row(
+                                    child: Column(
                                       children: [
-                                        const Icon(Icons.folder_rounded, size: 12, color: EdgeTheme.textSecondary),
-                                        const SizedBox(width: 6),
-                                        Text('Media Browser', style: EdgeTypography.titleSmall),
-                                        const Spacer(),
-                                        Icon(Icons.search_rounded, size: 12, color: EdgeTheme.textSecondary),
+                                        Container(
+                                          height: 32,
+                                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                                          decoration: const BoxDecoration(
+                                            color: EdgeTheme.toolbar,
+                                            border: Border(bottom: BorderSide(color: EdgeTheme.divider)),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.folder_rounded, size: 14, color: EdgeTheme.textSecondary),
+                                              const SizedBox(width: 8),
+                                              Text('Media Browser', style: EdgeTypography.titleSmall),
+                                            ],
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: MediaLibraryWidget(
+                                            importedFiles: _importedFiles,
+                                            onFileAdded: _onFileAdded,
+                                            onFileRemoved: _onFileRemoved,
+                                            onSelectVideo: _onSelectVideo,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
-                                  Expanded(
-                                    child: MediaLibraryWidget(
-                                      importedFiles: _importedFiles,
-                                      onFileAdded: _onFileAdded,
-                                      onFileRemoved: _onFileRemoved,
-                                      onSelectVideo: _onSelectVideo,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            SizedBox(width: layoutPrefs.panelGap),
+                                  SizedBox(width: layoutPrefs.panelGap),
 
-                            // Center: Viewer + Timeline
-                            Expanded(
-                              child: Container(
-                                clipBehavior: Clip.antiAlias,
-                                decoration: BoxDecoration(
-                                  color: EdgeTheme.panelBg,
-                                  borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
-                                  border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
-                                ),
-                                child: Column(
-                                  children: [
-                                    // Viewer
-                                    Expanded(
-                                      flex: topFlex,
+                                  // Center: Viewer (full height)
+                                  Expanded(
+                                    child: Container(
+                                      clipBehavior: Clip.antiAlias,
+                                      decoration: BoxDecoration(
+                                        color: EdgeTheme.panelBg,
+                                        borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
+                                        border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
+                                      ),
                                       child: ClipRRect(
-                                        borderRadius: BorderRadius.vertical(top: Radius.circular(layoutPrefs.panelRadius)),
+                                        borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
                                         child: Container(
                                           color: Colors.black,
                                           child: Stack(
                                             children: [
                                               VideoPlayerWidget(videoPath: activeVideoPath),
-                                              // Transport controls overlay
                                               Positioned(
                                                 bottom: 0, left: 0, right: 0,
                                                 child: Container(
-                                                  height: 36,
-                                                  decoration: BoxDecoration(
-                                                    gradient: LinearGradient(
-                                                      begin: Alignment.bottomCenter,
-                                                      end: Alignment.topCenter,
-                                                      colors: [Colors.black87, Colors.transparent],
-                                                    ),
-                                                  ),
+                                                  height: 40,
+                                                  color: Colors.black.withValues(alpha: 0.7),
                                                   child: Row(
                                                     mainAxisAlignment: MainAxisAlignment.center,
                                                     children: [
@@ -877,62 +868,66 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         ),
                                       ),
                                     ),
+                                  ),
+                                  SizedBox(width: layoutPrefs.panelGap),
 
-                                    // Divider
-                                    Container(height: 1, color: EdgeTheme.divider),
-
-                                    // Timeline
-                                    Expanded(
-                                      flex: bottomFlex,
-                                      child: TimelineWidget(
-                                        selectedClipId: _selectedClipId,
-                                        onSelectClip: _onSelectClip,
-                                        onSelectVideo: _onSelectVideo,
-                                        onAutoCut: _handleAutoCut,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            SizedBox(width: layoutPrefs.panelGap),
-
-                            // Right panel: Inspector
-                            Container(
-                              width: rightW,
-                              clipBehavior: Clip.antiAlias,
-                              decoration: BoxDecoration(
-                                color: EdgeTheme.panelBg,
-                                borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
-                                border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
-                              ),
-                              child: Column(
-                                children: [
+                                  // Right panel: Inspector
                                   Container(
-                                    height: 28,
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    decoration: const BoxDecoration(
-                                      color: EdgeTheme.toolbar,
-                                      border: Border(bottom: BorderSide(color: EdgeTheme.divider)),
+                                    width: rightW,
+                                    clipBehavior: Clip.antiAlias,
+                                    decoration: BoxDecoration(
+                                      color: EdgeTheme.panelBg,
+                                      borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
+                                      border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
                                     ),
-                                    child: Row(
+                                    child: Column(
                                       children: [
-                                        const Icon(Icons.info_outline_rounded, size: 12, color: EdgeTheme.textSecondary),
-                                        const SizedBox(width: 6),
-                                        Text('Inspector', style: EdgeTypography.titleSmall),
-                                        const Spacer(),
-                                        Icon(Icons.more_horiz_rounded, size: 12, color: EdgeTheme.textSecondary),
+                                        Container(
+                                          height: 32,
+                                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                                          decoration: const BoxDecoration(
+                                            color: EdgeTheme.toolbar,
+                                            border: Border(bottom: BorderSide(color: EdgeTheme.divider)),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.info_outline_rounded, size: 14, color: EdgeTheme.textSecondary),
+                                              const SizedBox(width: 8),
+                                              Text('Inspector', style: EdgeTypography.titleSmall),
+                                            ],
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: InspectorWidget(
+                                            selectedClipId: _selectedClipId,
+                                            selectedClipType: _selectedClipType,
+                                            onAutoCut: _handleAutoCut,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
-                                  Expanded(
-                                    child: InspectorWidget(
-                                      selectedClipId: _selectedClipId,
-                                      selectedClipType: _selectedClipType,
-                                      onAutoCut: _handleAutoCut,
-                                    ),
-                                  ),
                                 ],
+                              ),
+                            ),
+                            SizedBox(height: layoutPrefs.panelGap),
+
+                            // Bottom: Timeline (full width)
+                            Expanded(
+                              flex: bottomFlex,
+                              child: Container(
+                                clipBehavior: Clip.antiAlias,
+                                decoration: BoxDecoration(
+                                  color: EdgeTheme.panelBg,
+                                  borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
+                                  border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
+                                ),
+                                child: TimelineWidget(
+                                  selectedClipId: _selectedClipId,
+                                  onSelectClip: _onSelectClip,
+                                  onSelectVideo: _onSelectVideo,
+                                  onAutoCut: _handleAutoCut,
+                                ),
                               ),
                             ),
                           ],
