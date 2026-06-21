@@ -28,6 +28,7 @@ import '../../ui/edge_ui.dart';
 import '../../../shared/widgets/ui_polish.dart';
 import '../../export/data/export_presets.dart';
 import '../../../core/services/services.dart';
+import '../../../shared/providers/layout_prefs_provider.dart';
 import '../../capture/capture_suite.dart';
 import '../../ui/professional_ui.dart';
 
@@ -686,6 +687,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final layoutPrefs = ref.watch(layoutPrefsProvider);
     return Stack(
       children: [
         KeyboardShortcutsWidget(
@@ -713,6 +715,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               children: [
                 // Professional Menu Bar
                 HeaderWidget(
+                  height: layoutPrefs.headerHeight,
                   onExport: _isExporting ? null : _handleExport,
                   onSettings: _handleSettings,
                   onSave: _handleSave,
@@ -747,7 +750,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final timelineData = ref.watch(timelineProvider);
-                      final playhead = timelineData.timeline.playheadSec;
+                       final playhead = timelineData.timeline.playheadSec;
                       String? activeVideoPath;
                       for (final track in timelineData.timeline.tracks.video) {
                         for (final clip in track.clips) {
@@ -760,9 +763,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                       final double totalWidth = constraints.maxWidth;
                       final double totalHeight = constraints.maxHeight;
-                      double leftW = totalWidth * _leftFraction;
-                      double rightW = totalWidth * _rightFraction;
-                      double bottomH = totalHeight * _bottomFraction;
+                      double leftW = totalWidth * layoutPrefs.leftPanelFraction;
+                      double rightW = totalWidth * layoutPrefs.rightPanelFraction;
+                      double bottomH = totalHeight * layoutPrefs.timelineFraction;
                       if (leftW < 200) leftW = 200;
                       if (rightW < 200) rightW = 200;
                       if (bottomH < 200) bottomH = 200;
@@ -774,16 +777,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       }
                       if (bottomH > totalHeight - 120) { bottomH = totalHeight - 120; if (bottomH < 0) bottomH = 0; }
 
+                      final topFlex = ((1 - layoutPrefs.timelineFraction) * 10).round();
+                      final bottomFlex = (layoutPrefs.timelineFraction * 10).round();
+
                       return Container(
                         color: EdgeTheme.canvas,
-                        padding: const EdgeInsets.all(6),
+                        padding: EdgeInsets.all(layoutPrefs.workspacePadding),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             // Left panel: Media Browser
                             Container(
                               width: leftW,
-                              decoration: EdgeTheme.panelDecoration(),
+                              clipBehavior: Clip.antiAlias,
+                              decoration: BoxDecoration(
+                                color: EdgeTheme.panelBg,
+                                borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
+                                border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
+                              ),
                               child: Column(
                                 children: [
                                   Container(
@@ -814,19 +825,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            SizedBox(width: layoutPrefs.panelGap),
 
                             // Center: Viewer + Timeline
                             Expanded(
                               child: Container(
-                                decoration: EdgeTheme.panelDecoration(),
+                                clipBehavior: Clip.antiAlias,
+                                decoration: BoxDecoration(
+                                  color: EdgeTheme.panelBg,
+                                  borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
+                                  border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
+                                ),
                                 child: Column(
                                   children: [
                                     // Viewer
                                     Expanded(
-                                      flex: 5,
+                                      flex: topFlex,
                                       child: ClipRRect(
-                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(EdgeTheme.radiusLg)),
+                                        borderRadius: BorderRadius.vertical(top: Radius.circular(layoutPrefs.panelRadius)),
                                         child: Container(
                                           color: Colors.black,
                                           child: Stack(
@@ -867,7 +883,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                                     // Timeline
                                     Expanded(
-                                      flex: 5,
+                                      flex: bottomFlex,
                                       child: TimelineWidget(
                                         selectedClipId: _selectedClipId,
                                         onSelectClip: _onSelectClip,
@@ -879,12 +895,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            SizedBox(width: layoutPrefs.panelGap),
 
                             // Right panel: Inspector
                             Container(
                               width: rightW,
-                              decoration: EdgeTheme.panelDecoration(),
+                              clipBehavior: Clip.antiAlias,
+                              decoration: BoxDecoration(
+                                color: EdgeTheme.panelBg,
+                                borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
+                                border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
+                              ),
                               child: Column(
                                 children: [
                                   Container(

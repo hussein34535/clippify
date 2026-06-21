@@ -12,6 +12,7 @@ const _workspacePresets = <(String, String, String)>[
 ];
 
 class HeaderWidget extends ConsumerWidget {
+  final double? height;
   final VoidCallback? onExport;
   final VoidCallback? onSettings;
   final VoidCallback? onSave;
@@ -32,6 +33,7 @@ class HeaderWidget extends ConsumerWidget {
 
   const HeaderWidget({
     super.key,
+    this.height,
     this.onExport,
     this.onSettings,
     this.onSave,
@@ -89,7 +91,7 @@ class HeaderWidget extends ConsumerWidget {
     final accent = ref.watch(appPrefsProvider).accentColor;
 
     return Container(
-      height: 56,
+      height: height ?? 56,
       decoration: const BoxDecoration(
         color: EdgeTheme.menuBar,
         border: Border(bottom: BorderSide(color: EdgeTheme.divider)),

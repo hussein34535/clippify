@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/providers/toast_provider.dart';
 import '../../../shared/providers/theme_provider.dart';
+import '../../../shared/providers/layout_prefs_provider.dart';
 
 class SettingsModal extends ConsumerStatefulWidget {
   const SettingsModal({super.key});
@@ -164,6 +165,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
   Widget build(BuildContext context) {
     final prefs = ref.watch(appPrefsProvider);
     final prefsNotifier = ref.read(appPrefsProvider.notifier);
+    final layoutPrefs = ref.watch(layoutPrefsProvider);
 
     if (_loading) {
       return Dialog(
@@ -285,7 +287,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                 controller: _tabController,
                 children: [
                   // ── Tab 1: Appearance ──────────────
-                  _buildAppearanceTab(prefs, prefsNotifier),
+                  _buildAppearanceTab(prefs, prefsNotifier, layoutPrefs),
 
                   // ── Tab 2: AI Settings ─────────────
                   _buildAISettingsTab(),
@@ -344,7 +346,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
   }
 
   // ── Appearance Tab ──────────────────────────
-  Widget _buildAppearanceTab(AppPrefsState prefs, AppPrefsNotifier prefsNotifier) {
+  Widget _buildAppearanceTab(AppPrefsState prefs, AppPrefsNotifier prefsNotifier, LayoutPrefsState layoutPrefs) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Column(
@@ -434,6 +436,182 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                   ],
                 ),
               ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // ═══ Layout section ═══
+          _sectionLabel('التخطيط (Layout)'),
+          const SizedBox(height: 12),
+
+          // Workspace padding
+          ListTile(
+            dense: true,
+            title: const Text('هامش المساحة العامة', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${layoutPrefs.workspacePadding.toStringAsFixed(0)} px', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.workspacePadding,
+                min: 0, max: 24, divisions: 24,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setWorkspacePadding(v),
+              ),
+            ),
+          ),
+
+          // Panel gap
+          ListTile(
+            dense: true,
+            title: const Text('المسافة بين اللوحات', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${layoutPrefs.panelGap.toStringAsFixed(0)} px', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.panelGap,
+                min: 0, max: 16, divisions: 16,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setPanelGap(v),
+              ),
+            ),
+          ),
+
+          // Panel corner radius
+          ListTile(
+            dense: true,
+            title: const Text('استدارة زوايا اللوحات', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${layoutPrefs.panelRadius.toStringAsFixed(0)} px', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.panelRadius,
+                min: 0, max: 24, divisions: 24,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setPanelRadius(v),
+              ),
+            ),
+          ),
+
+          // Panel border width
+          ListTile(
+            dense: true,
+            title: const Text('سماكة حدود اللوحات', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${layoutPrefs.panelBorderWidth.toStringAsFixed(1)} px', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.panelBorderWidth,
+                min: 0, max: 4, divisions: 8,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setPanelBorderWidth(v),
+              ),
+            ),
+          ),
+
+          // Header height
+          ListTile(
+            dense: true,
+            title: const Text('ارتفاع الشريط العلوي', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${layoutPrefs.headerHeight.toStringAsFixed(0)} px', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.headerHeight,
+                min: 40, max: 80, divisions: 40,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setHeaderHeight(v),
+              ),
+            ),
+          ),
+
+          // Timeline fraction
+          ListTile(
+            dense: true,
+            title: const Text('ارتفاع التايملاين', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${(layoutPrefs.timelineFraction * 100).round()}% من الشاشة', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.timelineFraction,
+                min: 0.20, max: 0.70, divisions: 50,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setTimelineFraction(v),
+              ),
+            ),
+          ),
+
+          // Left panel width
+          ListTile(
+            dense: true,
+            title: const Text('عرض لوحة الميديا', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${(layoutPrefs.leftPanelFraction * 100).round()}% من الشاشة', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.leftPanelFraction,
+                min: 0.10, max: 0.40, divisions: 30,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setLeftPanelFraction(v),
+              ),
+            ),
+          ),
+
+          // Right panel width
+          ListTile(
+            dense: true,
+            title: const Text('عرض لوحة المفتش', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${(layoutPrefs.rightPanelFraction * 100).round()}% من الشاشة', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.rightPanelFraction,
+                min: 0.15, max: 0.45, divisions: 30,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setRightPanelFraction(v),
+              ),
+            ),
+          ),
+
+          // Clip minimum width
+          ListTile(
+            dense: true,
+            title: const Text('أقل عرض للكليب', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${layoutPrefs.clipMinWidth.toStringAsFixed(0)} px', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.clipMinWidth,
+                min: 20, max: 200, divisions: 18,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setClipMinWidth(v),
+              ),
+            ),
+          ),
+
+          // Resize handle width
+          ListTile(
+            dense: true,
+            title: const Text('عرض مقابض التحجيم', style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+            subtitle: Text('${layoutPrefs.resizeHandleWidth.toStringAsFixed(0)} px', style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            trailing: SizedBox(
+              width: 200,
+              child: Slider(
+                value: layoutPrefs.resizeHandleWidth,
+                min: 4, max: 24, divisions: 20,
+                activeColor: prefs.accentColor,
+                onChanged: (v) => ref.read(layoutPrefsProvider.notifier).setResizeHandleWidth(v),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+          Center(
+            child: TextButton.icon(
+              onPressed: () => ref.read(layoutPrefsProvider.notifier).resetToDefaults(),
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('استعادة الإعدادات الافتراضية'),
+              style: TextButton.styleFrom(foregroundColor: prefs.accentColor),
             ),
           ),
 

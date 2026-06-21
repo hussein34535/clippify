@@ -16,6 +16,7 @@ import '../../../core/api/api_client.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../../../shared/widgets/advanced_gestures.dart';
+import '../../../shared/providers/layout_prefs_provider.dart';
 
 
 class TimelineWidget extends ConsumerStatefulWidget {
@@ -628,6 +629,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   Widget build(BuildContext context) {
     final timelineData = ref.watch(timelineProvider);
     final timelineNotifier = ref.read(timelineProvider.notifier);
+    final layoutPrefs = ref.watch(layoutPrefsProvider);
 
     final timelineState = timelineData.timeline;
     final double zoomLevel = timelineState.zoomLevel;
@@ -1280,6 +1282,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     required String trackType,
     required double height,
   }) {
+    final layoutPrefs = ref.watch(layoutPrefsProvider);
     final bool isLocked = _lockedTracks.contains(trackType);
     final bool isHidden = _hiddenTracks.contains(trackType);
     final bool isMuted = _mutedTracks.contains(trackType);
@@ -1401,7 +1404,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                         clipName = clip.name;
                       }
 
-                      final double width = (end - start) * zoomLevel;
+                      final double width = ((end - start) * zoomLevel).clamp(layoutPrefs.clipMinWidth, double.infinity);
                       final bool isSelected = clipId == widget.selectedClipId || _selectedClipIds.contains(clipId);
                       final notifier = ref.read(timelineProvider.notifier);
                       final playhead = ref.read(timelineProvider).timeline.playheadSec;
@@ -1553,6 +1556,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                  isHidden: isHidden,
                                  isMuted: isMuted,
                                  isDragging: _isDraggingClip,
+                                 clipMinWidth: layoutPrefs.clipMinWidth,
+                                 resizeHandleWidth: layoutPrefs.resizeHandleWidth,
                                  onDragStart: () => setState(() {
                                    _snapLinePositionSec = null;
                                    _isDraggingClip = true;

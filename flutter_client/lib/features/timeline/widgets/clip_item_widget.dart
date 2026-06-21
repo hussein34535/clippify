@@ -22,6 +22,8 @@ class ClipItemWidget extends StatelessWidget {
   final VoidCallback? onDragEnd;
   final VoidCallback? onTransitionTap;
   final VoidCallback? onContextMenu;
+  final double clipMinWidth;
+  final double resizeHandleWidth;
 
   const ClipItemWidget({
     super.key,
@@ -41,6 +43,8 @@ class ClipItemWidget extends StatelessWidget {
     this.onDragEnd,
     this.onTransitionTap,
     this.onContextMenu,
+    this.clipMinWidth = 40.0,
+    this.resizeHandleWidth = 12.0,
   });
 
   LinearGradient _getBackgroundGradient() {
@@ -116,7 +120,7 @@ class ClipItemWidget extends StatelessWidget {
     } else if (clip is SubtitleClip) {
       duration = (clip as SubtitleClip).endTime - (clip as SubtitleClip).startTime;
     }
-    return duration * zoomLevel;
+    return (duration * zoomLevel).clamp(clipMinWidth, double.infinity);
   }
 
   Widget _buildTopHeader() {
@@ -317,67 +321,76 @@ class ClipItemWidget extends StatelessWidget {
                   ),
                 ),
                 if (isSelected && !isLocked)
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: (clipWidth / 3.0).clamp(2.0, 8.0),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeLeftRight,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onHorizontalDragStart: (_) => onDragStart?.call(),
-                        onHorizontalDragEnd: (_) => onDragEnd?.call(),
-                        onHorizontalDragUpdate: (details) {
-                          final deltaSec = details.delta.dx / zoomLevel;
-                          onResizeLeft(deltaSec);
-                        },
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border(
-                              left: BorderSide(
-                                color: _getSelectedBorderColor(),
-                                width: 3.0,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                  _buildResizeHandle(
+                    isLeft: true,
+                    onDragStart: onDragStart,
+                    onDragEnd: onDragEnd,
+                    onResize: (dx) => onResizeLeft(dx / zoomLevel),
+                    indicatorColor: _getSelectedBorderColor(),
+                    handleWidth: resizeHandleWidth,
                   ),
                 if (isSelected && !isLocked)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: (clipWidth / 3.0).clamp(2.0, 8.0),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeLeftRight,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onHorizontalDragStart: (_) => onDragStart?.call(),
-                        onHorizontalDragEnd: (_) => onDragEnd?.call(),
-                        onHorizontalDragUpdate: (details) {
-                          final deltaSec = details.delta.dx / zoomLevel;
-                          onResizeRight(deltaSec);
-                        },
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border(
-                              right: BorderSide(
-                                color: _getSelectedBorderColor(),
-                                width: 3.0,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                  _buildResizeHandle(
+                    isLeft: false,
+                    onDragStart: onDragStart,
+                    onDragEnd: onDragEnd,
+                    onResize: (dx) => onResizeRight(dx / zoomLevel),
+                    indicatorColor: _getSelectedBorderColor(),
+                    handleWidth: resizeHandleWidth,
                   ),
               ],
             );
           },
         ),
+      ),
+    );
+  }
+
+  Widget _buildResizeHandle({
+    required bool isLeft,
+    required VoidCallback? onDragStart,
+    required VoidCallback? onDragEnd,
+    required ValueChanged<double> onResize,
+    required Color indicatorColor,
+    required double handleWidth,
+  }) {
+    return Positioned(
+      left: isLeft ? 0 : null,
+      right: isLeft ? null : 0,
+      top: 0,
+      bottom: 0,
+      width: handleWidth,
+      child: Stack(
+        children: [
+          // Visible indicator: 2px line
+          Positioned(
+            left: isLeft ? 0 : null,
+            right: isLeft ? null : 0,
+            top: 0,
+            bottom: 0,
+            child: Container(
+              width: 2.0,
+              color: indicatorColor,
+            ),
+          ),
+          // Invisible larger hit area
+          Positioned.fill(
+            child: MouseRegion(
+              cursor: SystemMouseCursors.resizeLeftRight,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragStart: (_) => onDragStart?.call(),
+                onHorizontalDragEnd: (_) => onDragEnd?.call(),
+                onHorizontalDragUpdate: (details) {
+                  onResize(details.delta.dx);
+                },
+                child: Container(
+                  color: Colors.transparent,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
