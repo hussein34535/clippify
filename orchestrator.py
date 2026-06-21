@@ -32,7 +32,7 @@ from content_types import get_type_profile, get_hook_prompt, get_emphasis_sfx
 from broll_manager import DEFAULT_PEXELS_KEY
 
 _API_KEY = os.getenv("GEMMA_API_KEY", "")
-_LLM_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key="
+_LLM_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemma-2-27b-it:generateContent?key="
 
 progress_callback = None
 
@@ -1760,7 +1760,7 @@ Return ONLY a valid JSON list of EXACTLY 3 strings, with no markdown wrapping, n
 ["Hook Option 1", "Hook Option 2", "Hook Option 3"]"""
 
             response = client.models.generate_content(
-                model="gemma-4-31b-it",
+                model="gemma-2-27b-it",
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.85,

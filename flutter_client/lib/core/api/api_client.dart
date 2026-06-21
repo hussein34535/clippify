@@ -367,9 +367,9 @@ class ApiClient {
     }
   }
 
-  Future<ApiResult<Map<String, dynamic>>> brollDownload(String url) async {
+  Future<ApiResult<Map<String, dynamic>>> brollDownload(String downloadUrl) async {
     try {
-      final response = await _dio.post('/api/broll/download', data: {'url': url});
+      final response = await _dio.post('/api/broll/download', data: {'download_url': downloadUrl});
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
 
@@ -418,86 +418,27 @@ class ApiClient {
   }
 
   Future<ApiResult<Map<String, dynamic>>> aiUpscale(String videoPath, {int factor = 2, String model = 'realesrgan'}) async {
-    try {
-      final response = await _dio.post('/api/ai/upscale', data: {
-        'video_path': videoPath,
-        'factor': factor,
-        'model': model,
-      });
-      return Success(response.data as Map<String, dynamic>);
-    } catch (e) {
-
-      return Failure(_parseError(e), endpoint: '/api/ai/upscale');
-    }
+    return const Failure('Feature not available (requires backend plugin)', endpoint: '/api/ai/upscale');
   }
 
   Future<ApiResult<Map<String, dynamic>>> aiInterpolate(String videoPath, {int fps = 60, String method = 'rife'}) async {
-    try {
-      final response = await _dio.post('/api/ai/interpolate', data: {
-        'video_path': videoPath,
-        'fps': fps,
-        'method': method,
-      });
-      return Success(response.data as Map<String, dynamic>);
-    } catch (e) {
-
-      return Failure(_parseError(e), endpoint: '/api/ai/interpolate');
-    }
+    return const Failure('Feature not available (requires backend plugin)', endpoint: '/api/ai/interpolate');
   }
 
   Future<ApiResult<Map<String, dynamic>>> aiRemoveObject(String videoPath, Map<String, dynamic> region, {String method = 'propainter'}) async {
-    try {
-      final response = await _dio.post('/api/ai/remove-object', data: {
-        'video_path': videoPath,
-        'region': region,
-        'method': method,
-      });
-      return Success(response.data as Map<String, dynamic>);
-    } catch (e) {
-
-      return Failure(_parseError(e), endpoint: '/api/ai/remove-object');
-    }
+    return const Failure('Feature not available (requires backend plugin)', endpoint: '/api/ai/remove-object');
   }
 
   Future<ApiResult<Map<String, dynamic>>> aiBackgroundReplace(String videoPath, Map<String, dynamic> settings) async {
-    try {
-      final response = await _dio.post('/api/ai/background-replace', data: {
-        'video_path': videoPath,
-        'settings': settings,
-      });
-      return Success(response.data as Map<String, dynamic>);
-    } catch (e) {
-
-      return Failure(_parseError(e), endpoint: '/api/ai/background-replace');
-    }
+    return const Failure('Feature not available (requires backend plugin)', endpoint: '/api/ai/background-replace');
   }
 
   Future<ApiResult<Map<String, dynamic>>> aiGenerateVideo(String prompt, {String style = 'cinematic', int duration = 5, String resolution = '720p'}) async {
-    try {
-      final response = await _dio.post('/api/ai/generate-video', data: {
-        'prompt': prompt,
-        'style': style,
-        'duration': duration,
-        'resolution': resolution,
-      });
-      return Success(response.data as Map<String, dynamic>);
-    } catch (e) {
-
-      return Failure(_parseError(e), endpoint: '/api/ai/generate-video');
-    }
+    return const Failure('Feature not available (requires backend plugin)', endpoint: '/api/ai/generate-video');
   }
 
   Future<ApiResult<Map<String, dynamic>>> aiEnhanceAudio(String videoPath, Map<String, dynamic> settings) async {
-    try {
-      final response = await _dio.post('/api/ai/enhance-audio', data: {
-        'video_path': videoPath,
-        'settings': settings,
-      });
-      return Success(response.data as Map<String, dynamic>);
-    } catch (e) {
-
-      return Failure(_parseError(e), endpoint: '/api/ai/enhance-audio');
-    }
+    return const Failure('Feature not available (requires backend plugin)', endpoint: '/api/ai/enhance-audio');
   }
 
   static String _parseError(Object e) {

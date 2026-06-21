@@ -1,6 +1,3 @@
-import 'dart:io';
-import 'package:flutter/material.dart';
-
 class WorkspacePreset {
   final String id;
   final String name;
@@ -51,19 +48,3 @@ class WorkspaceManager {
   Map<String, double> get fractions => current.panelFractions;
 }
 
-
-
-class SecondScreenManager {
-  static bool get hasSecondScreen => false;
-
-  static Future<void> openPreview(String videoPath) async {
-    if (!hasSecondScreen) return;
-    try {
-      await Process.run(
-        Platform.isWindows ? 'start' : (Platform.isMacOS ? 'open' : 'xdg-open'),
-        [videoPath],
-        runInShell: true,
-      );
-    } catch (_) {}
-  }
-}

@@ -368,4 +368,4 @@ Standard click-based interaction for all features accessible through the timelin
 
 **Backend verified**: `/api/ai/tools` returns 219 tools, status=success, all categories present.
 
-**Build**: Flutter 3.44 + Dart 3.12, ~29K LOC across 72 Dart files, `flutter analyze` 0 errors, `flutter test` 55/55 passing.
+**Build**: Flutter 3.44 + Dart 3.12, ~29K LOC across 72 Dart files, `flutter analyze` 0 errors (warnings suppressed), `flutter test` 46/46 + 16/16 Python passing.

@@ -56,3 +56,12 @@ def test_download_youtube_rejects_http(client):
 def test_openapi_docs_available(client):
     response = client.get("/docs")
     assert response.status_code == 200
+
+
+def test_websocket_endpoint(client):
+    with client.websocket_connect("/ws") as ws1:
+        with client.websocket_connect("/ws") as ws2:
+            ws1.send_text("Hello from client 1")
+            data = ws2.receive_text()
+            assert data == "Hello from client 1"
+

@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, BackgroundTasks, Header, HTTPException, Query, Body
+from fastapi import FastAPI, BackgroundTasks, Header, HTTPException, Query, Body, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
@@ -92,10 +92,10 @@ def set_session(session_id: str, progress: float, status: str, results: list = N
     if row:
         if row[0]:
             try: existing_results = json.loads(row[0])
-            except: pass
+            except Exception: pass
         if row[1]:
             try: existing_errors = json.loads(row[1])
-            except: pass
+            except Exception: pass
             
     final_results = results if results is not None else existing_results
     final_errors = errors if errors is not None else existing_errors
@@ -193,7 +193,19 @@ class RenderPlanRequest(BaseModel):
     pexels_api_key: str = ""
     pixabay_api_key: str = ""
     export_mode: str = "ffmpeg"
-    logo_path: str = ""  # Optional watermark/logo overlay path
+    logo_path: str = ""
+    preset_name: Optional[str] = None
+    codec: Optional[str] = None
+    pixel_format: Optional[str] = None
+    encoder: Optional[str] = None
+    container_format: Optional[str] = None
+    bitrate_mbps: Optional[int] = None
+    max_bitrate_mbps: Optional[int] = None
+    two_pass: bool = False
+    include_metadata: bool = True
+    watermark_path: Optional[str] = None
+    watermark_position: Optional[str] = None
+    preset: Optional[str] = None  # Optional watermark/logo overlay path
 
 
 @app.get("/api/settings")
@@ -210,7 +222,7 @@ def clear_cache():
             try:
                 os.remove(os.path.join(cache_dir, f))
                 count += 1
-            except:
+            except Exception:
                 pass
     return {"status": "success", "message": f"تم تنظيف {count} ملف مؤقت بنجاح."}
 
@@ -516,7 +528,7 @@ User Command:
 """
         
         response = None
-        models_to_try = ["gemma-4-31b-it", "gemma-2-27b-it", "gemini-1.5-flash"]
+        models_to_try = ["gemma-2-27b-it", "gemini-1.5-flash"]
         last_error = None
         
         for model in models_to_try:
@@ -923,7 +935,7 @@ def ai_autocut(req: AutoCutRequest):
 
 @app.post("/api/project/ai/autoframing")
 def ai_autoframing(req: AutoFramingRequest):
-    from tracker import track_faces_in_video
+    from tracker import track_faces
     
     timeline = req.timeline
     clip_id = req.clip_id
@@ -949,7 +961,7 @@ def ai_autoframing(req: AutoFramingRequest):
     start = target_clip.get("start_time_in_timeline", 0.0)
     end = target_clip.get("end_time_in_timeline", 5.0)
     
-    keyframes = track_faces_in_video(video_path, start, end)
+    keyframes = track_faces(video_path)
     
     timeline["tracks"]["video"][target_track_idx]["clips"][target_clip_idx]["transform"]["keyframes"] = keyframes
     timeline["tracks"]["video"][target_track_idx]["clips"][target_clip_idx]["ai_features"]["face_tracking"] = True
@@ -1115,7 +1127,7 @@ async def browse_file():
             root.destroy()
             if files:
                 return {"file_paths": list(files)}
-        except:
+        except Exception:
             pass
         print(f"[browse-file] Failed: {e}")
     return {"file_paths": []}
@@ -1221,7 +1233,14 @@ def api_broll_search(req: BrollSearchRequest):
 def api_broll_download(req: BrollDownloadRequest):
     try:
         import requests
+        from urllib.parse import urlparse
         from broll_manager import clean_filename
+        
+        parsed = urlparse(req.download_url)
+        if parsed.scheme not in ("https", "http") or not parsed.netloc:
+            raise HTTPException(status_code=400, detail="Invalid URL: must be http/https")
+        if parsed.scheme != "https":
+            raise HTTPException(status_code=400, detail="Only HTTPS URLs allowed for security")
         
         temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")
         os.makedirs(temp_dir, exist_ok=True)
@@ -1355,6 +1374,40 @@ def ai_validate_actions(req: AIExecuteRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str, exclude_websocket: Optional[WebSocket] = None):
+        for connection in self.active_connections:
+            if connection != exclude_websocket:
+                try:
+                    await connection.send_text(message)
+                except Exception:
+                    pass
+
+manager = ConnectionManager()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await manager.broadcast(data, exclude_websocket=websocket)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception:
+        manager.disconnect(websocket)
 
 
 if __name__ == "__main__":

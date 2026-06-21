@@ -66,7 +66,6 @@ for _pkg, _dll in _cuda_dlls:
         except Exception:
             pass
 
-from faster_whisper import WhisperModel
 from pydub import AudioSegment
 
 _MODEL = None
@@ -149,7 +148,7 @@ def _transcribe_chunk(args):
 def _get_model(gpu_ok=True):
     global _MODEL, _LOADED_MODEL_SIZE
     try:
-        from gui_state import load_ui_prefs
+        from api import load_ui_prefs
         prefs = load_ui_prefs()
         model_size = prefs.get("whisper_model", "tiny")
     except Exception:
@@ -161,6 +160,7 @@ def _get_model(gpu_ok=True):
 
     if _MODEL is None:
         _LOADED_MODEL_SIZE = model_size
+        from faster_whisper import WhisperModel
         if gpu_ok:
             print(f"Loading AI Model ({model_size}, trying GPU)...")
             try:
@@ -359,7 +359,7 @@ def translate_chunks_to_arabic(chunks_texts: list) -> list:
         
     api_key = os.getenv("GEMMA_API_KEY") or GEMMA_API_KEY
     if api_key:
-        model = "gemma-4-31b-it"
+        model = "gemma-2-27b-it"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         headers = {"Content-Type": "application/json"}
         

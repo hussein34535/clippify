@@ -65,7 +65,7 @@ Format:
 """
         
         response = client.models.generate_content(
-            model="gemma-4-31b-it",
+            model="gemma-2-27b-it",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.4,

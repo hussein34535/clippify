@@ -11,7 +11,6 @@ import imageio_ffmpeg
 from keyframe_engine import generate_ffmpeg_expression
 from editor import generate_ass_file
 import shutil
-import shutil
 
 def build_ffmpeg_filter_complex(timeline: Dict[str, Any], output_path: str) -> List[str]:
     """

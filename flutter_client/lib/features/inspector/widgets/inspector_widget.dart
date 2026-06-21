@@ -42,6 +42,7 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
   late TabController _audioTabController;
   late TabController _aiTabController;
   final TextEditingController _chatController = TextEditingController();
+  final TextEditingController _dashboardChatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
   final TextEditingController _commentTextController = TextEditingController();
 
@@ -61,6 +62,7 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
     _audioTabController.dispose();
     _aiTabController.dispose();
     _chatController.dispose();
+    _dashboardChatController.dispose();
     _chatScrollController.dispose();
     _commentTextController.dispose();
     super.dispose();
@@ -206,7 +208,9 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
                     ),
                     title: Text(suggestions[i], style: const TextStyle(fontSize: 13, color: Colors.white)),
                     trailing: const Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: AppColors.textMuted),
-                    onTap: () {},
+                    onTap: () {
+                      ref.read(copilotProvider.notifier).sendPrompt(suggestions[i], ref);
+                    },
                   ),
                 );
               }),
@@ -248,23 +252,39 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
           child: Row(
             children: [
               Expanded(
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'اسأل المساعد الذكي...',
-                    hintStyle: const TextStyle(fontSize: 12, color: AppColors.textMuted),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
-                    filled: true,
-                    fillColor: AppColors.background,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: TextField(
+                    controller: _dashboardChatController,
+                    decoration: InputDecoration(
+                      hintText: 'اسأل المساعد الذكي...',
+                      hintStyle: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
+                      filled: true,
+                      fillColor: AppColors.background,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    ),
+                    style: const TextStyle(fontSize: 12, color: Colors.white),
+                    onSubmitted: (val) {
+                      if (val.trim().isNotEmpty) {
+                        ref.read(copilotProvider.notifier).sendPrompt(val.trim(), ref);
+                        _dashboardChatController.clear();
+                      }
+                    },
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: AppColors.primary,
-                child: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
-              ),
+                const SizedBox(width: 8),
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.primary,
+                  child: IconButton(
+                    icon: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
+                    onPressed: () {
+                      if (_dashboardChatController.text.trim().isNotEmpty) {
+                        ref.read(copilotProvider.notifier).sendPrompt(_dashboardChatController.text.trim(), ref);
+                        _dashboardChatController.clear();
+                      }
+                    },
+                  ),
+                ),
             ],
           ),
         ),

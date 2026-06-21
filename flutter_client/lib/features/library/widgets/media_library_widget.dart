@@ -491,8 +491,9 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                     itemCount: widget.importedFiles.length,
                     itemBuilder: (context, index) {
                       final file = widget.importedFiles[index];
-                      return Draggable<String>(
+                      return LongPressDraggable<String>(
                         data: file.path,
+                        delay: const Duration(milliseconds: 150),
                         feedback: Material(
                           color: Colors.transparent,
                           child: Container(

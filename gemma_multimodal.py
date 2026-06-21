@@ -170,7 +170,7 @@ Return ONLY a valid JSON list of objects in this exact format with NO markdown w
             return []
 
     # ── Query Multimodal Model ─────────────────────────────────────────────
-    model_name = "gemma-4-31b-it"
+    model_name = "gemma-2-27b-it"
     print(f"  [GemmaVideo] Querying model {model_name}...")
 
     chosen_clips = []

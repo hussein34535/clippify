@@ -356,7 +356,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _onFileAdded(MediaFile file) { setState(() { _importedFiles.add(file); }); }
   void _onFileRemoved(int index) { setState(() { _importedFiles.removeAt(index); }); }
-  void _onSelectVideo(String path) {}
+  void _onSelectVideo(String path) {
+    final state = ref.read(timelineProvider);
+    final tracks = state.timeline.tracks;
+    for (final track in tracks.video) {
+      if (track.clips.isNotEmpty) {
+        _onSelectClip(track.clips.first.id, 'video');
+        return;
+      }
+    }
+    for (final track in tracks.audio) {
+      if (track.clips.isNotEmpty) {
+        _onSelectClip(track.clips.first.id, 'audio');
+        return;
+      }
+    }
+  }
 
   void _onSelectClip(String? clipId, String clipType) {
     setState(() { _selectedClipId = clipId; _selectedClipType = clipType; });
@@ -598,17 +613,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ));
   }
 
-  void _toggleCollaboration() {
+  Future<void> _toggleCollaboration() async {
     final state = ref.read(timelineProvider.notifier);
     final current = ref.read(timelineProvider).timeline;
     if (!current.collaborationEnabled) {
       _collabManager = CollaborationManager(userId: 'user_${DateTime.now().millisecondsSinceEpoch}', userName: 'User');
       final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000';
       final wsUrl = baseUrl.replaceFirst('http://', 'ws://').replaceFirst('https://', 'wss://');
-      _collabManager!.connect('$wsUrl/ws');
-      setState(() => _collaborationConnected = true);
-      state.updateTimelineState(current.copyWith(collaborationEnabled: true));
-      ref.read(toastProvider.notifier).success('Collaboration enabled');
+      await _collabManager!.connect('$wsUrl/ws');
+      setState(() => _collaborationConnected = _collabManager!.connected);
+      state.updateTimelineState(current.copyWith(collaborationEnabled: _collabManager!.connected));
+      if (_collabManager!.connected) {
+        ref.read(toastProvider.notifier).success('Collaboration enabled');
+      } else {
+        ref.read(toastProvider.notifier).error('Failed to connect collaboration server');
+      }
     } else {
       _collabManager?.dispose();
       _collabManager = null;

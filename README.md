@@ -43,7 +43,7 @@ Built with Flutter 3.44 + FastAPI backend + FFmpeg for a CapCut/Premiere Pro lev
 | State Management | Riverpod 2.x |
 | Backend | Python FastAPI (port 8000) |
 | Media Engine | FFmpeg / FFprobe |
-| AI | Transformers, Torch (local, no cloud) |
+| AI | Google Gemma API (cloud) + faster-whisper (local) |
 
 ---
 
@@ -185,8 +185,8 @@ clippify/
 
 | Metric | Current |
 |--------|---------|
-| `flutter analyze` | 0 errors, 0 warnings |
-| `flutter test` | 55/55 passed |
+| `flutter analyze` | 0 errors (warnings suppressed) |
+| `flutter test` | 46/46 Flutter + 16/16 Python passed |
 | `flutter build windows --release` | ✅ Success |
 | Flutter SDK | 3.44.2 (stable) |
 | Backend | FastAPI on port 8000 |

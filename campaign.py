@@ -219,10 +219,10 @@ def generate_ai_captions(
     api_key: str,
 ) -> List[str]:
     """
-    Generates 5 highly engaging, platform-native viral captions using gemma-4-31b-it.
+    Generates 5 highly engaging, platform-native viral captions using gemma-2-27b-it.
     """
     import requests
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemma-2-27b-it:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
 
     prompt = f"""
@@ -357,7 +357,7 @@ Return ONLY a valid JSON object matching this exact format:
 """
 
     response = client.models.generate_content(
-        model="gemma-4-31b-it",
+        model="gemma-2-27b-it",
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0.2,

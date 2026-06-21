@@ -105,16 +105,17 @@
 
 | File | Description |
 |------|-------------|
-| `flutter_client/.../timeline_widget.dart` | ~1752 سطر — الهيكل الرئيسي للتايملاين مع السايدبار الخارجي |
+| `flutter_client/.../timeline_widget.dart` | ~1621 سطر — الهيكل الرئيسي للتايملاين مع السايدبار الخارجي |
 | `flutter_client/.../timeline_painters.dart` | `TrackConfig`, `RecordingIndicator`, `PlayheadTriangle` |
-| `flutter_client/.../clip_item_widget.dart` | ~463 سطر — عرض الكليبات بالتدرجات + المقابض |
-| `flutter_client/.../timeline_provider.dart` | ~1566 سطر — حالة التايملاين + Command Pattern + undo/redo + clipboard/selection helpers |
+| `flutter_client/.../clip_item_widget.dart` | ~476 سطر — عرض الكليبات بالتدرجات + المقابض |
+| `flutter_client/.../timeline_provider.dart` | ~1612 سطر — حالة التايملاين + Command Pattern + undo/redo + clipboard/selection helpers |
 | `flutter_client/.../video_player_widget.dart` | ~882 سطر — مشغل الفيديو مع الربط الثنائي |
 | `flutter_client/.../backend_controller.dart` | ~202 سطر — إدارة الباك إند مع التحقق من الصحة |
 | `flutter_client/.../app_theme.dart` | الثيم (داكن/فاتح) + `AppColors` |
 | `flutter_client/.../timeline_models.dart` | `VideoClip`, `AudioClip`, `OverlayClip`, `SubtitleClip`, `TimelineState`, `TextClip`, `TextTrack`, `SpeedPoint`, `SpeedRamp`, `Transition` |
 | `flutter_client/.../api_client.dart` | HTTP client للباك إند (Dio) — مع `ApiResult<T>` sealed class |
 | `flutter_client/.../local_storage.dart` | حفظ/تحميل autosave محلياً |
+| `flutter_client/.../layout_prefs_provider.dart` | **جديد** — ~135 سطر — مزود تفضيلات التخطيط الجديد LayoutPrefs وحفظها تلقائياً |
 | `flutter_client/.../home_screen.dart` | الشاشة الرئيسية مع LayoutBuilder + resizable panels + KeyboardShortcutsWidget |
 | `flutter_client/.../inspector_widget.dart` | تبويبات Inspector مع tab لكير كروم + speed ramp + keyframes |
 | `flutter_client/.../inspector_shared.dart` | `InspectorSectionHeader`, `InspectorPropertySlider`, `InspectorNumberInput`, `InspectorPlaceholder` |
@@ -125,7 +126,7 @@
 | `flutter_client/.../core/models/timeline_templates.dart` | **جديد** — BUILTIN_TEMPLATES (intro/outro/podcast) منقول من web |
 | `flutter_client/.../core/services/analytics_service.dart` | **جديد** — analytics tracking منقول من web |
 | `flutter_client/.../core/services/midi_service.dart` | **جديد** — MIDI mapping (stub — يحتاج flutter_midi_command) |
-| `api.py` | FastAPI backend (port 8000) |
+| `api.py` | 35 endpoints + WebSocket /ws |
 
 ---
 
@@ -189,11 +190,11 @@ flutter run -d windows
 ### Status
 | Metric | Value |
 |--------|-------|
-| `flutter analyze` | 0 errors, 0 warnings |
-| `flutter test` | 55/55 passed |
+| `flutter analyze` | 0 errors (warnings suppressed) |
+| `flutter test` | 46/46 Flutter + 16/16 Python passed |
 | `flutter build windows --release` | نجح |
 | GitHub Actions CI | `flutter_ci.yml` (multi-OS) + `python_ci.yml` |
-| Python tests | URL validation + tool registry counts |
+| Python tests | URL validation + tool registry counts + WebSocket test |
 
 ### Completed
 | # | Task |
