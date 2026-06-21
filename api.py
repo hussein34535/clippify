@@ -49,17 +49,12 @@ from models import EditingPlan, ClipSpec
 from campaign import load_campaign
 from audio_intelligence import separate_audio_tracks, apply_auto_ducking
 
-app = FastAPI(title="ClipAI Local API Server", version="1.0.0")
+app = FastAPI(title="Clippify Local API Server", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "tauri://localhost",
-        "http://tauri.localhost"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -470,7 +465,7 @@ def copilot_chat_endpoint(req: CopilotChatRequest):
         client = genai.Client(api_key=GEMMA_API_KEY)
         
         system_instruction = """
-You are ClipAI's video editor co-pilot (المساعد الذكي), an expert AI assistant designed to help creators edit videos through natural language.
+You are Clippify's video editor co-pilot (المساعد الذكي), an expert AI assistant designed to help creators edit videos through natural language.
 The user will give you commands (in Arabic or English) to modify the video timeline.
 You have access to the current timeline state and the video transcript.
 
@@ -1143,7 +1138,7 @@ def api_save_project(req: SaveProjectRequest):
         projects_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "projects")
         os.makedirs(projects_dir, exist_ok=True)
         
-        file_path = req.output_path or os.path.join(projects_dir, f"{project_id}.clipai")
+        file_path = req.output_path or os.path.join(projects_dir, f"{project_id}.clippify")
         
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(timeline, f, ensure_ascii=False, indent=2)

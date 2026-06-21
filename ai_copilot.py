@@ -192,7 +192,7 @@ def _normalize_tool_calls(raw_calls: List[Any]) -> List[Dict[str, Any]]:
 # Main Copilot Function
 # ─────────────────────────────────────────────────────────────────────────────
 
-COPILOT_SYSTEM_PROMPT = """أنت ClipAI Copilot، مساعد مونتاج فيديو ذكي يفهم العربية والإنجليزية.
+COPILOT_SYSTEM_PROMPT = """أنت Clippify Copilot، مساعد مونتاج فيديو ذكي يفهم العربية والإنجليزية.
 
 مهمتك: تحويل أوامر المستخدم إلى استدعاءات أدوات (tool calls) من القائمة المتاحة.
 

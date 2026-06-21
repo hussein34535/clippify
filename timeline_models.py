@@ -1,5 +1,5 @@
 # timeline_models.py
-# Pydantic models for the ClipAI Pro NLE timeline state
+# Pydantic models for the Clippify Pro NLE timeline state
 
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field

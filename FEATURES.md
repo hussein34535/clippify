@@ -118,8 +118,8 @@ All 219 tools are:
 4. ✅ Recent projects list
 5. ✅ Project templates
 6. ✅ Project metadata (name, created, modified)
-7. ✅ Project export (.clipai file)
-8. ✅ Project import (.clipai file)
+7. ✅ Project export (.clippify file)
+8. ✅ Project import (.clippify file)
 9. ✅ Multi-project switching
 10. ✅ Duplicate project
 11. ✅ Rename project

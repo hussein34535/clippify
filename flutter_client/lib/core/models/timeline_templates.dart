@@ -41,8 +41,8 @@ class TimelineTemplate {
       };
 }
 
-const String _storageKey = 'clipai_templates';
-const String _builtinKey = 'clipai_builtin_templates_seeded';
+const String _storageKey = 'clippify_templates';
+const String _builtinKey = 'clippify_builtin_templates_seeded';
 
 final List<TimelineTemplate> builtinTemplates = [
   TimelineTemplate(

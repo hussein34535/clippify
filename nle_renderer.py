@@ -1,5 +1,5 @@
 """
-nle_renderer.py — The Complex Render Engine for ClipAI NLE
+nle_renderer.py — The Complex Render Engine for Clippify NLE
 Translates the JSON TimelineState into a single massive FFmpeg `filter_complex` command.
 """
 

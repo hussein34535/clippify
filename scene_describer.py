@@ -1,5 +1,5 @@
 """
-scene_describer.py — Video-to-Text Scene Captioning for ClipAI
+scene_describer.py — Video-to-Text Scene Captioning for Clippify
 =============================================================
 This module converts visual scenes (video frames) into descriptive text captions.
 The descriptive text can then be passed to the LLM (Gemma/Gemma) alongside the

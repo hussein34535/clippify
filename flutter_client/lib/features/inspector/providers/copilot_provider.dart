@@ -121,7 +121,16 @@ class CopilotNotifier extends StateNotifier<CopilotStateData> {
             return clip.copyWith(volume: fields['volume'] != null ? (fields['volume'] as num).toDouble() : clip.volume);
           });
         } else if (clipType == 'overlay') {
-          notifier.updateOverlayClip(clipId, (clip) => clip);
+          notifier.updateOverlayClip(clipId, (clip) {
+            return clip.copyWith(
+              transform: fields.containsKey('transform')
+                  ? TransformState.fromJson(fields['transform'] as Map<String, dynamic>) : clip.transform,
+              text: fields.containsKey('text') ? fields['text'] as String : clip.text,
+              opacity: fields.containsKey('opacity') ? (fields['opacity'] as num).toDouble() : clip.opacity,
+              colorGrading: fields.containsKey('color_grading')
+                  ? ColorGradingState.fromJson(fields['color_grading'] as Map<String, dynamic>) : clip.colorGrading,
+            );
+          });
         } else if (clipType == 'subtitle') {
           notifier.updateSubtitleClip(clipId, (clip) {
             return clip.copyWith(text: fields['text'] as String? ?? clip.text);

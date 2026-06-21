@@ -61,6 +61,11 @@ cookies.txt
 pexels_key.txt
 ui_prefs.json
 campaign.json.disabled
+client_secrets.json
+token.json
+credentials.json
+*.secret
+*.key
 
 # Media and Logs
 *.log
@@ -75,8 +80,8 @@ campaign.json.disabled
 tests/__pycache__/
 
 # PyInstaller / Build
-ClipAI.spec
-dist/clipai-backend*.exe
+Clippify.spec
+dist/clippify-backend*.exe
 
 # Flutter
 flutter_client/build/

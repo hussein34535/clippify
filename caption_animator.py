@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-caption_animator.py — Advanced Word-by-Word Caption Animation for ClipAI
+caption_animator.py — Advanced Word-by-Word Caption Animation for Clippify
 =========================================================================
 5 Professional Animation Modes:
   1. karaoke    — Word-by-word color highlight (TikTok standard)

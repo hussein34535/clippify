@@ -143,7 +143,7 @@ flutter build windows --release
 ## Project Structure
 
 ```
-clipai/
+clippify/
 ├── api.py                          # FastAPI backend (port 8000)
 ├── requirements.txt                # Python dependencies
 ├── AGENTS.md                       # AI development guide

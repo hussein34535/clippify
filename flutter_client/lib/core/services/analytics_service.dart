@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String _storageKey = 'clipai_analytics';
+const String _storageKey = 'clippify_analytics';
 const int _maxEvents = 5000;
 
 class AnalyticsEvent {

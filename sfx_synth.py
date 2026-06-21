@@ -1,5 +1,5 @@
 """
-sfx_synth.py — Professional SFX Synthesizer for ClipAI
+sfx_synth.py — Professional SFX Synthesizer for Clippify
 Generates high-quality, professional sound effects locally using numpy.
 NO internet required. NO meme sounds. Pure synthesis.
 """

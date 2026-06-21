@@ -16,7 +16,12 @@ void main() async {
   // تهيئة window_manager لسطح المكتب
   await windowManager.ensureInitialized();
 
-  await dotenv.load(fileName: "assets/.env");
+  try {
+    await dotenv.load(fileName: "assets/.env");
+  } catch (e) {
+    debugPrint("Failed to load assets/.env, falling back to assets/.env.example: $e");
+    await dotenv.load(fileName: "assets/.env.example");
+  }
 
   // تشغيل خادم الباك إند (بايثون) قبل تحميل واجهة المستخدم
   final backendController = BackendController();
@@ -29,7 +34,7 @@ void main() async {
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
     titleBarStyle: TitleBarStyle.normal,
-    title: 'ClipAI - Editor',
+    title: 'Clippify - Editor',
   );
 
   await windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -41,7 +46,7 @@ void main() async {
 
   runApp(
     const ProviderScope(
-      child: ClipAIApp(),
+      child: ClippifyApp(),
     ),
   );
 }

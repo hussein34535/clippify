@@ -1,5 +1,5 @@
 """
-orchestrator.py — ClipAI Pipeline Orchestrator
+orchestrator.py — Clippify Pipeline Orchestrator
 Drives the full AI editing pipeline:
   1. Transcribe audio
   2. Find the hook sentence (content-type-aware)
@@ -1645,7 +1645,7 @@ Return ONLY one word from the list above (lowercase, no punctuation, no explanat
         pstep("🎬 وضع DaVinci Resolve: جاري بناء مشروع الـ Timeline...")
         from resolve_exporter import export_fcp_xml
         clips_data = [{"start_sec": c.start_sec, "end_sec": c.end_sec} for c in plan.clips]
-        xml_path = os.path.join(output_dir, "DaVinci_ClipAI_Project.xml")
+        xml_path = os.path.join(output_dir, "DaVinci_Clippify_Project.xml")
         export_fcp_xml(plan.video_path, clips_data, xml_path)
         pstep(f"🎉 اكتمل تصدير المشروع! اسحب ملف الـ XML داخل DaVinci Resolve.")
         return [xml_path]

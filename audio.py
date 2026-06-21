@@ -1,6 +1,6 @@
 """
 audio.py — Audio extraction + energy analysis
-ClipAI — Local Video Clipper (no AI, no cloud)
+Clippify — Local Video Clipper (no AI, no cloud)
 Compatible with moviepy 2.x
 """
 

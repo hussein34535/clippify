@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul
-title ClipAI Studio Launcher
+title Clippify Studio Launcher
 color 0A
 
 echo.
 echo ===============================================
-echo       ClipAI Studio - Desktop App Launcher
+echo       Clippify Studio - Desktop App Launcher
 echo ===============================================
 echo.
 
@@ -23,7 +23,7 @@ echo.
 :: Start Backend
 echo [2/3] Starting Backend on port 8000...
 cd /d "%~dp0"
-start "ClipAI Backend" /min python api.py
+start "Clippify Backend" /min python api.py
 echo    OK
 echo.
 

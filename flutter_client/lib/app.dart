@@ -8,14 +8,14 @@ import 'shared/widgets/toast_overlay.dart';
 import 'shared/providers/theme_provider.dart';
 import 'features/ui/edge_ui.dart';
 
-class ClipAIApp extends ConsumerStatefulWidget {
-  const ClipAIApp({super.key});
+class ClippifyApp extends ConsumerStatefulWidget {
+  const ClippifyApp({super.key});
 
   @override
-  ConsumerState<ClipAIApp> createState() => _ClipAIAppState();
+  ConsumerState<ClippifyApp> createState() => _ClippifyAppState();
 }
 
-class _ClipAIAppState extends ConsumerState<ClipAIApp> with WindowListener {
+class _ClippifyAppState extends ConsumerState<ClippifyApp> with WindowListener {
   @override
   void initState() {
     super.initState();
@@ -42,7 +42,7 @@ class _ClipAIAppState extends ConsumerState<ClipAIApp> with WindowListener {
     return MediaQuery(
       data: MediaQueryData(textScaler: TextScaler.linear(prefs.fontScale)),
       child: MaterialApp(
-        title: 'ClipAI Pro',
+        title: 'Clippify Pro',
         debugShowCheckedModeBanner: false,
         theme: appTheme.copyWith(
           scaffoldBackgroundColor: EdgeTheme.canvas,

@@ -1,5 +1,5 @@
 """
-style_analyzer.py - Local Reference Video Analyzer for ClipAI
+style_analyzer.py - Local Reference Video Analyzer for Clippify
 ============================================================
 Analyzes video visuals, audio dynamics, typography and editing cuts locally.
 Zero API cost. Saves result as a Reference Style Profile JSON.

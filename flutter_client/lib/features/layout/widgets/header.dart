@@ -14,8 +14,8 @@ const _workspacePresets = <(String, String, String)>[
 ];
 
 const _themePresets = <String>[
-  'ClipAI Dark',
-  'ClipAI Light',
+  'Clippify Dark',
+  'Clippify Light',
   'Midnight',
   'Sunset',
   'Forest',
@@ -164,7 +164,7 @@ class HeaderWidget extends ConsumerWidget {
     EdgeMenuEntry(label: 'Recording...', shortcut: 'Ctrl+R', icon: Icons.fiber_manual_record_rounded, action: onCapture),
     EdgeMenuEntry(label: 'Collaboration...', icon: Icons.groups_rounded, action: onShowCollaboration),
     const EdgeMenuEntry.divider(),
-    EdgeMenuEntry(label: 'About ClipAI Pro', icon: Icons.info_outline_rounded, action: onAbout),
+    EdgeMenuEntry(label: 'About Clippify Pro', icon: Icons.info_outline_rounded, action: onAbout),
   ];
 
   @override
@@ -193,7 +193,7 @@ class HeaderWidget extends ConsumerWidget {
             child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 16),
           ),
           Text(
-            'ClipAI Pro',
+            'Clippify Pro',
             style: TextStyle(
               fontFamily: 'Outfit', fontSize: 15, fontWeight: FontWeight.w700,
               color: EdgeTheme.textPrimary, letterSpacing: -0.3,

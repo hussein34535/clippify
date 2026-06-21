@@ -1,5 +1,5 @@
 """
-video_analyzer.py — Smart Video Understanding for ClipAI
+video_analyzer.py — Smart Video Understanding for Clippify
 =========================================================
 This module UNDERSTANDS what's in the video before cutting it.
 
@@ -141,7 +141,7 @@ def extract_frames_batch(video_path: str, start_sec: float, duration: float, n_f
     import cv2
     import tempfile, shutil
     ffmpeg = _get_ffmpeg()
-    tmp_dir = tempfile.mkdtemp(prefix="clipai_frames_")
+    tmp_dir = tempfile.mkdtemp(prefix="clippify_frames_")
     results = []
     try:
         fps = n_frames / duration

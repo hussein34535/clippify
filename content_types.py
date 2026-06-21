@@ -1,5 +1,5 @@
 """
-content_types.py — Content Type System for ClipAI
+content_types.py — Content Type System for Clippify
 Each content type defines its full editing profile:
   - hook_strategy: how to find the best hook sentence
   - sfx_library: categorized sound effects

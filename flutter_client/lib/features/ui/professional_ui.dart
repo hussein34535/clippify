@@ -78,8 +78,8 @@ class ThemePreset {
   }
 
   static const List<ThemePreset> presets = [
-    ThemePreset(name: 'ClipAI Dark', primaryColor: Color(0xFF7C6AF7), surfaceColor: Color(0xFF131317), backgroundColor: Color(0xFF0A0A0D), textColor: Color(0xFFFFFFFF)),
-    ThemePreset(name: 'ClipAI Light', primaryColor: Color(0xFF7C6AF7), surfaceColor: Color(0xFFF5F5F7), backgroundColor: Color(0xFFFFFFFF), textColor: Color(0xFF000000), brightness: Brightness.light),
+    ThemePreset(name: 'Clippify Dark', primaryColor: Color(0xFF7C6AF7), surfaceColor: Color(0xFF131317), backgroundColor: Color(0xFF0A0A0D), textColor: Color(0xFFFFFFFF)),
+    ThemePreset(name: 'Clippify Light', primaryColor: Color(0xFF7C6AF7), surfaceColor: Color(0xFFF5F5F7), backgroundColor: Color(0xFFFFFFFF), textColor: Color(0xFF000000), brightness: Brightness.light),
     ThemePreset(name: 'Midnight', primaryColor: Color(0xFF00D4FF), surfaceColor: Color(0xFF0D1117), backgroundColor: Color(0xFF05080F), textColor: Color(0xFFFFFFFF)),
     ThemePreset(name: 'Sunset', primaryColor: Color(0xFFFF6B6B), surfaceColor: Color(0xFF1A1418), backgroundColor: Color(0xFF0F0A0E), textColor: Color(0xFFFFFFFF)),
     ThemePreset(name: 'Forest', primaryColor: Color(0xFF10B981), surfaceColor: Color(0xFF0F1713), backgroundColor: Color(0xFF070D09), textColor: Color(0xFFFFFFFF)),
@@ -88,7 +88,7 @@ class ThemePreset {
 }
 
 class CustomThemeManager {
-  String _currentId = 'ClipAI Dark';
+  String _currentId = 'Clippify Dark';
 
   String get currentId => _currentId;
   ThemePreset get current => ThemePreset.presets.firstWhere((p) => p.name == _currentId);

@@ -8,22 +8,26 @@ class TimelineStateData {
   final TimelineState timeline;
   final List<TimelineState> undoStack;
   final List<TimelineState> redoStack;
+  final Set<String> selectedClipIds;
 
   TimelineStateData({
     required this.timeline,
     required this.undoStack,
     required this.redoStack,
+    this.selectedClipIds = const {},
   });
 
   TimelineStateData copyWith({
     TimelineState? timeline,
     List<TimelineState>? undoStack,
     List<TimelineState>? redoStack,
+    Set<String>? selectedClipIds,
   }) {
     return TimelineStateData(
       timeline: timeline ?? this.timeline,
       undoStack: undoStack ?? this.undoStack,
       redoStack: redoStack ?? this.redoStack,
+      selectedClipIds: selectedClipIds ?? this.selectedClipIds,
     );
   }
 }
@@ -37,6 +41,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
           timeline: TimelineState.empty(),
           undoStack: [],
           redoStack: [],
+          selectedClipIds: const {},
         ));
 
   @override
@@ -363,7 +368,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     }
   }
 
-  void _updateClipInTrack(String clipId, int trackIndex,
+  void _updateClipInTrack<T>(String clipId, int trackIndex,
       List<dynamic> Function(Tracks) getTracks,
       Tracks Function(Tracks, List<dynamic>) setTracks,
       dynamic Function(dynamic) updateFn) {
@@ -375,7 +380,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       return clip;
     }).toList();
     final copy = List<dynamic>.from(tracks);
-    copy[trackIndex] = targetTrack.copyWith(clips: updatedClips);
+    copy[trackIndex] = targetTrack.copyWith(clips: updatedClips.cast<T>());
     state = state.copyWith(
       timeline: state.timeline.copyWith(tracks: setTracks(state.timeline.tracks, copy)),
     );
@@ -383,7 +388,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
 
   void updateVideoClip(String clipId, VideoClip Function(VideoClip) updateFn, {int trackIndex = 0}) {
     _saveToUndoStack();
-    _updateClipInTrack(clipId, trackIndex,
+    _updateClipInTrack<VideoClip>(clipId, trackIndex,
       (t) => t.video,
       (t, l) => t.copyWith(video: l.cast<VideoTrack>()),
       (c) => updateFn(c as VideoClip));
@@ -391,7 +396,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
 
   void updateSubtitleClip(String clipId, SubtitleClip Function(SubtitleClip) updateFn, {int trackIndex = 0}) {
     _saveToUndoStack();
-    _updateClipInTrack(clipId, trackIndex,
+    _updateClipInTrack<SubtitleClip>(clipId, trackIndex,
       (t) => t.subtitles,
       (t, l) => t.copyWith(subtitles: l.cast<SubtitleTrack>()),
       (c) => updateFn(c as SubtitleClip));
@@ -399,7 +404,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
 
   void updateAudioClip(String clipId, AudioClip Function(AudioClip) updateFn, {int trackIndex = 0}) {
     _saveToUndoStack();
-    _updateClipInTrack(clipId, trackIndex,
+    _updateClipInTrack<AudioClip>(clipId, trackIndex,
       (t) => t.audio,
       (t, l) => t.copyWith(audio: l.cast<AudioTrack>()),
       (c) => updateFn(c as AudioClip));
@@ -407,7 +412,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
 
   void updateOverlayClip(String clipId, OverlayClip Function(OverlayClip) updateFn, {int trackIndex = 0}) {
     _saveToUndoStack();
-    _updateClipInTrack(clipId, trackIndex,
+    _updateClipInTrack<OverlayClip>(clipId, trackIndex,
       (t) => t.overlays,
       (t, l) => t.copyWith(overlays: l.cast<OverlayTrack>()),
       (c) => updateFn(c as OverlayClip));
@@ -1313,18 +1318,19 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
 
   /// Cut: remove selected clips from timeline and stash them in the clipboard.
   void cutSelectedClips({Set<String>? selectedIds}) {
-    final ids = selectedIds ?? const <String>{};
+    final ids = selectedIds ?? state.selectedClipIds;
     if (ids.isEmpty) return;
     _saveToUndoStack();
-    _clipboard = _collectClipsByIds(ids).map((c) => c.toJson()).toList();
+    _clipboard = _collectClipsByIds(ids).map((c) => c.toJson() as Map<String, dynamic>).toList();
     _removeClipsByIds(ids);
+    clearSelection();
   }
 
   /// Copy: snapshot selected clips into the clipboard without removing them.
   void copySelectedClips({Set<String>? selectedIds}) {
-    final ids = selectedIds ?? const <String>{};
+    final ids = selectedIds ?? state.selectedClipIds;
     if (ids.isEmpty) return;
-    _clipboard = _collectClipsByIds(ids).map((c) => c.toJson()).toList();
+    _clipboard = _collectClipsByIds(ids).map((c) => c.toJson() as Map<String, dynamic>).toList();
   }
 
   /// Paste: insert clipboard entries at the playhead.
@@ -1348,21 +1354,21 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
         case 'video':
           if (videoTracks.isNotEmpty) {
             final clip = VideoClip.fromJson(reidentified)
-                .copyWith(startTime: playhead);
+                .copyWith(startTimeInTimeline: playhead);
             videoTracks[0] = videoTracks[0].copyWith(clips: [...videoTracks[0].clips, clip]);
           }
           break;
         case 'audio':
           if (audioTracks.isNotEmpty) {
             final clip = AudioClip.fromJson(reidentified)
-                .copyWith(startTime: playhead);
+                .copyWith(startTimeInTimeline: playhead);
             audioTracks[0] = audioTracks[0].copyWith(clips: [...audioTracks[0].clips, clip]);
           }
           break;
         case 'overlay':
           if (overlayTracks.isNotEmpty) {
             final clip = OverlayClip.fromJson(reidentified)
-                .copyWith(startTime: playhead);
+                .copyWith(startTimeInTimeline: playhead);
             overlayTracks[0] = overlayTracks[0].copyWith(clips: [...overlayTracks[0].clips, clip]);
           }
           break;
@@ -1396,21 +1402,50 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     );
   }
 
-  /// Select all clips across all tracks (placeholder).
+  /// Select all clips across all tracks.
   void selectAllClips() {
+    final ids = <String>{};
+    final s = state.timeline;
+    for (final t in s.tracks.video) {
+      for (final c in t.clips) {
+        ids.add(c.id);
+      }
+    }
+    for (final t in s.tracks.audio) {
+      for (final c in t.clips) {
+        ids.add(c.id);
+      }
+    }
+    for (final t in s.tracks.overlays) {
+      for (final c in t.clips) {
+        ids.add(c.id);
+      }
+    }
+    for (final t in s.tracks.subtitles) {
+      for (final c in t.clips) {
+        ids.add(c.id);
+      }
+    }
+    for (final t in s.tracks.text) {
+      for (final c in t.clips) {
+        ids.add(c.id);
+      }
+    }
+    state = state.copyWith(selectedClipIds: ids);
   }
 
   /// Delete all clips identified by [selectedIds].
   void deleteSelectedClips({Set<String>? selectedIds}) {
-    final ids = selectedIds ?? const <String>{};
+    final ids = selectedIds ?? state.selectedClipIds;
     if (ids.isEmpty) return;
     _saveToUndoStack();
     _removeClipsByIds(ids);
+    clearSelection();
   }
 
   /// Apply [speed] to every clip in [selectedIds].
   void setSelectedClipsSpeed(double speed, {Set<String>? selectedIds}) {
-    final ids = selectedIds ?? const <String>{};
+    final ids = selectedIds ?? state.selectedClipIds;
     if (ids.isEmpty) return;
     _saveToUndoStack();
     final s = state.timeline;
@@ -1431,6 +1466,25 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
         tracks: s.tracks.copyWith(video: videoTracks),
       ),
     );
+  }
+
+  /// Select a single clip, optionally clearing other selections first.
+  void selectClip(String id, {bool exclusive = true}) {
+    final current = exclusive ? <String>{} : Set<String>.from(state.selectedClipIds);
+    current.add(id);
+    state = state.copyWith(selectedClipIds: current);
+  }
+
+  /// Clear the active selection.
+  void clearSelection() {
+    state = state.copyWith(selectedClipIds: const {});
+  }
+
+  /// Nest the currently selected clips.
+  void nestCurrentSelection() {
+    if (state.selectedClipIds.isEmpty) return;
+    nestSelectedClips(state.selectedClipIds);
+    clearSelection();
   }
 
   /// Nest selected clips into a new NestedSequence.

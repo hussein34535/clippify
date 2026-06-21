@@ -140,7 +140,7 @@ class _ExportModalState extends State<ExportModal> with SingleTickerProviderStat
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     const Text(
-                      'تصدير مشروع ClipAI',
+                      'تصدير مشروع Clippify',
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                     const SizedBox(height: 2),

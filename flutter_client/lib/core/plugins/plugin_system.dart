@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 
-abstract class ClipAIPlugin {
+abstract class ClippifyPlugin {
   String get id;
   String get name;
   String get version;
@@ -12,12 +12,12 @@ abstract class ClipAIPlugin {
   void dispose();
 }
 
-abstract class EffectPlugin extends ClipAIPlugin {
+abstract class EffectPlugin extends ClippifyPlugin {
   Widget buildUI(Map<String, dynamic> params, ValueChanged<Map<String, dynamic>> onChanged);
   Map<String, dynamic> process(Map<String, dynamic> input, Map<String, dynamic> params);
 }
 
-abstract class ExportPlugin extends ClipAIPlugin {
+abstract class ExportPlugin extends ClippifyPlugin {
   Future<bool> export(String inputPath, String outputPath, Map<String, dynamic> options,
     void Function(double progress) onProgress);
 }
@@ -27,13 +27,13 @@ class PluginManager {
   factory PluginManager() => _instance;
   PluginManager._internal();
 
-  final Map<String, ClipAIPlugin> _plugins = {};
+  final Map<String, ClippifyPlugin> _plugins = {};
   final List<String> _loadErrors = [];
 
-  List<ClipAIPlugin> get plugins => _plugins.values.toList();
+  List<ClippifyPlugin> get plugins => _plugins.values.toList();
   List<String> get loadErrors => List.unmodifiable(_loadErrors);
 
-  void register(ClipAIPlugin plugin) {
+  void register(ClippifyPlugin plugin) {
     _plugins[plugin.id] = plugin;
   }
 
@@ -41,13 +41,13 @@ class PluginManager {
     _plugins.remove(id)?.dispose();
   }
 
-  T? get<T extends ClipAIPlugin>(String id) {
+  T? get<T extends ClippifyPlugin>(String id) {
     final plugin = _plugins[id];
     if (plugin is T) return plugin;
     return null;
   }
 
-  List<T> getAll<T extends ClipAIPlugin>() =>
+  List<T> getAll<T extends ClippifyPlugin>() =>
     _plugins.values.whereType<T>().toList();
 
   Future<void> loadFromDirectory(String path) async {
@@ -113,11 +113,11 @@ class PluginManager {
 
 class PluginMarketplace {
   static const List<Map<String, dynamic>> availablePlugins = [
-    {'id': 'glitch_effect', 'name': 'Glitch Effect Pack', 'author': 'ClipAI', 'price': 'Free', 'rating': 4.5, 'downloads': 1200},
-    {'id': 'neon_text', 'name': 'Neon Text Animator', 'author': 'ClipAI', 'price': '\$4.99', 'rating': 4.8, 'downloads': 850},
-    {'id': 'audio_viz', 'name': 'Audio Visualizer', 'author': 'ClipAI', 'price': 'Free', 'rating': 4.6, 'downloads': 2100},
-    {'id': '3d_title', 'name': '3D Title Builder', 'author': 'ClipAI', 'price': '\$9.99', 'rating': 4.3, 'downloads': 450},
-    {'id': 'vhs_effect', 'name': 'VHS Retro Effect', 'author': 'ClipAI', 'price': '\$2.99', 'rating': 4.7, 'downloads': 3200},
-    {'id': 'light_leaks', 'name': 'Light Leaks Pack', 'author': 'ClipAI', 'price': 'Free', 'rating': 4.4, 'downloads': 1800},
+    {'id': 'glitch_effect', 'name': 'Glitch Effect Pack', 'author': 'Clippify', 'price': 'Free', 'rating': 4.5, 'downloads': 1200},
+    {'id': 'neon_text', 'name': 'Neon Text Animator', 'author': 'Clippify', 'price': '\$4.99', 'rating': 4.8, 'downloads': 850},
+    {'id': 'audio_viz', 'name': 'Audio Visualizer', 'author': 'Clippify', 'price': 'Free', 'rating': 4.6, 'downloads': 2100},
+    {'id': '3d_title', 'name': '3D Title Builder', 'author': 'Clippify', 'price': '\$9.99', 'rating': 4.3, 'downloads': 450},
+    {'id': 'vhs_effect', 'name': 'VHS Retro Effect', 'author': 'Clippify', 'price': '\$2.99', 'rating': 4.7, 'downloads': 3200},
+    {'id': 'light_leaks', 'name': 'Light Leaks Pack', 'author': 'Clippify', 'price': 'Free', 'rating': 4.4, 'downloads': 1800},
   ];
 }

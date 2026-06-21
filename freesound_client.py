@@ -1,5 +1,5 @@
 """
-freesound_client.py — Freesound.org API integration for ClipAI
+freesound_client.py — Freesound.org API integration for Clippify
 Fetches professional, high-quality SFX from freesound.org
 API is FREE — get your key at: https://freesound.org/apiv2/apply/
 
@@ -18,7 +18,7 @@ import imageio_ffmpeg
 
 _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 _BASE = "https://freesound.org/apiv2"
-_HEADERS = {"User-Agent": "ClipAI/1.0 (video editing tool)"}
+_HEADERS = {"User-Agent": "Clippify/1.0 (video editing tool)"}
 _CACHE = {}  # query -> list of sound dicts
 
 
@@ -32,7 +32,7 @@ def get_api_key() -> str:
     # Try config file next to app
     config_paths = [
         os.path.join(os.path.dirname(__file__), "freesound_key.txt"),
-        os.path.join(os.path.expanduser("~"), ".clipai_freesound_key"),
+        os.path.join(os.path.expanduser("~"), ".clippify_freesound_key"),
     ]
     for path in config_paths:
         if os.path.exists(path):

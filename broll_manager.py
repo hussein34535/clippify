@@ -2,7 +2,7 @@
 broll_manager.py — Pexels API B-Roll Search and Downloader (Phase 8)
 ===================================================================
 Handles searching, downloading, and caching of copyright-free stock video clips
-from Pexels to serve as B-roll overlays in ClipAI final renders.
+from Pexels to serve as B-roll overlays in Clippify final renders.
 """
 
 import os

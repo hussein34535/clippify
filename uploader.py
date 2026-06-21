@@ -1,5 +1,5 @@
 """
-uploader.py — YouTube OAuth2 + Upload for ClipAI
+uploader.py — YouTube OAuth2 + Upload for Clippify
 Handles authentication, resumable upload, and progress callbacks.
 
 Requirements:
@@ -94,7 +94,7 @@ def authenticate():
 def upload_video(
     file_path:   str,
     title:       str  = None,
-    description: str  = "Created with ClipAI — https://github.com/clipai",
+    description: str  = "Created with Clippify — https://github.com/clippify",
     privacy:     str  = "private",
     progress_cb        = None,
 ) -> str:
@@ -148,7 +148,7 @@ def upload_video(
         "snippet": {
             "title":       title,
             "description": description,
-            "tags":        ["shorts", "clipai", "viral"],
+            "tags":        ["shorts", "clippify", "viral"],
             "categoryId":  "22",   # People & Blogs
         },
         "status": {

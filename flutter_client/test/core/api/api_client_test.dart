@@ -1,7 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_client/core/api/api_client.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() {
+  setUp(() {
+    dotenv.testLoad(fileInput: 'API_BASE_URL=http://localhost:8000');
+  });
+
   group('ApiResult sealed class', () {
     test('Success carries data', () {
       const result = Success('hello');

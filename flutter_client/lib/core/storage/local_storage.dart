@@ -9,14 +9,14 @@ class LocalStorage {
   factory LocalStorage() => _instance;
   LocalStorage._internal();
 
-  static const String _autosaveFileName = 'clipai_autosave.json';
+  static const String _autosaveFileName = 'clippify_autosave.json';
 
   String? _cachedDir;
 
   Future<String> get _storageDir async {
     if (_cachedDir != null) return _cachedDir!;
     final appDir = await getApplicationDocumentsDirectory();
-    final dir = p.join(appDir.path, 'ClipAI');
+    final dir = p.join(appDir.path, 'Clippify');
     final dirObj = Directory(dir);
     if (!await dirObj.exists()) {
       await dirObj.create(recursive: true);

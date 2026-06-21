@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-# clipai-backend.spec
-# PyInstaller spec for ClipAI backend (FastAPI + Python ML pipeline)
+# clippify-backend.spec
+# PyInstaller spec for Clippify backend (FastAPI + Python ML pipeline)
 # Excludes ALL dead Tkinter/CustomTkinter code
-# Output: dist/clipai-backend.exe
+# Output: dist/clippify-backend.exe
 
 import sys
 import os
@@ -141,7 +141,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='clipai-backend',
+    name='clippify-backend',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

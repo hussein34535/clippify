@@ -245,7 +245,7 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
                       ],
                     ),
                     const SizedBox(height: 12),
-                    const Text('مرحباً! أنا مساعد ClipAI الذكي. كيف يمكنني مساعدتك في تحرير الفيديو اليوم؟', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    const Text('مرحباً! أنا مساعد Clippify الذكي. كيف يمكنني مساعدتك في تحرير الفيديو اليوم؟', style: TextStyle(fontSize: 12, color: Colors.white70)),
                   ],
                 ),
               ),

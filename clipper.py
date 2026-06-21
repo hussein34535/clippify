@@ -1,6 +1,6 @@
 """
-clipper.py — Main entry point for ClipAI
-ClipAI — Local Video Clipper (no AI, no cloud)
+clipper.py — Main entry point for Clippify
+Clippify — Local Video Clipper (no AI, no cloud)
 Compatible with moviepy 2.x
 
 Usage
@@ -52,7 +52,7 @@ def _validate_args(args) -> None:
 def main():
     parser = argparse.ArgumentParser(
         prog="clipper",
-        description="ClipAI — automatically clip the best moments from a long video.",
+        description="Clippify — automatically clip the best moments from a long video.",
     )
     parser.add_argument("--video",    required=True,  help="Path to input video file")
     parser.add_argument("--clips",    type=int,   default=5,    help="Number of clips (default: 5)")
@@ -66,7 +66,7 @@ def main():
 
     print()
     print("=" * 50)
-    print("  ClipAI — Local Video Clipper")
+    print("  Clippify — Local Video Clipper")
     print("=" * 50)
     print(f"  Video    : {args.video}")
     print(f"  Clips    : {args.clips}")

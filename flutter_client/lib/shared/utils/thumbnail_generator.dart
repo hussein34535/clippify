@@ -20,7 +20,7 @@ class ThumbnailCache {
   Future<String> get _dir async {
     if (_cacheDir != null) return _cacheDir!;
     final appDir = await getApplicationDocumentsDirectory();
-    final dir = p.join(appDir.path, 'ClipAI', 'thumbnails');
+    final dir = p.join(appDir.path, 'Clippify', 'thumbnails');
     final dirObj = Directory(dir);
     if (!await dirObj.exists()) {
       await dirObj.create(recursive: true);
@@ -40,9 +40,22 @@ class ThumbnailCache {
 
     final cacheDir = await _dir;
     final filePath = p.join(cacheDir, '$key.jpg');
-    if (await File(filePath).exists() || await CacheManager().has(key)) {
+    if (await File(filePath).exists()) {
       _memoryCache[key] = filePath;
       return filePath;
+    }
+
+    try {
+      if (await CacheManager().has(key)) {
+        final bytes = await CacheManager().read(key);
+        if (bytes != null) {
+          await File(filePath).writeAsBytes(bytes, flush: true);
+          _memoryCache[key] = filePath;
+          return filePath;
+        }
+      }
+    } catch (e) {
+      debugPrint('[ThumbnailCache] Failed to read from CacheManager: $e');
     }
 
     return null;
@@ -55,6 +68,14 @@ class ThumbnailCache {
 
     await File(imagePath).copy(destPath);
     _memoryCache[key] = destPath;
+
+    try {
+      final bytes = await File(imagePath).readAsBytes();
+      await CacheManager().write(key, bytes);
+    } catch (e) {
+      debugPrint('[ThumbnailCache] Failed to write to CacheManager: $e');
+    }
+
     return destPath;
   }
 

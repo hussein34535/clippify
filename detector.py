@@ -1,6 +1,6 @@
 """
 detector.py — Clip moment detection logic
-ClipAI — Local Video Clipper (no AI, no cloud)
+Clippify — Local Video Clipper (no AI, no cloud)
 """
 
 import math

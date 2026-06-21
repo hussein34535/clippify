@@ -1,0 +1,26 @@
+{
+  "name": "Call of Duty - Modern Warfare 4 Reveal Trailer Clipping Campaign",
+  "handle": "@callofduty",
+  "platforms": [
+    "TikTok",
+    "Instagram",
+    "YouTube Shorts"
+  ],
+  "min_duration": 10,
+  "content_type": "Gaming",
+  "caption_templates": [
+    "أخيراً! العرض التشويقي لـ Modern Warfare 4 هنا. الحماس مليون! 🔥\n\n#Ad\n\n@callofduty",
+    "هل أنتم مستعدون للعودة؟ Modern Warfare 4 ستغير كل شيء. اطلبوا اللعبة مسبقاً الآن! 🎮\n\n#Ad\n\n@callofduty",
+    "الجرافيكس في Modern Warfare 4 خيالي! لا يمكنني الانتظار حتى 23 أكتوبر 💥\n\n#Ad\n\n@callofduty",
+    "أقوى عرض تشويقي لهذا العام! Modern Warfare 4 قادمة وبقوة 🚀\n\n#Ad\n\n@callofduty",
+    "من منكم سيطلب Modern Warfare 4 مسبقاً؟ استعدوا للملحمة! 🎖️\n\n#Ad\n\n@callofduty"
+  ],
+  "custom_tag": "#Ad",
+  "allow_bg_music": false,
+  "allow_broll": false,
+  "translate_to_arabic": true,
+  "ftc_disclosure": "#Ad",
+  "mandatory_keywords": [
+    "Modern Warfare 4"
+  ]
+}

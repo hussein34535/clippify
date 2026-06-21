@@ -1,7 +1,7 @@
 # clippify — Project Summary
 
 ## Goal
-تحويل تطبيق ClipAI إلى Flutter Desktop بأعلى معايير NLE الاحترافية (CapCut/Premiere Pro level)
+تحويل تطبيق Clippify إلى Flutter Desktop بأعلى معايير NLE الاحترافية (CapCut/Premiere Pro level)
 
 ## Constraints & Preferences
 - الأولوية: Zero compilation errors في `flutter analyze`
@@ -89,7 +89,7 @@
 - Autosave (محلي، بدون API، كل 5 دقائق)
 
 ### Autosave
-- حفظ محلي عبر `LocalStorage().saveAutosave()` — `%APPDATA%/ClipAI/clipai_autosave.json`
+- حفظ محلي عبر `LocalStorage().saveAutosave()` — `%APPDATA%/Clippify/clippify_autosave.json`
 - يعمل في `_startAutosaveTimer()` كل 5 دقائق
 - يُحمّل تلقائياً عند بدء التطبيق في `_loadAutosave()` داخل `initState`
 - مستقل تماماً عن الباك إند — لا يحتاج API
@@ -97,7 +97,7 @@
 ### Backend Controller
 - `_verifyIsOurBackend()` — `GET /docs` ويتأكد من `swagger`/`FastAPI` في الرد
 - لو البورت 8000 مشغول بعملية أخرى: يقتلها (`Process.killPid`) ويعيد التشغيل
-- يبحث عن `api.py` في جذر المشروع (وضع التطوير) أو `clipai-backend` sidecar (الإنتاج)
+- يبحث عن `api.py` في جذر المشروع (وضع التطوير) أو `clippify-backend` sidecar (الإنتاج)
 
 ---
 
@@ -207,7 +207,7 @@ flutter run -d windows
 ### Remaining (Phase 2.5+)
 | # | Task | Priority |
 |---|------|----------|
-| 1 | توحيد اسم المشروع (flutter_client → clipai) عبر الـ package | Low |
+| 1 | توحيد اسم المشروع (flutter_client → clippify) عبر الـ package | Low |
 | 2 | إضافة المزيد من Widget Tests (ClipItemWidget, VideoPlayer, HomeScreen) | Medium |
 | 3 | تحسينات الأداء (استخراج الـ 4 resize handlers المكررة في _buildTrackLane) | Medium |
 | 4 | إضافة الترجمة (i18n) مع دعم العربية والإنجليزية | Low |

@@ -195,11 +195,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _handleSave() async {
     final timelineState = ref.read(timelineProvider).timeline;
     String? outputFile = await FilePicker.platform.saveFile(
-      dialogTitle: 'Save Project', fileName: '${timelineState.projectName}.clipai',
-      type: FileType.custom, allowedExtensions: ['clipai'],
+      dialogTitle: 'Save Project', fileName: '${timelineState.projectName}.clippify',
+      type: FileType.custom, allowedExtensions: ['clippify'],
     );
     if (outputFile == null) return;
-    if (!outputFile.endsWith('.clipai')) outputFile += '.clipai';
+    if (!outputFile.endsWith('.clippify')) outputFile += '.clippify';
     final res = await ApiClient().saveProject(timelineState.toJson(), outputPath: outputFile);
     switch (res) {
       case Success(data: final data):
@@ -215,7 +215,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _handleLoad() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
-      dialogTitle: 'Open Project', type: FileType.custom, allowedExtensions: ['clipai'],
+      dialogTitle: 'Open Project', type: FileType.custom, allowedExtensions: ['clippify'],
     );
     if (result == null || result.files.single.path == null) return;
     final String path = result.files.single.path!;
@@ -789,7 +789,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onFullScreen: () async {
                     await windowManager.setFullScreen(!await windowManager.isFullScreen());
                   },
-                  onAbout: () => showAboutDialog(context: context, applicationName: 'ClipAI Pro', applicationVersion: '1.0.0'),
+                  onAbout: () => showAboutDialog(context: context, applicationName: 'Clippify Pro', applicationVersion: '1.0.0'),
                 ),
 
                 // Export progress bar

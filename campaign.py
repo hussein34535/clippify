@@ -1,5 +1,5 @@
 """
-campaign.py — Campaign Mode data model for ClipAI
+campaign.py — Campaign Mode data model for Clippify
 Stores UGC campaign rules: captions, handles, platforms, min duration.
 """
 
@@ -149,7 +149,7 @@ def generate_caption_file(
 
     lines = [
         "=" * 54,
-        f"  ClipAI — تقرير الحملة (Campaign)",
+        f"  Clippify — تقرير الحملة (Campaign)",
         "=" * 54,
         f"  الحملة : {campaign.name}",
         f"  المنشن : {campaign.handle}",

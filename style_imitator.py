@@ -1,5 +1,5 @@
 """
-style_imitator.py - Smart Style Mimicry & Rendering Engine for ClipAI
+style_imitator.py - Smart Style Mimicry & Rendering Engine for Clippify
 ===================================================================
 Applies reference JSON profiles to target videos, syncing cuts,
 typography, music ducking, and transitions locally.

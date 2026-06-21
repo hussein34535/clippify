@@ -1,18 +1,18 @@
 @echo off
-title ClipAI Studio Starter
+title Clippify Studio Starter
 echo =========================================
-echo Starting ClipAI Studio...
+echo Starting Clippify Studio...
 echo =========================================
 
 echo Starting FastAPI Backend Server...
-start "ClipAI Backend" cmd /c "python api.py"
+start "Clippify Backend" cmd /c "python api.py"
 
 echo Starting Flutter Desktop Application...
 cd flutter_client
-start "ClipAI Frontend" cmd /c "flutter run -d windows"
+start "Clippify Frontend" cmd /c "flutter run -d windows"
 
 echo =========================================
-echo ClipAI Studio is running!
+echo Clippify Studio is running!
 echo Backend: http://127.0.0.1:8000
 echo Frontend: Flutter Desktop
 echo =========================================

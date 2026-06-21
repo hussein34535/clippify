@@ -1,4 +1,4 @@
-# ClipAI — Python dependencies
+# Clippify — Python dependencies
 # Install with: pip install -r requirements.txt
 
 # ── Web framework ────────────────────────────────────────────────────────────

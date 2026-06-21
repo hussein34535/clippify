@@ -224,7 +224,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('إعدادات ClipAI', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontFamily: 'Inter')),
+                        Text('إعدادات Clippify', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontFamily: 'Inter')),
                         Text('تخصيص المظهر وإعدادات الذكاء الاصطناعي', style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'Inter')),
                       ],
                     ),

@@ -1,5 +1,5 @@
 """
-viral_scorer.py — Viral Score Engine for ClipAI
+viral_scorer.py — Viral Score Engine for Clippify
 ================================================
 Scores every moment in a video for viral potential using multi-signal analysis:
 

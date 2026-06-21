@@ -1,6 +1,6 @@
 """
 editor.py — Video cutting + 9:16 crop + captions
-ClipAI — Local Video Clipper (no AI, no cloud)
+Clippify — Local Video Clipper (no AI, no cloud)
 Compatible with moviepy 2.x
 """
 
@@ -1145,7 +1145,7 @@ def render_timeline_to_video(timeline: dict, output_path: str, export_quality: s
 def generate_ass_file(clips: list, output_path: str):
     """Generates an ASS subtitle file from SubtitleClips list."""
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write("[Script Info]\nTitle: ClipAI Pro NLE Subs\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n\n")
+        f.write("[Script Info]\nTitle: Clippify Pro NLE Subs\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n\n")
         f.write("[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
         f.write("Style: Default,Impact,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,0,2,10,10,150,1\n\n")
         f.write("[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")

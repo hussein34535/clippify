@@ -37,7 +37,7 @@ class ProxyGenerator {
 
   Future<Directory> _getProxyDir() async {
     final appDir = await getApplicationDocumentsDirectory();
-    final proxyDir = Directory(p.join(appDir.path, 'ClipAI', 'proxies'));
+    final proxyDir = Directory(p.join(appDir.path, 'Clippify', 'proxies'));
     if (!await proxyDir.exists()) {
       await proxyDir.create(recursive: true);
     }

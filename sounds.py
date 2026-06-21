@@ -1,5 +1,5 @@
 """
-sounds.py — Sound Effects Engine for ClipAI
+sounds.py — Sound Effects Engine for Clippify
 Priority system for professional content (podcast/interview/awareness/motivation/educational):
   1. Freesound.org API  → Real professional sounds (requires free API key)
   2. sfx_synth.py       → Local synthesis fallback (numpy, always available)

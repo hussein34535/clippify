@@ -921,6 +921,9 @@ class OverlayClip {
   final double sourceTrimEnd;
   final double sourceDuration;
   final TransformState transform;
+  final String text;
+  final double opacity;
+  final ColorGradingState colorGrading;
 
   OverlayClip({
     required this.id,
@@ -932,7 +935,10 @@ class OverlayClip {
     required this.sourceTrimEnd,
     this.sourceDuration = 0.0,
     required this.transform,
-  });
+    this.text = '',
+    this.opacity = 1.0,
+    ColorGradingState? colorGrading,
+  }) : colorGrading = colorGrading ?? ColorGradingState();
 
   factory OverlayClip.fromJson(Map<String, dynamic> json) => OverlayClip(
         id: json['id'] as String,
@@ -944,6 +950,11 @@ class OverlayClip {
         sourceTrimEnd: (json['source_trim_end'] as num).toDouble(),
         sourceDuration: (json['source_duration'] as num? ?? 0.0).toDouble(),
         transform: TransformState.fromJson(json['transform'] as Map<String, dynamic>),
+        text: json['text'] as String? ?? '',
+        opacity: (json['opacity'] as num? ?? 1.0).toDouble(),
+        colorGrading: json['color_grading'] != null
+            ? ColorGradingState.fromJson(json['color_grading'] as Map<String, dynamic>)
+            : ColorGradingState(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -956,6 +967,9 @@ class OverlayClip {
         'source_trim_end': sourceTrimEnd,
         'source_duration': sourceDuration,
         'transform': transform.toJson(),
+        'text': text,
+        'opacity': opacity,
+        'color_grading': colorGrading.toJson(),
       };
 
   OverlayClip copyWith({
@@ -968,6 +982,9 @@ class OverlayClip {
     double? sourceTrimEnd,
     double? sourceDuration,
     TransformState? transform,
+    String? text,
+    double? opacity,
+    ColorGradingState? colorGrading,
   }) =>
       OverlayClip(
         id: id ?? this.id,
@@ -979,6 +996,9 @@ class OverlayClip {
         sourceTrimEnd: sourceTrimEnd ?? this.sourceTrimEnd,
         sourceDuration: sourceDuration ?? this.sourceDuration,
         transform: transform ?? this.transform,
+        text: text ?? this.text,
+        opacity: opacity ?? this.opacity,
+        colorGrading: colorGrading ?? this.colorGrading,
       );
 }
 

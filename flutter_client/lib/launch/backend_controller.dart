@@ -141,13 +141,13 @@ class BackendController {
     } else {
       // في وضع الإنتاج، نبحث عن الملف التنفيذي المدمج بجانب التطبيق
       final exeDir = File(Platform.resolvedExecutable).parent;
-      final sidecarExe = File(p.join(exeDir.path, Platform.isWindows ? 'clipai-backend.exe' : 'clipai-backend'));
+      final sidecarExe = File(p.join(exeDir.path, Platform.isWindows ? 'clippify-backend.exe' : 'clippify-backend'));
       
       if (await sidecarExe.exists()) {
         program = sidecarExe.path;
       } else {
         // محاولة البحث في مجلد المخرجات (build/windows/runner/Release)
-        final buildSidecar = File(p.join(backendDir.path, 'dist', Platform.isWindows ? 'clipai-backend.exe' : 'clipai-backend'));
+        final buildSidecar = File(p.join(backendDir.path, 'dist', Platform.isWindows ? 'clippify-backend.exe' : 'clippify-backend'));
         if (await buildSidecar.exists()) {
           program = buildSidecar.path;
         } else {

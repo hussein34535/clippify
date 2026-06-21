@@ -174,22 +174,22 @@ ThemeData? _findThemePreset(String name) {
 
 /// Hardcoded presets to avoid import complexity
 final _kThemePresetMap = <String, ThemeData>{
-  'ClipAI Dark': _clipaiDark,
-  'ClipAI Light': _clipaiLight,
+  'Clippify Dark': _clippifyDark,
+  'Clippify Light': _clippifyLight,
   'Midnight': _midnight,
   'Sunset': _sunset,
   'Forest': _forest,
   'Ocean': _ocean,
 };
 
-final _clipaiDark = ThemeData(
+final _clippifyDark = ThemeData(
   brightness: Brightness.dark,
   colorSchemeSeed: const Color(0xFF7C6AF7),
   scaffoldBackgroundColor: const Color(0xFF0A0A0D),
   useMaterial3: true,
 );
 
-final _clipaiLight = ThemeData(
+final _clippifyLight = ThemeData(
   brightness: Brightness.light,
   colorSchemeSeed: const Color(0xFF7C6AF7),
   scaffoldBackgroundColor: const Color(0xFFFFFFFF),
