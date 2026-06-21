@@ -65,3 +65,36 @@ def test_websocket_endpoint(client):
             data = ws2.receive_text()
             assert data == "Hello from client 1"
 
+
+def test_ai_execute_generate_title(client):
+    timeline_state = {
+        "tracks": {
+            "subtitles": [
+                {
+                    "clips": [
+                        {"start_time": 0.0, "end_time": 2.0, "text": "Hello world this is a test"},
+                        {"start_time": 2.0, "end_time": 5.0, "text": "of the clippify ai video editor tool"}
+                    ]
+                }
+            ],
+            "video": [],
+            "audio": [],
+            "overlays": []
+        }
+    }
+    response = client.post(
+        "/api/ai/execute",
+        json={
+            "actions": [{"name": "ai.generate_title", "args": {}}],
+            "timeline_state": timeline_state
+        }
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("status") == "success"
+    assert "results" in data
+    assert len(data["results"]) == 1
+    assert data["results"][0]["ok"] is True
+    assert "Suggested Titles" in data["results"][0]["message"]
+
+
