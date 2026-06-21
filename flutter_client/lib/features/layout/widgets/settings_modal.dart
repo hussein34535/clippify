@@ -378,82 +378,24 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
             ],
           ),
 
-          const SizedBox(height: 20),
-
-          // Accent color
-          _sectionLabel('لون التمييز (Accent)'),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: kAccentColors.map((c) {
-              final selected = prefs.accentColor.toARGB32() == c.color.toARGB32();
-              return GestureDetector(
-                onTap: () => prefsNotifier.setAccent(c.color),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                    color: c.color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: selected ? Colors.white : Colors.transparent,
-                      width: 2.5,
-                    ),
-                    boxShadow: selected ? [
-                      BoxShadow(color: c.color.withValues(alpha: 0.6), blurRadius: 12, spreadRadius: 1),
-                    ] : null,
-                  ),
-                  child: selected
-                      ? const Icon(Icons.check_rounded, color: Colors.white, size: 18)
-                      : null,
-                ),
-              );
-            }).toList(),
-          ),
-
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
 
           // Font scale
           _sectionLabel('حجم الخط (${(prefs.fontScale * 100).round()}%)'),
           Slider(
             value: prefs.fontScale,
-            min: 0.85,
-            max: 1.2,
-            divisions: 7,
+            min: 0.9,
+            max: 1.1,
+            divisions: 3,
             activeColor: prefs.accentColor,
             inactiveColor: AppColors.surfaceVariant,
             label: '${(prefs.fontScale * 100).round()}%',
             onChanged: (v) => prefsNotifier.setFontScale(v),
           ),
 
-          const SizedBox(height: 12),
-
-          // Compact UI
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('واجهة مضغوطة (Compact UI)', style: TextStyle(fontSize: 13, color: AppColors.textPrimary, fontFamily: 'Inter')),
-                  Text('يقلل المسافات ويضغط العناصر', style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'Inter')),
-                ],
-              ),
-              Switch(
-                value: prefs.compactUI,
-                onChanged: (v) => prefsNotifier.setCompactUI(v),
-                activeTrackColor: prefs.accentColor,
-                activeThumbColor: Colors.white,
-                inactiveTrackColor: AppColors.surfaceVariant,
-                inactiveThumbColor: AppColors.textMuted,
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           const Divider(height: 1, color: AppColors.borderSubtle),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
           // Preview swatch
           Container(
@@ -466,7 +408,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('معاينة مباشرة', style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'Inter')),
+                const Text('معاينة مباشرة', style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'Inter')),
                 const SizedBox(height: 10),
                 Row(
                   children: [

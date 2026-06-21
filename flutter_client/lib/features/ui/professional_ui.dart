@@ -51,56 +51,7 @@ class WorkspaceManager {
   Map<String, double> get fractions => current.panelFractions;
 }
 
-class ThemePreset {
-  final String name;
-  final Color primaryColor;
-  final Color surfaceColor;
-  final Color backgroundColor;
-  final Color textColor;
-  final Brightness brightness;
 
-  const ThemePreset({
-    required this.name,
-    required this.primaryColor,
-    required this.surfaceColor,
-    required this.backgroundColor,
-    required this.textColor,
-    this.brightness = Brightness.dark,
-  });
-
-  ThemeData toThemeData() {
-    return ThemeData(
-      brightness: brightness,
-      colorSchemeSeed: primaryColor,
-      scaffoldBackgroundColor: backgroundColor,
-      useMaterial3: true,
-    );
-  }
-
-  static const List<ThemePreset> presets = [
-    ThemePreset(name: 'Clippify Dark', primaryColor: Color(0xFF7C6AF7), surfaceColor: Color(0xFF131317), backgroundColor: Color(0xFF0A0A0D), textColor: Color(0xFFFFFFFF)),
-    ThemePreset(name: 'Clippify Light', primaryColor: Color(0xFF7C6AF7), surfaceColor: Color(0xFFF5F5F7), backgroundColor: Color(0xFFFFFFFF), textColor: Color(0xFF000000), brightness: Brightness.light),
-    ThemePreset(name: 'Midnight', primaryColor: Color(0xFF00D4FF), surfaceColor: Color(0xFF0D1117), backgroundColor: Color(0xFF05080F), textColor: Color(0xFFFFFFFF)),
-    ThemePreset(name: 'Sunset', primaryColor: Color(0xFFFF6B6B), surfaceColor: Color(0xFF1A1418), backgroundColor: Color(0xFF0F0A0E), textColor: Color(0xFFFFFFFF)),
-    ThemePreset(name: 'Forest', primaryColor: Color(0xFF10B981), surfaceColor: Color(0xFF0F1713), backgroundColor: Color(0xFF070D09), textColor: Color(0xFFFFFFFF)),
-    ThemePreset(name: 'Ocean', primaryColor: Color(0xFF38BDF8), surfaceColor: Color(0xFF0F172A), backgroundColor: Color(0xFF020617), textColor: Color(0xFFFFFFFF)),
-  ];
-}
-
-class CustomThemeManager {
-  String _currentId = 'Clippify Dark';
-
-  String get currentId => _currentId;
-  ThemePreset get current => ThemePreset.presets.firstWhere((p) => p.name == _currentId);
-
-  void switchTo(String name) {
-    if (ThemePreset.presets.any((p) => p.name == name)) {
-      _currentId = name;
-    }
-  }
-
-  ThemeData get theme => current.toThemeData();
-}
 
 class SecondScreenManager {
   static bool get hasSecondScreen => false;

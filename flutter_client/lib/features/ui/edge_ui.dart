@@ -46,7 +46,7 @@ class EdgeTheme {
 
   static BoxDecoration panelDecoration({Color? color, double? radius, Color? borderColor}) => BoxDecoration(
     color: color ?? panelBg,
-    borderRadius: BorderRadius.circular(radius ?? radiusSm),
+    borderRadius: BorderRadius.circular(radius ?? radiusLg),
     border: Border.all(color: borderColor ?? divider),
   );
 

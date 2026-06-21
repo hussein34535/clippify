@@ -38,7 +38,9 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
     with TickerProviderStateMixin {
 
   late TabController _tabController;
+  late TabController _videoTabController;
   late TabController _audioTabController;
+  late TabController _aiTabController;
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
   final TextEditingController _commentTextController = TextEditingController();
@@ -46,14 +48,18 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 12, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+    _videoTabController = TabController(length: 3, vsync: this);
     _audioTabController = TabController(length: 3, vsync: this);
+    _aiTabController = TabController(length: 3, vsync: this);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _videoTabController.dispose();
     _audioTabController.dispose();
+    _aiTabController.dispose();
     _chatController.dispose();
     _chatScrollController.dispose();
     _commentTextController.dispose();
@@ -129,23 +135,13 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
         children: [
           TabBar(
             controller: _tabController,
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
             indicatorColor: AppColors.primary,
             labelColor: AppColors.textPrimary,
             unselectedLabelColor: AppColors.textSecondary,
             tabs: const [
-              Tab(text: 'أبعاد', icon: Icon(Icons.crop_rotate_rounded, size: 14)),
-              Tab(text: 'ألوان', icon: Icon(Icons.palette_rounded, size: 14)),
+              Tab(text: 'فيديو', icon: Icon(Icons.video_settings_rounded, size: 14)),
               Tab(text: 'صوت', icon: Icon(Icons.volume_up_rounded, size: 14)),
-              Tab(text: 'حركة', icon: Icon(Icons.timeline_rounded, size: 14)),
               Tab(text: 'ذكاء اصطناعي', icon: Icon(Icons.auto_awesome_rounded, size: 14)),
-              Tab(text: 'لون متقدم', icon: Icon(Icons.color_lens_rounded, size: 14)),
-              Tab(text: 'تتبع', icon: Icon(Icons.my_location_rounded, size: 14)),
-              Tab(text: 'AI Pro', icon: Icon(Icons.auto_awesome_motion_rounded, size: 14)),
-              Tab(text: 'شات AI', icon: Icon(Icons.smart_toy_rounded, size: 14)),
-              Tab(text: 'Viral', icon: Icon(Icons.trending_up_rounded, size: 14)),
-              Tab(text: 'أدوات AI', icon: Icon(Icons.build_circle_rounded, size: 14)),
               Tab(text: 'تعليقات', icon: Icon(Icons.comment_rounded, size: 14)),
             ],
           ),
@@ -153,17 +149,9 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
             child: TabBarView(
               controller: _tabController,
               children: [
-                selectedVideoClip != null ? _buildTransformTab(selectedVideoClip) : const InspectorPlaceholder(),
-                selectedVideoClip != null ? _buildColorTab(selectedVideoClip) : const InspectorPlaceholder(),
+                _buildVideoTab(selectedVideoClip),
                 selectedVideoClip != null ? _buildAudioTab(selectedVideoClip) : const InspectorPlaceholder(),
-                selectedVideoClip != null ? _buildKeyframesTab(selectedVideoClip) : const InspectorPlaceholder(),
-                selectedVideoClip != null ? _buildAITab(selectedVideoClip) : const InspectorPlaceholder(),
-                selectedVideoClip != null ? _buildProColorTab(selectedVideoClip) : const InspectorPlaceholder(),
-                selectedVideoClip != null ? TrackingPanel(clip: selectedVideoClip) : const InspectorPlaceholder(),
-                AIProTab(videoPath: selectedVideoClip?.sourcePath ?? ''),
-                _buildCopilotChat(copilotData),
-                _buildViralTab(),
-                AIToolPalette(selectedClipId: widget.selectedClipId),
+                _buildAITabContainer(selectedVideoClip, copilotData),
                 _buildCommentsTab(),
               ],
             ),
@@ -857,6 +845,149 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildVideoTab(VideoClip? clip) {
+    if (clip == null) return const InspectorPlaceholder();
+    return Column(
+      children: [
+        TabBar(
+          controller: _videoTabController,
+          indicatorColor: AppColors.primary,
+          labelColor: AppColors.textPrimary,
+          unselectedLabelColor: AppColors.textSecondary,
+          tabs: const [
+            Tab(text: 'التحويل'),
+            Tab(text: 'الألوان'),
+            Tab(text: 'التتبع'),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _videoTabController,
+            children: [
+              _buildTransformAndKeyframesTab(clip),
+              _buildProColorTab(clip),
+              TrackingPanel(clip: clip),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTransformAndKeyframesTab(VideoClip clip) {
+    final notifier = ref.read(timelineProvider.notifier);
+    final cd = clip.endTimeInTimeline - clip.startTimeInTimeline;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        InspectorSectionHeader(title: 'الموقع (Position)'),
+        const SizedBox(height: 8),
+        InspectorPropertySlider(
+          label: 'الموقع X',
+          value: clip.transform.position.x,
+          min: -500, max: 500,
+          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(position: c.transform.position.copyWith(x: v)))),
+        ),
+        InspectorPropertySlider(
+          label: 'الموقع Y',
+          value: clip.transform.position.y,
+          min: -500, max: 500,
+          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(position: c.transform.position.copyWith(y: v)))),
+        ),
+        const SizedBox(height: 16),
+        InspectorSectionHeader(title: 'القياس (Scale)'),
+        const SizedBox(height: 8),
+        InspectorPropertySlider(
+          label: 'العرض %',
+          value: clip.transform.scale.x,
+          min: 1, max: 200,
+          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(scale: c.transform.scale.copyWith(x: v)))),
+        ),
+        InspectorPropertySlider(
+          label: 'الارتفاع %',
+          value: clip.transform.scale.y,
+          min: 1, max: 200,
+          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(scale: c.transform.scale.copyWith(y: v)))),
+        ),
+        const SizedBox(height: 16),
+        InspectorSectionHeader(title: 'الدوران (Rotation)'),
+        const SizedBox(height: 8),
+        InspectorPropertySlider(
+          label: 'زاوية الدوران',
+          value: clip.transform.rotation,
+          min: -180, max: 180,
+          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(rotation: v))),
+        ),
+        const Divider(height: 32, color: AppColors.divider),
+        InspectorSectionHeader(title: 'Keyframes (مخطط الحركة)'),
+        const SizedBox(height: 8),
+        const Text('حرر keyframes بالجراف', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+        const SizedBox(height: 16),
+        CurveEditorWidget(
+          allKeyframes: clip.transform.keyframes,
+          clipDuration: cd,
+          initialProperty: 'position_x',
+          onChanged: (kfs) {
+            notifier.updateVideoClip(clip.id, (c) => c.copyWith(
+                transform: c.transform.copyWith(keyframes: kfs)));
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAITabContainer(VideoClip? clip, CopilotStateData copilotData) {
+    return Column(
+      children: [
+        TabBar(
+          controller: _aiTabController,
+          indicatorColor: AppColors.primary,
+          labelColor: AppColors.textPrimary,
+          unselectedLabelColor: AppColors.textSecondary,
+          tabs: const [
+            Tab(text: 'مساعد AI'),
+            Tab(text: 'أدوات ذكية'),
+            Tab(text: 'Viral'),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _aiTabController,
+            children: [
+              _buildCopilotChat(copilotData),
+              _buildAIUtilitiesTab(clip),
+              _buildViralTab(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAIUtilitiesTab(VideoClip? clip) {
+    if (clip == null) return const InspectorPlaceholder();
+    final notifier = ref.read(timelineProvider.notifier);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        SmartCutPanel(videoPath: clip.sourcePath),
+        const Divider(height: 24, color: AppColors.divider),
+        InspectorSectionHeader(title: 'إزالة الخلفية'),
+        const SizedBox(height: 8),
+        BackgroundRemovalPanel(
+          currentMethod: clip.aiFeatures.bgRemoveMethod,
+          chromakeyColor: clip.aiFeatures.chromakeyColor,
+          onMethodChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(aiFeatures: c.aiFeatures.copyWith(bgRemoveMethod: v))),
+          onColorChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(aiFeatures: c.aiFeatures.copyWith(chromakeyColor: v))),
+        ),
+        const Divider(height: 24, color: AppColors.divider),
+        AIProTab(videoPath: clip.sourcePath),
+        const Divider(height: 24, color: AppColors.divider),
+        AIToolPalette(selectedClipId: clip.id),
       ],
     );
   }
