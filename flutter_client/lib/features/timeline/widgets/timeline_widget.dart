@@ -1305,21 +1305,31 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         final playhead = dropTime;
 
         double mediaDuration = 10.0;
-        final infoResult = await ApiClient().getMediaInfo(filePath);
-        if (!mounted) return;
-        switch (infoResult) {
-          case Success(data: final info):
-            if (info['status'] == 'success' && info['duration'] != null) {
-              final double actDur = (info['duration'] as num).toDouble();
-              if (actDur > 0) {
-                mediaDuration = actDur;
+        try {
+          final infoResult = await ApiClient().getMediaInfo(filePath);
+          if (!mounted) return;
+          switch (infoResult) {
+            case Success(data: final info):
+              if (info['status'] == 'success' && info['duration'] != null) {
+                final double actDur = (info['duration'] as num).toDouble();
+                if (actDur > 0) {
+                  mediaDuration = actDur;
+                }
               }
-            }
-          case Failure():
-            break;
+            case Failure():
+              break;
+          }
+        } catch (e) {
+          // Backend down / network error — still add the clip with a sane default
+          // duration so the user sees their media land on the timeline.
+          debugPrint('Drag&drop: getMediaInfo failed, using default duration: $e');
+          if (!mounted) return;
         }
 
-        final double dur = mediaDuration < 10.0 ? mediaDuration : 10.0;
+        // Use the REAL media duration for both the on-timeline span and the
+        // source trim. (Previously this capped every clip at 10s, hiding long
+        // media.) Fall back to a sensible 10s only when the duration is unknown.
+        final double dur = mediaDuration > 0.1 ? mediaDuration : 10.0;
 
         if (trackType == 'video') {
           final newClip = VideoClip(

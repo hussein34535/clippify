@@ -785,24 +785,48 @@ def handle_audio(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Tupl
         return True, f"⏱️ Time stretch: {audio_settings['time_stretch']}x", {"audio_settings": audio_settings}
 
     if name == "audio.detect_beats":
-        patch = {"audioJob": {"type": "detect_beats"}}
-        return True, "🥁 Detect beats", patch
+        cid = args.get("clip_id") or state.get("selectedClipId")
+        target_clip = _resolve_target_clip(tracks, cid)
+        if not target_clip:
+            return False, "No clip selected for beat detection", {}
+        media_path = target_clip.get("source_path")
+        if not media_path or not os.path.exists(media_path):
+            return False, f"Source media not found: {media_path}", {}
+        try:
+            beats = _detect_beats_safe(media_path)
+            if not beats:
+                return True, "🥁 No clear beats detected (pydub missing or non-musical audio)", {}
+            target_clip.setdefault("ai_features", {})["beats"] = beats
+            return True, f"🥁 Detected {len(beats)} beats (BPM ≈ {60.0/max(0.01,_median_gap(beats)):.0f})", {"tracks": tracks}
+        except Exception as e:
+            return False, f"Beat detection failed: {str(e)[:150]}", {}
 
     if name == "audio.detect_key":
-        patch = {"audioJob": {"type": "detect_key"}}
-        return True, "🎵 Detect key", patch
+        return True, "⏳ Detect key — not yet implemented (no key-detection backend)", {"audioJob": {"type": "detect_key", "queued": True}}
 
     if name == "audio.separate_stems":
-        patch = {"audioJob": {"type": "separate_stems"}}
-        return True, "🎚️ Separate stems", patch
+        cid = args.get("clip_id") or state.get("selectedClipId")
+        target_clip = _resolve_target_clip(tracks, cid)
+        if not target_clip:
+            return False, "No clip selected for stem separation", {}
+        media_path = target_clip.get("source_path")
+        if not media_path or not os.path.exists(media_path):
+            return False, f"Source media not found: {media_path}", {}
+        try:
+            from audio_intelligence import separate_audio_tracks
+            result = separate_audio_tracks(media_path)
+            target_clip.setdefault("ai_features", {})["separated_stems"] = result
+            return True, "🎚️ Stems separated (vocals + background ready)", {"tracks": tracks}
+        except ImportError:
+            return True, "🎚️ Stem separation requires Demucs (not installed)", {"audioJob": {"type": "separate_stems", "queued": True}}
+        except Exception as e:
+            return False, f"Stem separation failed: {str(e)[:150]}", {}
 
     if name == "audio.voice_isolation":
-        patch = {"audioJob": {"type": "voice_isolation"}}
-        return True, "🎤 Voice isolation", patch
+        return True, "⏳ Voice isolation — requires Demucs/voice model (not configured)", {"audioJob": {"type": "voice_isolation", "queued": True}}
 
     if name == "audio.vocal_clone":
-        patch = {"audioJob": {"type": "vocal_clone"}}
-        return True, "🎙️ Vocal clone", patch
+        return True, "⏳ Vocal clone — requires voice cloning model (not available locally)", {"audioJob": {"type": "vocal_clone", "queued": True}}
 
     if name == "audio.auto_gain":
         audio_settings["auto_gain"] = True
@@ -1011,6 +1035,144 @@ def _get_transcript_text(state: Dict[str, Any]) -> str:
     return " ".join(texts)
 
 
+def _get_words_list(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Pull flat word-list from state. Supports both 'words' top-level and subtitle clips."""
+    words = state.get("words") or []
+    if words:
+        return words
+    # Fallback: synthesize word list from subtitle track clips
+    tracks = state.get("tracks", {})
+    if isinstance(tracks, dict):
+        for sub_clips in tracks.get("subtitles", []):
+            for c in sub_clips.get("clips", []):
+                text = c.get("text", "").strip()
+                if text:
+                    words.append({"text": text, "start": c.get("start_time", 0.0), "end": c.get("end_time", 0.0)})
+    elif isinstance(tracks, list):
+        for t in tracks:
+            if "sub" in str(t.get("id", "")).lower() or t.get("type") == "subtitle":
+                for c in t.get("clips", []):
+                    text = c.get("text", "").strip()
+                    if text:
+                        words.append({"text": text, "start": c.get("start", c.get("start_time_in_timeline", 0.0)),
+                                      "end": c.get("end", c.get("end_time_in_timeline", 0.0))})
+    return words
+
+
+def _resolve_target_clip(tracks: List[Dict[str, Any]], clip_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Find a clip by id, else fall back to first video clip with a usable source_path."""
+    if clip_id:
+        return get_clip_by_id(tracks, clip_id)
+    for track in tracks:
+        if not track.get("clips"):
+            continue
+        if "v" in track.get("id", "").lower() or track.get("type") == "video":
+            for c in track["clips"]:
+                if c.get("source_path"):
+                    return c
+    return None
+
+
+def _median_gap(values: List[float]) -> float:
+    if len(values) < 2:
+        return 0.5
+    gaps = [values[i + 1] - values[i] for i in range(len(values) - 1)]
+    gaps.sort()
+    return gaps[len(gaps) // 2]
+
+
+def _run_ffmpeg(cmd: List[str], timeout: int = 120) -> Tuple[bool, str]:
+    """Run an ffmpeg/ffprobe command, returning (ok, stderr_last_line)."""
+    import subprocess
+    try:
+        # stdin=DEVNULL prevents WinError 6 (invalid handle) under pytest/Windows
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                             stdin=subprocess.DEVNULL)
+        return res.returncode == 0, (res.stderr or res.stdout or "").strip().splitlines()[-1] if (res.stderr or res.stdout) else ""
+    except FileNotFoundError:
+        return False, "ffmpeg/ffprobe not found on PATH"
+    except subprocess.TimeoutExpired:
+        return False, f"ffmpeg timed out after {timeout}s"
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+def _ffmpeg_path() -> str:
+    """Resolve a usable ffmpeg executable (bundled imageio_ffmpeg or PATH)."""
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.isfile(exe):
+            return exe
+    except Exception:
+        pass
+    return "ffmpeg"
+
+
+def _ffmpeg_detect_scenes(video_path: str, threshold: float = 0.4) -> List[float]:
+    """Use ffmpeg's built-in scene-change detection filter (no ffprobe needed)."""
+    import subprocess
+    threshold = max(0.01, min(1.0, threshold))
+    exe = _ffmpeg_path()
+    # The select filter prints each frame's pts_time when scene score > threshold.
+    cmd = [
+        exe, "-hide_banner", "-v", "info",
+        "-i", video_path,
+        "-filter:v", f"select='gt(scene\\,{threshold:.3f})',showinfo",
+        "-f", "null", "-",
+    ]
+    try:
+        # stdin=DEVNULL prevents WinError 6 (invalid handle) under pytest/Windows
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
+                             stdin=subprocess.DEVNULL)
+    except FileNotFoundError:
+        return []
+    except subprocess.TimeoutExpired:
+        return []
+    times: List[float] = []
+    # showinfo writes lines like: ... pts_time:1.500 ...
+    import re
+    for m in re.finditer(r"pts_time:(\d+(?:\.\d+)?)", res.stderr or ""):
+        try:
+            t = float(m.group(1))
+        except ValueError:
+            continue
+        if t > 0.05 and (not times or t - times[-1] > 0.3):
+            times.append(t)
+    return times
+
+
+def _detect_beats_safe(audio_or_video_path: str) -> List[float]:
+    """Beat detection with graceful fallback if pydub/librosa unavailable."""
+    try:
+        from editor import detect_beats
+        return detect_beats(audio_or_video_path)
+    except ImportError:
+        return []
+    except Exception:
+        return []
+
+
+def _ffmpeg_extract_thumbnail(video_path: str, at_sec: float) -> str:
+    """Extract a single PNG thumbnail at the given timestamp into the cache dir."""
+    import subprocess
+    cache_dir = os.path.join(os.path.dirname(os.path.abspath(video_path)), ".clippify_thumbs")
+    os.makedirs(cache_dir, exist_ok=True)
+    import hashlib
+    key = hashlib.md5(f"{video_path}:{at_sec:.2f}".encode()).hexdigest()[:10]
+    out = os.path.join(cache_dir, f"thumb_{key}.png")
+    if os.path.exists(out):
+        return out
+    cmd = [
+        _ffmpeg_path(), "-y", "-ss", f"{max(0.0, at_sec):.2f}", "-i", video_path,
+        "-frames:v", "1", "-q:v", "2", out,
+    ]
+    ok, _ = _run_ffmpeg(cmd, timeout=60)
+    if not ok or not os.path.exists(out):
+        raise RuntimeError("ffmpeg thumbnail extraction failed")
+    return out
+
+
 def handle_ai(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
     tracks = state.get("tracks", [])
     patch: Dict[str, Any] = {}
@@ -1115,10 +1277,126 @@ def handle_ai(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Tuple[b
         if not cid: return False, "No clip selected", patch
         clip = get_clip_by_id(tracks, cid)
         if not clip: return False, "Clip not found", patch
-        clip.setdefault("ai_features", {})["bg_removed"] = True
-        clip.setdefault("ai_features", {})["bg_remove_method"] = "rmbg"
-        patch["tracks"] = tracks
-        return True, "🟢 Background removal activated for clip (will process on render)", patch
+        video_path = clip.get("source_path")
+        if not video_path or not os.path.exists(video_path):
+            return False, f"Source video not found: {video_path}", patch
+        try:
+            from bg_remover import create_greenscreen_video
+            out_dir = os.path.join(os.path.dirname(os.path.abspath(video_path)), ".clippify_bg")
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, f"{os.path.basename(video_path)}_nobg.mp4")
+            if not os.path.exists(out_path):
+                create_greenscreen_video(video_path, out_path)
+            clip.setdefault("ai_features", {})["bg_removed"] = True
+            clip.setdefault("ai_features", {})["bg_remove_method"] = "mediapipe_selfie"
+            clip.setdefault("ai_features", {})["bg_removed_path"] = out_path
+            patch["tracks"] = tracks
+            return True, "🟢 Background removed (green-screen video ready for render)", patch
+        except ImportError:
+            # Graceful degradation: flag for render-time processing
+            clip.setdefault("ai_features", {})["bg_removed"] = True
+            clip.setdefault("ai_features", {})["bg_remove_method"] = "rmbg_render_time"
+            patch["tracks"] = tracks
+            return True, "🟢 Background removal scheduled (will process at render)", patch
+        except Exception as e:
+            return False, f"Background removal failed: {str(e)[:150]}", patch
+
+    if name == "ai.score_virality":
+        cid = args.get("clip_id") or state.get("selectedClipId")
+        target_clip = _resolve_target_clip(tracks, cid)
+        if not target_clip:
+            return False, "No clip selected for virality scoring", patch
+        video_path = target_clip.get("source_path")
+        if not video_path or not os.path.exists(video_path):
+            return False, f"Source video not found: {video_path}", patch
+        words = _get_words_list(state)
+        if not words:
+            return True, "📊 Virality needs a transcript first — run subtitles.generate_from_audio", patch
+        try:
+            from viral_scorer import get_viral_timeline, get_top_moments
+            timeline = get_viral_timeline(video_path, words)
+            if not timeline:
+                return True, "📊 Could not compute viral score (audio analysis failed)", patch
+            top = get_top_moments(timeline, top_n=int(args.get("top_n", 5)))
+            target_clip.setdefault("ai_features", {})["viral_timeline"] = {f"{k:.2f}": v for k, v in timeline.items()}
+            markers = state.setdefault("markers", [])
+            for m in top:
+                t = m if isinstance(m, (int, float)) else (m.get("time") if isinstance(m, dict) else 0)
+                markers.append({"id": str(uuid.uuid4()), "time": float(t), "label": "🔥 Viral peak", "type": "viral"})
+            patch["tracks"] = tracks
+            patch["markers"] = markers
+            peak = max(timeline.values()) if timeline else 0.0
+            return True, f"🔥 Viral score: peak {peak*100:.0f}%, {len(top)} top moments marked", patch
+        except ImportError:
+            return True, "📊 Virality scoring requires librosa/pydub (not installed)", patch
+        except Exception as e:
+            return False, f"Virality scoring failed: {str(e)[:150]}", patch
+
+    if name == "audio.separate_stems":
+        cid = args.get("clip_id") or state.get("selectedClipId")
+        target_clip = _resolve_target_clip(tracks, cid)
+        if not target_clip:
+            return False, "No clip selected for stem separation", patch
+        video_path = target_clip.get("source_path")
+        if not video_path or not os.path.exists(video_path):
+            return False, f"Source media not found: {video_path}", patch
+        try:
+            from audio_intelligence import separate_audio_tracks
+            result = separate_audio_tracks(video_path)
+            target_clip.setdefault("ai_features", {})["separated_stems"] = result
+            patch["tracks"] = tracks
+            return True, "🎚️ Stems separated (vocals + background ready)", patch
+        except ImportError:
+            return True, "🎚️ Stem separation requires Demucs (not installed)", patch
+        except Exception as e:
+            return False, f"Stem separation failed: {str(e)[:150]}", patch
+
+    if name == "ai.remove_filler_words" or name == "ai.jump_cut_remover":
+        cid = args.get("clip_id") or state.get("selectedClipId")
+        target_clip = _resolve_target_clip(tracks, cid)
+        if not target_clip:
+            return False, "No clip selected for filler removal", patch
+        s = target_clip.get("start_time_in_timeline", target_clip.get("start_time", 0.0))
+        e = target_clip.get("end_time_in_timeline", target_clip.get("end_time", 0.0))
+        words = _get_words_list(state)
+        if not words:
+            return True, "✂️ Filler removal needs a transcript first — run subtitles.generate_from_audio", patch
+        try:
+            from silence_trimmer import compute_active_segments
+            content_type = str(args.get("content_type", "podcast"))
+            mode = str(args.get("trim_mode", "auto"))
+            segs = compute_active_segments(words, s, e, content_type=content_type, trim_mode=mode)
+            kept = sum(b - a for a, b in segs)
+            total = max(0.001, e - s)
+            target_clip.setdefault("ai_features", {})["active_segments"] = segs
+            patch["tracks"] = tracks
+            pct = (1.0 - kept / total) * 100
+            return True, f"✂️ {name.split('.')[-1]}: {len(segs)} segments kept, {pct:.0f}% removed", patch
+        except ImportError:
+            return True, "✂️ Filler removal module unavailable", patch
+        except Exception as ex:
+            return False, f"Filler removal failed: {str(ex)[:150]}", patch
+
+    if name == "ai.scene_captioning":
+        cid = args.get("clip_id") or state.get("selectedClipId")
+        target_clip = _resolve_target_clip(tracks, cid)
+        if not target_clip:
+            return False, "No clip selected for captioning", patch
+        video_path = target_clip.get("source_path")
+        if not video_path or not os.path.exists(video_path):
+            return False, f"Source video not found: {video_path}", patch
+        try:
+            from scene_describer import describe_video_segment
+            ct = float(args.get("time", state.get("currentTime", 0.0)))
+            desc = describe_video_segment(video_path, max(0.0, ct), ct + 2.0, n_frames=4)
+            target_clip.setdefault("ai_features", {})["scene_caption"] = desc
+            patch["tracks"] = tracks
+            short = (desc[:120] + "…") if len(desc) > 120 else desc
+            return True, f"📝 Scene: {short}", patch
+        except ImportError:
+            return True, "📝 Scene captioning requires BLIP/Gemma (not installed)", patch
+        except Exception as e:
+            return False, f"Scene captioning failed: {str(e)[:150]}", patch
 
     if name == "ai.generate_title":
         transcript = _get_transcript_text(state)
@@ -1169,32 +1447,94 @@ Format: Return ONLY the hashtags separated by spaces (e.g. #hashtag1 #hashtag2).
             tags = "#foryou #fyp #viral #editing #clippify #contentcreator #expert #ai"
         return True, f"💡 AI Suggested Hashtags: {tags}", patch
 
+    # ── Real, FFmpeg-backed handlers (no external deps) ──
+
+    if name == "ai.detect_scenes":
+        cid = args.get("clip_id") or state.get("selectedClipId")
+        target_clip = _resolve_target_clip(tracks, cid)
+        if not target_clip:
+            return False, "No video clip selected to analyze scenes", patch
+        video_path = target_clip.get("source_path")
+        if not video_path or not os.path.exists(video_path):
+            return False, f"Source video not found: {video_path}", patch
+        try:
+            thresholds = {k: float(args.get(k, 0.4)) for k in ("threshold",)}
+            scene_times = _ffmpeg_detect_scenes(video_path, threshold=thresholds["threshold"])
+            if not scene_times:
+                return True, "🎬 No scene changes detected (single continuous shot)", patch
+            markers = state.setdefault("markers", [])
+            for t in scene_times:
+                markers.append({"id": str(uuid.uuid4()), "time": t, "label": f"Scene @ {t:.1f}s", "type": "scene"})
+            patch["markers"] = markers
+            return True, f"🎬 Detected {len(scene_times)} scene cuts", patch
+        except Exception as e:
+            return False, f"Scene detection failed: {str(e)[:150]}", patch
+
+    if name == "ai.beat_sync":
+        cid = args.get("clip_id") or state.get("selectedClipId")
+        target_clip = _resolve_target_clip(tracks, cid)
+        if not target_clip:
+            return False, "No clip selected to sync beats", patch
+        video_path = target_clip.get("source_path")
+        if not video_path or not os.path.exists(video_path):
+            return False, f"Source video not found: {video_path}", patch
+        try:
+            beats = _detect_beats_safe(video_path)
+            if not beats:
+                return True, "🥁 No clear beats detected (maybe non-musical audio)", patch
+            markers = state.setdefault("markers", [])
+            cnt = 0
+            for b in beats[:64]:  # cap to avoid marker explosion
+                markers.append({"id": str(uuid.uuid4()), "time": b, "label": "Beat", "type": "beat"})
+                cnt += 1
+            patch["markers"] = markers
+            return True, f"🥁 Synced {cnt} beats (BPM ≈ {60.0 / max(0.01, _median_gap(beats)):.0f})", patch
+        except Exception as e:
+            return False, f"Beat detection failed: {str(e)[:150]}", patch
+
+    if name == "ai.generate_thumbnail":
+        cid = args.get("clip_id") or state.get("selectedClipId")
+        target_clip = _resolve_target_clip(tracks, cid)
+        if not target_clip:
+            return False, "No clip selected for thumbnail", patch
+        video_path = target_clip.get("source_path")
+        if not video_path or not os.path.exists(video_path):
+            return False, f"Source video not found: {video_path}", patch
+        try:
+            ct_snap = float(args.get("time", state.get("currentTime", 0.0)))
+            thumb_path = _ffmpeg_extract_thumbnail(video_path, ct_snap)
+            target_clip.setdefault("ai_features", {})["thumbnail"] = thumb_path
+            patch["tracks"] = tracks
+            return True, f"🖼️ Thumbnail generated at {ct_snap:.1f}s", patch
+        except Exception as e:
+            return False, f"Thumbnail generation failed: {str(e)[:150]}", patch
+
     # Map tool name -> aiJob type
+    # NOTE: Entries below are still stubs (no real backing module). They return an
+    # aiJob patch so the client shows them as queued, but no processing happens.
+    # Wired-to-real-module handlers (detect_scenes, beat_sync, score_virality,
+    # separate_stems, remove_filler_words, jump_cut_remover, scene_captioning,
+    # remove_background, generate_thumbnail) are handled ABOVE and must NOT
+    # appear in this map.
     ai_job_map = {
         "ai.auto_zoom_speech": "auto_zoom",
-        "ai.beat_sync": "beat_sync",
         "ai.smart_recut": "smart_recut",
-        "ai.remove_filler_words": "filler_removal",
         "ai.remove_object": "remove_object",
         "ai.interpolate_frames": "interpolate_frames",
         "ai.upscale_video": "upscale",
         "ai.denoise_video": "denoise_video",
         "ai.color_match": "color_match",
         "ai.style_transfer": "style_transfer",
-        "ai.scene_captioning": "scene_captioning",
-        "ai.detect_scenes": "detect_scenes",
         "ai.detect_emotion": "detect_emotion",
         "ai.detect_chapters": "chapters",
         "ai.analyze_pacing": "analyze_pacing",
         "ai.analyze_story_arc": "story_arc",
         "ai.analyze_competitors": "analyze_competitors",
-        "ai.score_virality": "viral_score",
         "ai.predict_engagement": "predict_engagement",
         "ai.predict_trend": "predict_trend",
         "ai.content_rating": "content_rating",
         "ai.check_copyright": "check_copyright",
         "ai.match_audience": "match_audience",
-        "ai.generate_thumbnail": "thumbnail",
         "ai.generate_hooks_v2": "generate_hooks",
         "ai.generate_highlight_reel": "highlight_reel",
         "ai.generate_narration": "voiceover",
@@ -1207,7 +1547,6 @@ Format: Return ONLY the hashtags separated by spaces (e.g. #hashtag1 #hashtag2).
         "ai.deepfake_detector": "deepfake_check",
         "ai.macro_record": "macro_record",
         "ai.macro_play": "macro_play",
-        "ai.jump_cut_remover": "jump_cut",
         "ai.local_llm_toggle": "local_llm",
         "ai.auto_crop_social": "auto_crop_social",
         "ai.search_stock": "stock_search",
@@ -1215,8 +1554,10 @@ Format: Return ONLY the hashtags separated by spaces (e.g. #hashtag1 #hashtag2).
 
     if name in ai_job_map:
         job_type = ai_job_map[name]
-        patch["aiJob"] = {"type": job_type, "args": args}
-        return True, f"🤖 AI: {job_type}", patch
+        # These tools have no backing implementation yet. Be honest about it
+        # rather than returning a silent "success" that fools the user.
+        patch["aiJob"] = {"type": job_type, "args": args, "queued": True}
+        return True, f"⏳ Queued '{job_type}' — not yet implemented (requires model/external service)", patch
 
     return False, f"Unknown AI tool: {name}", patch
 
@@ -1227,7 +1568,10 @@ Format: Return ONLY the hashtags separated by spaces (e.g. #hashtag1 #hashtag2).
 
 def handle_export(name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
     patch: Dict[str, Any] = {}
-
+    # NOTE: Export jobs are queued only — the actual render pipeline runs via the
+    # dedicated /api/render and /api/export endpoints, NOT through this tool
+    # executor. Returning the exportJob patch lets the UI show the intent, but
+    # no file is produced here. This is documented, not silent.
     if name == "export.render":
         patch["exportJob"] = {
             "type": "render",
