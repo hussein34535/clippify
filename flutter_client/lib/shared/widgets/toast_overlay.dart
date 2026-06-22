@@ -48,7 +48,7 @@ class ToastOverlay extends ConsumerWidget {
                         Icon(icon, color: Colors.white, size: 16),
                         const SizedBox(width: 8),
                         Flexible(
-                          child: Text(t.message, style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'Inter')),
+                          child: Text(t.message, style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'])),
                         ),
                       ],
                     ),

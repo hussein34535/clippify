@@ -184,7 +184,7 @@ class _AIToolPaletteState extends ConsumerState<AIToolPalette> {
           backgroundColor: AppColors.surface,
           title: Text(
             tool.destructive ? '⚠️ عملية مدمرة' : 'تأكيد الإجراء',
-            style: const TextStyle(color: Colors.white, fontFamily: 'Outfit'),
+            style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
             textAlign: TextAlign.right,
           ),
           content: Text(

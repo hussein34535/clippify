@@ -27,6 +27,7 @@ class InspectorSectionHeader extends StatelessWidget {
               fontWeight: FontWeight.w600,
               color: Colors.white,
               fontFamily: 'Outfit',
+              fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'],
             ),
           ),
         ],

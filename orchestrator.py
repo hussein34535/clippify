@@ -43,7 +43,7 @@ progress_callback = None
 
 def _llm_ask(prompt: str, temperature: float = 0.5, max_retries: int = 2) -> str:
     import time
-    url = _LLM_URL + _API_KEY
+    models = ["gemma-2-27b-it", "gemini-1.5-flash", "gemini-2.5-flash"]
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -53,34 +53,40 @@ def _llm_ask(prompt: str, temperature: float = 0.5, max_retries: int = 2) -> str
         },
     }
     last_err = ""
-    for attempt in range(1, max_retries + 1):
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=120)
-            if resp.status_code == 200:
-                data = resp.json()
-                candidates = data.get("candidates", [])
-                if not candidates:
-                    raise Exception("No LLM response candidates.")
-                parts = candidates[0].get("content", {}).get("parts", [])
-                text_parts = [p.get("text", "") for p in parts if not p.get("thought")]
-                return "".join(text_parts).strip()
-            if resp.status_code >= 500:
-                last_err = f"LLM API Error ({resp.status_code}): {resp.text[:200]}"
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={_API_KEY}"
+        for attempt in range(1, max_retries + 1):
+            try:
+                resp = requests.post(url, json=payload, headers=headers, timeout=120)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        raise Exception("No LLM response candidates.")
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    text_parts = [p.get("text", "") for p in parts if not p.get("thought")]
+                    return "".join(text_parts).strip()
+                if resp.status_code == 404 or resp.status_code == 400:
+                    last_err = f"Model {model} not found or unsupported ({resp.status_code})."
+                    break
+                if resp.status_code >= 500:
+                    last_err = f"LLM API Error ({resp.status_code}): {resp.text[:200]}"
+                    if attempt < max_retries:
+                        wait = 2 ** attempt
+                        print(f"  [LLM] Server error for {model}, retrying in {wait}s...")
+                        time.sleep(wait)
+                        continue
+                raise Exception(f"LLM API Error ({resp.status_code}): {resp.text[:300]}")
+            except requests.Timeout:
+                last_err = "LLM request timeout"
                 if attempt < max_retries:
                     wait = 2 ** attempt
-                    print(f"  [LLM] Server error, retrying in {wait}s...")
+                    print(f"  [LLM] Timeout for {model}, retrying in {wait}s...")
                     time.sleep(wait)
-                    continue
-            raise Exception(f"LLM API Error ({resp.status_code}): {resp.text[:300]}")
-        except requests.Timeout:
-            last_err = "LLM request timeout"
-            if attempt < max_retries:
-                wait = 2 ** attempt
-                print(f"  [LLM] Timeout, retrying in {wait}s...")
-                time.sleep(wait)
-                continue
-            raise Exception(last_err)
-    raise Exception(last_err)
+            except Exception as e:
+                last_err = str(e)
+                break
+    raise Exception(f"All LLM models failed. Last error: {last_err}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

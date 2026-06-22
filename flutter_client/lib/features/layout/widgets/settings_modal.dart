@@ -127,7 +127,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text('تنظيف الكاش 🧹', style: TextStyle(color: Colors.white, fontFamily: 'Outfit'), textAlign: TextAlign.right),
+        title: const Text('تنظيف الكاش 🧹', style: TextStyle(color: Colors.white, fontFamily: 'Outfit', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']), textAlign: TextAlign.right),
         content: const Text(
           'هل تريد حذف كافة الملفات المؤقتة ولفتات الكروما القديمة لتوفير مساحة على القرص؟',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
@@ -226,8 +226,8 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('إعدادات Clippify', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontFamily: 'Inter')),
-                        Text('تخصيص المظهر وإعدادات الذكاء الاصطناعي', style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'Inter')),
+                        Text('إعدادات Clippify', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'])),
+                        Text('تخصيص المظهر وإعدادات الذكاء الاصطناعي', style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'])),
                       ],
                     ),
                   ),
@@ -269,8 +269,8 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                 ),
                 labelColor: AppColors.textPrimary,
                 unselectedLabelColor: AppColors.textSecondary,
-                labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
-                unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Inter'),
+                labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+                unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
                 tabs: const [
                   Tab(text: '🎨  المظهر'),
                   Tab(text: '⚙️  الذكاء الاصطناعي'),
@@ -410,7 +410,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('معاينة مباشرة', style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'Inter')),
+                const Text('معاينة مباشرة', style: TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'])),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -421,7 +421,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                         borderRadius: BorderRadius.circular(AppRadius.md),
                         boxShadow: [BoxShadow(color: prefs.accentColor.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2))],
                       ),
-                      child: const Text('زر أساسي', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                      child: const Text('زر أساسي', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'])),
                     ),
                     const SizedBox(width: 10),
                     Container(
@@ -431,7 +431,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                         borderRadius: BorderRadius.circular(AppRadius.md),
                         border: Border.all(color: AppColors.border),
                       ),
-                      child: const Text('زر ثانوي', style: TextStyle(color: AppColors.textPrimary, fontSize: 12, fontFamily: 'Inter')),
+                      child: const Text('زر ثانوي', style: TextStyle(color: AppColors.textPrimary, fontSize: 12, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'])),
                     ),
                   ],
                 ),
@@ -700,7 +700,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
 
   Widget _sectionLabel(String label) => Text(
     label,
-    style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600, fontFamily: 'Inter', letterSpacing: 0.5),
+    style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'], letterSpacing: 0.5),
   );
 
   Widget _buildTextSetting({
@@ -862,6 +862,7 @@ class _ThemeModeChip extends StatelessWidget {
             color: selected ? accent : AppColors.textSecondary,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             fontFamily: 'Inter',
+            fontFamilyFallback: const ['Segoe UI', 'Arial', 'Tahoma'],
           ),
         ),
       ),

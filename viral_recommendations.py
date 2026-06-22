@@ -64,14 +64,27 @@ Format:
 ]
 """
         
-        response = client.models.generate_content(
-            model="gemma-2-27b-it",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.4,
-                response_mime_type="application/json"
-            )
-        )
+        models_to_try = ["gemma-2-27b-it", "gemini-1.5-flash", "gemini-2.5-flash"]
+        response = None
+        last_err = None
+        for model in models_to_try:
+            try:
+                print(f"  [ViralRecs] Trying model {model}...")
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.4,
+                        response_mime_type="application/json"
+                    )
+                )
+                break
+            except Exception as e:
+                last_err = e
+                print(f"  [ViralRecs] Model {model} failed: {e}")
+                
+        if response is None:
+            raise Exception(f"All models failed for viral recommendations. Last error: {last_err}")
         
         resp_text = response.text.strip()
         

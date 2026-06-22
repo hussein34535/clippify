@@ -840,7 +840,7 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
               children: [
                 const Icon(Icons.fiber_manual_record_rounded, size: 14, color: Colors.redAccent),
                 const SizedBox(width: 8),
-                const Text('التسجيل الاحترافي', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Outfit')),
+                const Text('التسجيل الاحترافي', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Outfit', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'])),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.textSecondary),

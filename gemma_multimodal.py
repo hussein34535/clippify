@@ -170,20 +170,30 @@ Return ONLY a valid JSON list of objects in this exact format with NO markdown w
             return []
 
     # ── Query Multimodal Model ─────────────────────────────────────────────
-    model_name = "gemma-2-27b-it"
-    print(f"  [GemmaVideo] Querying model {model_name}...")
-
     chosen_clips = []
     try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                temperature=0.4,
-                response_mime_type="application/json"
-            )
-        )
-        
+        models_to_try = ["gemma-2-27b-it", "gemini-1.5-flash", "gemini-2.5-flash"]
+        response = None
+        last_err = None
+        for model in models_to_try:
+            try:
+                print(f"  [GemmaVideo] Querying model {model}...")
+                response = client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        temperature=0.4,
+                        response_mime_type="application/json"
+                    )
+                )
+                break
+            except Exception as e:
+                last_err = e
+                print(f"  [GemmaVideo] Model {model} failed: {e}")
+                
+        if response is None:
+            raise Exception(f"All models failed for multimodal video analysis. Last error: {last_err}")
+            
         resp_text = response.text.strip()
         print(f"  [GemmaVideo] Raw response received ({len(resp_text)} chars)")
         

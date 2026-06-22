@@ -356,14 +356,52 @@ Return ONLY a valid JSON object matching this exact format:
 }}
 """
 
-    response = client.models.generate_content(
-        model="gemma-2-27b-it",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.2,
-            response_mime_type="application/json"
-        )
-    )
+    models_to_try = ["gemma-2-27b-it", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"]
+    response = None
+    last_err = None
+    for model in models_to_try:
+        try:
+            print(f"  [Campaign AI] Trying model {model}...")
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    response_mime_type="application/json"
+                )
+            )
+            break
+        except Exception as e:
+            last_err = e
+            print(f"  [Campaign AI] Model {model} failed: {e}")
+            if "503" in str(e):
+                import time
+                backoffs = [2.0, 4.0, 8.0]
+                success = False
+                for wait_time in backoffs:
+                    print(f"  [Campaign AI] Model {model} returned 503. Retrying after {wait_time}s...")
+                    time.sleep(wait_time)
+                    try:
+                        response = client.models.generate_content(
+                            model=model,
+                            contents=prompt,
+                            config=types.GenerateContentConfig(
+                                temperature=0.2,
+                                response_mime_type="application/json"
+                            )
+                        )
+                        success = True
+                        break
+                    except Exception as e2:
+                        last_err = e2
+                        print(f"  [Campaign AI] Retry after {wait_time}s failed: {e2}")
+                        if "503" not in str(e2):
+                            break
+                if success:
+                    break
+            
+    if response is None:
+        raise Exception(f"All models failed for campaign setup. Last error: {last_err}")
     
     resp_text = response.text.strip()
     if resp_text.startswith("```"):

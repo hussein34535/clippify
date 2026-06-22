@@ -208,6 +208,14 @@ class RenderPlanRequest(BaseModel):
     preset: Optional[str] = None  # Optional watermark/logo overlay path
 
 
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "message": "Clippify Backend is running"}
+
+@app.get("/")
+def root_check():
+    return {"status": "ok", "message": "Clippify Local API Server"}
+
 @app.get("/api/settings")
 def get_settings():
     return load_ui_prefs()

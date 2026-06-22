@@ -82,31 +82,32 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
 
   @override
   Widget build(BuildContext context) {
-    final timelineData = ref.watch(timelineProvider);
     final copilotData = ref.watch(copilotProvider);
 
-    VideoClip? selectedVideoClip;
-    if (widget.selectedClipId != null && widget.selectedClipType == 'video') {
-      for (var track in timelineData.timeline.tracks.video) {
-        for (var clip in track.clips) {
-          if (clip.id == widget.selectedClipId) {
-            selectedVideoClip = clip;
-            break;
+    final selectedVideoClip = ref.watch(timelineProvider.select((data) {
+      if (widget.selectedClipId != null && widget.selectedClipType == 'video') {
+        for (var track in data.timeline.tracks.video) {
+          for (var clip in track.clips) {
+            if (clip.id == widget.selectedClipId) {
+              return clip;
+            }
           }
         }
       }
-    }
+      return null;
+    }));
 
     if (widget.selectedClipId != null && widget.selectedClipType == 'subtitle') {
-      SubtitleClip? selectedSubtitleClip;
-      for (var track in timelineData.timeline.tracks.subtitles) {
-        for (var clip in track.clips) {
-          if (clip.id == widget.selectedClipId) {
-            selectedSubtitleClip = clip;
-            break;
+      final selectedSubtitleClip = ref.watch(timelineProvider.select((data) {
+        for (var track in data.timeline.tracks.subtitles) {
+          for (var clip in track.clips) {
+            if (clip.id == widget.selectedClipId) {
+              return clip;
+            }
           }
         }
-      }
+        return null;
+      }));
       if (selectedSubtitleClip != null) {
         return Container(
           decoration: const BoxDecoration(
@@ -228,9 +229,10 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
                   children: [
                     Row(
                       children: [
-                        const CircleAvatar(
+                        CircleAvatar(
                           radius: 14,
-                          backgroundImage: NetworkImage('https://i.pravatar.cc/100'),
+                          backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                          child: const Icon(Icons.psychology, size: 16, color: AppColors.primary),
                         ),
                         const SizedBox(width: 10),
                         const Text('المساعد الذكي', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
@@ -752,6 +754,10 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
           color: AppColors.card,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           child: ListTile(
+            onTap: () {
+              ref.read(copilotProvider.notifier).sendPrompt(s['subtitle'] as String, ref);
+              _aiTabController.animateTo(0);
+            },
             leading: CircleAvatar(
               backgroundColor: AppColors.primary.withValues(alpha: 0.15),
               child: Icon(s['icon'] as IconData, size: 20, color: AppColors.primary),

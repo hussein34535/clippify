@@ -111,14 +111,27 @@ def _get_gemma_captions_batched(pil_images: List[Image.Image], api_key: str) -> 
             backoff = 2.0
             for attempt in range(retries):
                 try:
-                    response = client.models.generate_content(
-                        model="gemma-2-27b-it",
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            temperature=0.2,
-                            max_output_tokens=800
-                        )
-                    )
+                    models_to_try = ["gemma-2-27b-it", "gemini-1.5-flash", "gemini-2.5-flash"]
+                    response = None
+                    last_err = None
+                    for model in models_to_try:
+                        try:
+                            print(f"  [SceneDescriber] Trying model {model}...")
+                            response = client.models.generate_content(
+                                model=model,
+                                contents=contents,
+                                config=types.GenerateContentConfig(
+                                    temperature=0.2,
+                                    max_output_tokens=800
+                                )
+                            )
+                            break
+                        except Exception as e:
+                            last_err = e
+                            print(f"  [SceneDescriber] Model {model} failed: {e}")
+                            
+                    if response is None:
+                        raise Exception(f"All models failed for scene description. Last error: {last_err}")
                     
                     res_text = response.text.strip()
                     # Clean up markdown blocks if present

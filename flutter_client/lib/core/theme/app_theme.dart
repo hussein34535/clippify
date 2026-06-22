@@ -90,7 +90,7 @@ class AppButtonStyle {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     minimumSize: Size.zero,
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter', inherit: false),
+    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'], inherit: false),
   );
 
   /// Ghost / outline button
@@ -101,7 +101,7 @@ class AppButtonStyle {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     minimumSize: Size.zero,
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter', inherit: false),
+    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'], inherit: false),
   );
 
   /// Subtle text button
@@ -111,7 +111,7 @@ class AppButtonStyle {
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
     minimumSize: Size.zero,
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, fontFamily: 'Inter', inherit: false),
+    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'], inherit: false),
   );
 
   /// Icon button (toolbar)
@@ -201,16 +201,16 @@ class AppTheme {
       ),
 
       textTheme: const TextTheme(
-        headlineLarge: TextStyle(color: AppColors.textPrimary, fontSize: 28, fontWeight: FontWeight.bold, fontFamily: 'Outfit', letterSpacing: -0.5),
-        headlineMedium: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold, fontFamily: 'Outfit', letterSpacing: -0.3),
-        titleLarge: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
-        titleMedium: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500, fontFamily: 'Inter'),
-        bodyLarge: TextStyle(color: AppColors.textPrimary, fontSize: 14, fontFamily: 'Inter'),
-        bodyMedium: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontFamily: 'Inter'),
-        bodySmall: TextStyle(color: AppColors.textMuted, fontSize: 11, fontFamily: 'Inter'),
-        labelLarge: TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
-        labelMedium: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w500, fontFamily: 'Inter'),
-        labelSmall: TextStyle(color: AppColors.textMuted, fontSize: 10, fontFamily: 'Inter'),
+        headlineLarge: TextStyle(color: AppColors.textPrimary, fontSize: 28, fontWeight: FontWeight.bold, fontFamily: 'Outfit', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'], letterSpacing: -0.5),
+        headlineMedium: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold, fontFamily: 'Outfit', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'], letterSpacing: -0.3),
+        titleLarge: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        titleMedium: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        bodyLarge: TextStyle(color: AppColors.textPrimary, fontSize: 14, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        bodyMedium: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        bodySmall: TextStyle(color: AppColors.textMuted, fontSize: 11, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        labelLarge: TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        labelMedium: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w500, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        labelSmall: TextStyle(color: AppColors.textMuted, fontSize: 10, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
       ),
 
       appBarTheme: const AppBarTheme(
@@ -218,7 +218,7 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
+        titleTextStyle: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
         iconTheme: IconThemeData(color: AppColors.textSecondary, size: 18),
       ),
 
@@ -244,8 +244,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(AppRadius.sm),
           borderSide: BorderSide(color: accent, width: 1.5),
         ),
-        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontFamily: 'Inter'),
-        hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13, fontFamily: 'Inter'),
+        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
       ),
 
       sliderTheme: SliderThemeData(
@@ -276,8 +276,8 @@ class AppTheme {
       tabBarTheme: TabBarThemeData(
         labelColor: AppColors.textPrimary,
         unselectedLabelColor: AppColors.textSecondary,
-        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
-        unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Inter'),
+        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
         indicatorColor: accent,
         indicatorSize: TabBarIndicatorSize.tab,
         dividerColor: AppColors.borderSubtle,
@@ -296,7 +296,7 @@ class AppTheme {
           border: Border.all(color: AppColors.border),
           boxShadow: AppShadows.card,
         ),
-        textStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 11, fontFamily: 'Inter'),
+        textStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 11, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
         waitDuration: const Duration(milliseconds: 600),
         verticalOffset: 16,
       ),
@@ -316,7 +316,7 @@ class AppTheme {
         ),
         elevation: 8,
         shadowColor: Colors.black54,
-        textStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 13, fontFamily: 'Inter'),
+        textStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 13, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
       ),
 
       dialogTheme: DialogThemeData(
@@ -328,13 +328,13 @@ class AppTheme {
         ),
         elevation: 24,
         shadowColor: Colors.black87,
-        titleTextStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
-        contentTextStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontFamily: 'Inter'),
+        titleTextStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        contentTextStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
       ),
 
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.surfaceVariant,
-        contentTextStyle: const TextStyle(color: AppColors.textPrimary, fontFamily: 'Inter'),
+        contentTextStyle: const TextStyle(color: AppColors.textPrimary, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
         behavior: SnackBarBehavior.floating,
       ),
@@ -365,10 +365,10 @@ class CustomThemes {
         onSurface: const Color(0xFF1C1C1E),
       ),
       textTheme: const TextTheme(
-        titleLarge: TextStyle(color: Color(0xFF1C1C1E), fontSize: 17, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
-        bodyLarge: TextStyle(color: Color(0xFF1C1C1E), fontSize: 14, fontFamily: 'Inter'),
-        bodyMedium: TextStyle(color: Color(0xFF6C6C70), fontSize: 13, fontFamily: 'Inter'),
-        bodySmall: TextStyle(color: Color(0xFF8E8E93), fontSize: 11, fontFamily: 'Inter'),
+        titleLarge: TextStyle(color: Color(0xFF1C1C1E), fontSize: 17, fontWeight: FontWeight.w600, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        bodyLarge: TextStyle(color: Color(0xFF1C1C1E), fontSize: 14, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        bodyMedium: TextStyle(color: Color(0xFF6C6C70), fontSize: 13, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+        bodySmall: TextStyle(color: Color(0xFF8E8E93), fontSize: 11, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
       ),
       dividerColor: const Color(0xFFD1D1D6),
       inputDecorationTheme: InputDecorationTheme(
@@ -407,8 +407,8 @@ class CustomThemes {
       onSurface: Colors.white,
     ),
     textTheme: const TextTheme(
-      bodyLarge: TextStyle(color: Colors.white, fontFamily: 'Inter'),
-      bodyMedium: TextStyle(color: Colors.yellowAccent, fontFamily: 'Inter'),
+      bodyLarge: TextStyle(color: Colors.white, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
+      bodyMedium: TextStyle(color: Colors.yellowAccent, fontFamily: 'Inter', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']),
     ),
     dividerColor: Colors.white24,
   );

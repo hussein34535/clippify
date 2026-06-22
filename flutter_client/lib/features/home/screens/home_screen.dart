@@ -768,17 +768,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      final timelineData = ref.watch(timelineProvider);
-                       final playhead = timelineData.timeline.playheadSec;
-                      String? activeVideoPath;
-                      for (final track in timelineData.timeline.tracks.video) {
-                        for (final clip in track.clips) {
-                          if (playhead >= clip.startTimeInTimeline && playhead < clip.endTimeInTimeline) {
-                            activeVideoPath = clip.sourcePath; break;
+                      final activeVideoPath = ref.watch(timelineProvider.select((data) {
+                        final playhead = data.timeline.playheadSec;
+                        for (final track in data.timeline.tracks.video) {
+                          for (final clip in track.clips) {
+                            if (playhead >= clip.startTimeInTimeline && playhead < clip.endTimeInTimeline) {
+                              return clip.sourcePath;
+                            }
                           }
                         }
-                        if (activeVideoPath != null) break;
-                      }
+                        return null;
+                      }));
+                      final timelineData = ref.read(timelineProvider);
 
                       final double totalWidth = constraints.maxWidth;
                       final double totalHeight = constraints.maxHeight;

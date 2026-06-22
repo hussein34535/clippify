@@ -1288,10 +1288,21 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final bool isMuted = _mutedTracks.contains(trackType);
 
     return DragTarget<String>(
+      onWillAcceptWithDetails: (details) => !isLocked,
       onAcceptWithDetails: (details) async {
         if (isLocked) return;
         final filePath = details.data;
-        final playhead = ref.read(timelineProvider).timeline.playheadSec;
+        
+        double dropTime = ref.read(timelineProvider).timeline.playheadSec;
+        try {
+          final RenderBox renderBox = context.findRenderObject() as RenderBox;
+          final localPos = renderBox.globalToLocal(details.offset);
+          final dropX = localPos.dx - TimelineConstants.sidebarWidth + _scrollController.offset + 70;
+          if (dropX > 0) {
+            dropTime = dropX / zoomLevel;
+          }
+        } catch (_) {}
+        final playhead = dropTime;
 
         double mediaDuration = 10.0;
         final infoResult = await ApiClient().getMediaInfo(filePath);
@@ -1329,6 +1340,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
             widget.onSelectVideo!(filePath);
           }
           widget.onSelectClip(newClip.id, 'video');
+          ref.read(timelineProvider.notifier).setPlayhead(playhead);
         } else if (trackType == 'audio') {
           final newClip = AudioClip(
             id: 'clip_a_${DateTime.now().millisecondsSinceEpoch}',
@@ -1341,6 +1353,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
             effects: [],
           );
           ref.read(timelineProvider.notifier).addAudioClip(newClip);
+          ref.read(timelineProvider.notifier).setPlayhead(playhead);
         } else if (trackType == 'overlay') {
           final newClip = OverlayClip(
             id: 'clip_o_${DateTime.now().millisecondsSinceEpoch}',
@@ -1354,6 +1367,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
             transform: TransformState.defaultState(),
           );
           ref.read(timelineProvider.notifier).addOverlayClip(newClip);
+          ref.read(timelineProvider.notifier).setPlayhead(playhead);
         }
       },
       builder: (context, candidateData, rejectedData) {

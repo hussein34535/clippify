@@ -112,62 +112,63 @@ class EdgeIcons {
 class EdgeTypography {
   static const String displayFamily  = 'Inter';
   static const String uiFamily      = 'Inter';
+  static const List<String> fallbackFonts = ['Segoe UI', 'Arial', 'Tahoma'];
 
   static const TextStyle displayLarge = TextStyle(
-    fontFamily: displayFamily, fontSize: 34, fontWeight: FontWeight.w700,
+    fontFamily: displayFamily, fontFamilyFallback: fallbackFonts, fontSize: 34, fontWeight: FontWeight.w700,
     letterSpacing: -0.5, height: 1.15, color: EdgeTheme.textPrimary,
   );
   static const TextStyle displayMedium = TextStyle(
-    fontFamily: displayFamily, fontSize: 28, fontWeight: FontWeight.w700,
+    fontFamily: displayFamily, fontFamilyFallback: fallbackFonts, fontSize: 28, fontWeight: FontWeight.w700,
     letterSpacing: -0.3, height: 1.2, color: EdgeTheme.textPrimary,
   );
 
   static const TextStyle headlineLarge = TextStyle(
-    fontFamily: displayFamily, fontSize: 22, fontWeight: FontWeight.w600,
+    fontFamily: displayFamily, fontFamilyFallback: fallbackFonts, fontSize: 22, fontWeight: FontWeight.w600,
     letterSpacing: -0.2, height: 1.25, color: EdgeTheme.textPrimary,
   );
   static const TextStyle headlineMedium = TextStyle(
-    fontFamily: displayFamily, fontSize: 18, fontWeight: FontWeight.w600,
+    fontFamily: displayFamily, fontFamilyFallback: fallbackFonts, fontSize: 18, fontWeight: FontWeight.w600,
     letterSpacing: -0.1, height: 1.3, color: EdgeTheme.textPrimary,
   );
   static const TextStyle headlineSmall = TextStyle(
-    fontFamily: displayFamily, fontSize: 16, fontWeight: FontWeight.w600,
+    fontFamily: displayFamily, fontFamilyFallback: fallbackFonts, fontSize: 16, fontWeight: FontWeight.w600,
     letterSpacing: 0, height: 1.3, color: EdgeTheme.textPrimary,
   );
 
   static const TextStyle titleLarge = TextStyle(
-    fontFamily: uiFamily, fontSize: 15, fontWeight: FontWeight.w600,
+    fontFamily: uiFamily, fontFamilyFallback: fallbackFonts, fontSize: 15, fontWeight: FontWeight.w600,
     letterSpacing: -0.1, height: 1.35, color: EdgeTheme.textPrimary,
   );
   static const TextStyle titleMedium = TextStyle(
-    fontFamily: uiFamily, fontSize: 14, fontWeight: FontWeight.w500,
+    fontFamily: uiFamily, fontFamilyFallback: fallbackFonts, fontSize: 14, fontWeight: FontWeight.w500,
     letterSpacing: 0, height: 1.4, color: EdgeTheme.textPrimary,
   );
   static const TextStyle titleSmall = TextStyle(
-    fontFamily: uiFamily, fontSize: 13, fontWeight: FontWeight.w500,
+    fontFamily: uiFamily, fontFamilyFallback: fallbackFonts, fontSize: 13, fontWeight: FontWeight.w500,
     letterSpacing: 0, height: 1.4, color: EdgeTheme.textPrimary,
   );
 
   static const TextStyle bodyLarge = TextStyle(
-    fontFamily: uiFamily, fontSize: 13, fontWeight: FontWeight.w400,
+    fontFamily: uiFamily, fontFamilyFallback: fallbackFonts, fontSize: 13, fontWeight: FontWeight.w400,
     letterSpacing: 0, height: 1.45, color: EdgeTheme.textPrimary,
   );
   static const TextStyle bodyMedium = TextStyle(
-    fontFamily: uiFamily, fontSize: 12, fontWeight: FontWeight.w400,
+    fontFamily: uiFamily, fontFamilyFallback: fallbackFonts, fontSize: 12, fontWeight: FontWeight.w400,
     letterSpacing: 0, height: 1.45, color: EdgeTheme.textSecondary,
   );
   static const TextStyle bodySmall = TextStyle(
-    fontFamily: uiFamily, fontSize: 11, fontWeight: FontWeight.w400,
+    fontFamily: uiFamily, fontFamilyFallback: fallbackFonts, fontSize: 11, fontWeight: FontWeight.w400,
     letterSpacing: 0, height: 1.45, color: EdgeTheme.textSecondary,
   );
 
   static const TextStyle caption = TextStyle(
-    fontFamily: uiFamily, fontSize: 11, fontWeight: FontWeight.w500,
+    fontFamily: uiFamily, fontFamilyFallback: fallbackFonts, fontSize: 11, fontWeight: FontWeight.w500,
     letterSpacing: 0.2, height: 1.3, color: EdgeTheme.textSecondary,
   );
 
   static const TextStyle small = TextStyle(
-    fontFamily: uiFamily, fontSize: 10, fontWeight: FontWeight.w500,
+    fontFamily: uiFamily, fontFamilyFallback: fallbackFonts, fontSize: 10, fontWeight: FontWeight.w500,
     letterSpacing: 0.3, height: 1.2, color: EdgeTheme.textSecondary,
   );
 
