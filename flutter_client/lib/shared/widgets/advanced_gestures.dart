@@ -109,21 +109,27 @@ class SnapGuide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (position == null) return const SizedBox.shrink();
+    // IgnorePointer: this is a purely decorative overlay. Without it, the
+    // full-height Positioned Container sits above the track lanes in the Stack
+    // and swallows the drop hit-test, so DragTargets under it never receive
+    // the release event and dragged clips never land on the timeline.
     return Positioned(
       left: position!,
       top: 0,
       height: height,
-      child: Container(
-        width: 1.5,
-        decoration: BoxDecoration(
-          color: color,
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.3),
-              blurRadius: 4,
-              spreadRadius: 1,
-            ),
-          ],
+      child: IgnorePointer(
+        child: Container(
+          width: 1.5,
+          decoration: BoxDecoration(
+            color: color,
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.3),
+                blurRadius: 4,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
         ),
       ),
     );

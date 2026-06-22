@@ -968,9 +968,14 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                         clipBehavior: Clip.none,
                                         alignment: Alignment.topCenter,
                                         children: [
-                                          Container(
-                                            width: 1.5,
-                                            color: const Color(0xFFF0F0F5),
+                                          // The playhead line is decorative;
+                                          // IgnorePointer keeps it from
+                                          // stealing the drop hit-test.
+                                          IgnorePointer(
+                                            child: Container(
+                                              width: 1.5,
+                                              color: const Color(0xFFF0F0F5),
+                                            ),
                                           ),
                                             Positioned(
                                               top: 0,
