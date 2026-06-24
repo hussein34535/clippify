@@ -80,6 +80,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   List<Widget> _buildAllTrackLanes(Tracks tracks, double zoomLevel, {List<NestedSequence> nestedSequences = const []}) {
     final lanes = <Widget>[];
     final configs = _getTrackConfigs(tracks, nestedSequences: nestedSequences);
+    debugPrint('[DnD] _buildAllTrackLanes: ${configs.length} lanes (video=${tracks.video.length}, audio=${tracks.audio.length}, overlay=${tracks.overlays.length})');
     for (final cfg in configs) {
       if (lanes.isNotEmpty) lanes.add(const SizedBox(height: TimelineConstants.trackGap));
       lanes.add(_buildTrackLane(
@@ -951,6 +952,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                     ],
                                   ),
                                 ),
+                              ],
 
                                 SnapGuide(
                                   position: _snapLinePositionSec != null ? _snapLinePositionSec! * zoomLevel : null,
@@ -1293,8 +1295,15 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final bool isMuted = _mutedTracks.contains(trackType);
 
     return DragTarget<String>(
-      onWillAcceptWithDetails: (details) => !isLocked,
+      onWillAcceptWithDetails: (details) {
+        debugPrint('[DnD] willAccept on track "$trackType" (locked=$isLocked) data="${details.data}"');
+        return !isLocked;
+      },
+      onLeave: (data) {
+        debugPrint('[DnD] LEFT track "$trackType"');
+      },
       onAcceptWithDetails: (details) async {
+        debugPrint('[DnD] ACCEPT on track "$trackType"');
         if (isLocked) return;
         final filePath = details.data;
         

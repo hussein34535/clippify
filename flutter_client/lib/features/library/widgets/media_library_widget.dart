@@ -493,6 +493,9 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                       final file = widget.importedFiles[index];
                       return Draggable<String>(
                         data: file.path,
+                        onDragStarted: () {
+                          debugPrint('[DnD] DRAG STARTED — data="${file.path}"');
+                        },
                         feedback: Material(
                           color: Colors.transparent,
                           child: Container(
