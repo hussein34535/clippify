@@ -657,6 +657,20 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     ref.read(timelineProvider.notifier).setPlayhead(target / 1000.0);
   }
 
+  void _goToStart() {
+    _safeSeek(0);
+    ref.read(timelineProvider.notifier).setPlayhead(0);
+  }
+
+  void _goToEnd() {
+    final double mediaDurSec = _mediaDuration.inMilliseconds / 1000.0;
+    final double maxSec = mediaDurSec > 0
+        ? mediaDurSec
+        : ref.read(timelineProvider.notifier).totalDuration;
+    _safeSeek((maxSec * 1000).round());
+    ref.read(timelineProvider.notifier).setPlayhead(maxSec);
+  }
+
   void _toggleMute() {
     setState(() {
       _isMuted = !_isMuted;
@@ -984,13 +998,22 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                         ),
                       ],
                     ),
-                    // ── Row 2: transport buttons (skip back · play · skip fwd · mute · volume) ──
+                    // ── Row 2: transport buttons (start · skip back · play · skip fwd · end · mute · volume) ──
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Row(
                         textDirection: TextDirection.ltr,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.first_page_rounded,
+                              size: 20,
+                              color: AppColors.textSecondary,
+                            ),
+                            onPressed: hasMedia ? _goToStart : null,
+                            visualDensity: VisualDensity.compact,
+                          ),
                           IconButton(
                             icon: const Icon(
                               Icons.replay_10_rounded,
@@ -1018,6 +1041,15 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                               color: AppColors.textSecondary,
                             ),
                             onPressed: hasMedia ? () => _seekRelative(10000) : null,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.last_page_rounded,
+                              size: 20,
+                              color: AppColors.textSecondary,
+                            ),
+                            onPressed: hasMedia ? _goToEnd : null,
                             visualDensity: VisualDensity.compact,
                           ),
                           const SizedBox(width: 24),

@@ -835,24 +835,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                                 recentProjects: _recentProjects,
                                                 onOpenRecent: _loadProjectFrom,
                                               )
-                                            : Stack(
-                                                children: [
-                                                  VideoPlayerWidget(videoPath: activeVideoPath),
-                                                  Positioned(
-                                                    bottom: 0, left: 0, right: 0,
-                                                    child: Row(
-                                                      mainAxisAlignment: MainAxisAlignment.center,
-                                                      children: [
-                                                        _TransportBtn(icon: Icons.first_page_rounded, onTap: () => ref.read(timelineProvider.notifier).setPlayhead(0)),
-                                                        _TransportBtn(icon: Icons.skip_previous_rounded, onTap: () => _handlePlayheadDelta(-5)),
-                                                        _TransportBtn(icon: Icons.play_arrow_rounded, size: 22, onTap: _handlePlayPause),
-                                                        _TransportBtn(icon: Icons.skip_next_rounded, onTap: () => _handlePlayheadDelta(5)),
-                                                        _TransportBtn(icon: Icons.last_page_rounded, onTap: () { final dur = ref.read(timelineProvider.notifier).totalDuration; ref.read(timelineProvider.notifier).setPlayhead(dur); }),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                                            : VideoPlayerWidget(videoPath: activeVideoPath),
                                       ),
                                     ),
                                   ),
@@ -957,26 +940,5 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return _backendConnected == true
         ? const IOSBadge(label: 'متصل', color: AppColors.secondary)
         : const IOSBadge(label: 'غير متصل', color: AppColors.destructive);
-  }
-}
-
-class _TransportBtn extends StatelessWidget {
-  final IconData icon; final double size; final VoidCallback onTap;
-  const _TransportBtn({required this.icon, this.size = 16, required this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      child: IconButton(
-        icon: Icon(icon, size: size, color: Colors.white),
-        onPressed: onTap,
-        style: IconButton.styleFrom(
-          backgroundColor: Colors.white.withValues(alpha: 0.14),
-          shape: const CircleBorder(),
-          minimumSize: const Size(30, 30),
-          padding: EdgeInsets.zero,
-        ),
-      ),
-    );
   }
 }
