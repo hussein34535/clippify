@@ -503,6 +503,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         case Success(data: final data):
           if (data['status'] == 'success') {
             final silences = data['silences'] as List<dynamic>? ?? [];
+            // Real file length caps right-edge extension; 0 keeps it unbounded.
+            double srcDur = 0.0;
+            try {
+              srcDur = await FfmpegService.probeDuration(_currentPreviewVideo!) ?? 0.0;
+            } catch (_) {}
             final List<VideoClip> newClips = [];
             double lastStart = 0.0;
             int index = 0;
@@ -514,6 +519,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   newClips.add(VideoClip(id: 'clip_autocut_$index', sourcePath: _currentPreviewVideo!,
                     startTimeInTimeline: lastStart, endTimeInTimeline: startSilence,
                     sourceTrimStart: lastStart, sourceTrimEnd: startSilence,
+                    sourceDuration: srcDur,
                     transform: TransformState.defaultState(), colorGrading: ColorGradingState(),
                     filters: [], aiFeatures: AIFeatures()));
                   index++;

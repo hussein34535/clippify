@@ -556,6 +556,46 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     }
   }
 
+  /// Re-probes a video clip's source file and repairs a stale [sourceDuration].
+  /// Import-time probes can record a wrong (usually too short) duration — e.g.
+  /// the file was still downloading — which then caps right-edge extension.
+  /// Only ever GROWS the cap; returns true when the stored duration changed.
+  Future<bool> refreshVideoClipSourceDuration(
+    String clipId,
+    Future<double?> Function(String path) probeDuration,
+  ) async {
+    int trackIndex = -1;
+    int clipIndex = -1;
+    final videoTracks = state.timeline.tracks.video;
+    for (int i = 0; i < videoTracks.length && clipIndex == -1; i++) {
+      clipIndex = videoTracks[i].clips.indexWhere((c) => c.id == clipId);
+      if (clipIndex != -1) trackIndex = i;
+    }
+    if (trackIndex == -1) return false;
+    final clip = videoTracks[trackIndex].clips[clipIndex];
+    if (clip.sourcePath.isEmpty) return false;
+    double? probed;
+    try {
+      probed = await probeDuration(clip.sourcePath);
+    } catch (_) {
+      return false;
+    }
+    if (probed == null || probed <= clip.sourceDuration + 0.05) return false;
+    _saveToUndoStack();
+    final tracks = List<VideoTrack>.from(state.timeline.tracks.video);
+    final clips = List<VideoClip>.from(tracks[trackIndex].clips);
+    final idx = clips.indexWhere((c) => c.id == clipId);
+    if (idx == -1) return false;
+    clips[idx] = clips[idx].copyWith(sourceDuration: probed);
+    tracks[trackIndex] = tracks[trackIndex].copyWith(clips: clips);
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: state.timeline.tracks.copyWith(video: tracks),
+      ),
+    );
+    return true;
+  }
+
   /// تحريك كليب صوتي
   void moveAudioClip(String clipId, double newStart, {int trackIndex = 0}) {
     _saveToUndoStack();

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/timeline_provider.dart';
 import '../logic/add_media.dart';
 import '../../../core/models/timeline_models.dart';
+import '../../../core/native/ffmpeg_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/timeline_constants.dart';
 import 'clip_item_widget.dart';
@@ -52,6 +53,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   double? _snapLinePositionSec;
   bool _isDraggingClip = false;
   bool _isRippleEnabled = false;
+  /// Clips with a source-duration refresh currently in flight.
+  final Set<String> _refreshingCaps = {};
+  /// Clips whose cap was verified short (file truly ends there) — don't nag.
+  final Set<String> _capSettled = {};
 
   bool _isZooming = false;
   bool _isCtrlPressed = false;
@@ -340,10 +345,12 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final notifier = ref.read(timelineProvider.notifier);
     dynamic cur;
     double end = 0;
+    double clipStart = 0;
+    bool isVideoClip = false;
     void Function(String, double) resizeFn = notifier.resizeVideoClip;
 
     cur = _findClipById(clipId);
-    if (cur != null) { end = cur.endTimeInTimeline; resizeFn = notifier.resizeVideoClip; }
+    if (cur != null) { end = cur.endTimeInTimeline; clipStart = cur.startTimeInTimeline; isVideoClip = true; resizeFn = notifier.resizeVideoClip; }
     if (cur == null) { cur = _findAudioClipById(clipId); if (cur != null) { end = cur.endTimeInTimeline; resizeFn = notifier.resizeAudioClip; } }
     if (cur == null) { cur = _findOverlayClipById(clipId); if (cur != null) { end = cur.endTimeInTimeline; resizeFn = notifier.resizeOverlayClip; } }
     if (cur == null) { cur = _findSubtitleClipById(clipId); if (cur != null) { end = cur.endTime; resizeFn = notifier.resizeSubtitleClip; } }
@@ -361,6 +368,71 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     }
     setState(() => _snapLinePositionSec = snapLine);
     resizeFn(clipId, snappedEnd);
+    if (isVideoClip) _maybeRefreshStaleSourceCap(clipId, clipStart, snappedEnd);
+  }
+
+  /// When a right-edge drag stops short of the requested end with no neighbour
+  /// blocking it, the stored source duration is probably stale (the import-time
+  /// probe can record a too-short value, e.g. the file was still downloading)
+  /// — re-probe once and lift the cap when the file proves longer.
+  void _maybeRefreshStaleSourceCap(String clipId, double clipStart, double requestedEnd) {
+    if (_refreshingCaps.contains(clipId) || _capSettled.contains(clipId)) return;
+    VideoClip? target;
+    for (final track in ref.read(timelineProvider).timeline.tracks.video) {
+      for (final c in track.clips) {
+        if (c.id == clipId) target = c;
+      }
+    }
+    if (target == null) return;
+    if (requestedEnd - target.endTimeInTimeline < 0.05) return; // reached request
+    for (final track in ref.read(timelineProvider).timeline.tracks.video) {
+      for (final c in track.clips) {
+        if (c.id != clipId &&
+            c.startTimeInTimeline > clipStart &&
+            c.startTimeInTimeline <= requestedEnd + 0.001) {
+          return; // blocked by a neighbour, not by a stale cap
+        }
+      }
+    }
+    _refreshingCaps.add(clipId);
+    final toast = ref.read(toastProvider.notifier);
+    toast.info('وصلت لنهاية المدة المسجلة — أتحقق من الملف…');
+    Future(() async {
+      try {
+        final grew = await ref
+            .read(timelineProvider.notifier)
+            .refreshVideoClipSourceDuration(clipId, _probeClipDuration);
+        if (!mounted) return;
+        if (grew) {
+          toast.success('تم تحديث مدة المصدر — أكمل السحب للتطويل');
+        } else {
+          _capSettled.add(clipId);
+          toast.info('هذا كل ما في المصدر');
+        }
+      } finally {
+        _refreshingCaps.remove(clipId);
+      }
+    });
+  }
+
+  /// Duration probe shared by the stale-cap refresh: backend first (mirrors
+  /// add_media, incl. the ms sanity rule), bundled FFmpeg as fallback.
+  Future<double?> _probeClipDuration(String path) async {
+    try {
+      final resolver = widget.mediaInfoResolver ?? defaultMediaInfoResolver;
+      final info = await resolver(path);
+      final raw = info?['duration'];
+      if (raw is num && raw > 0) {
+        var dur = raw.toDouble();
+        if (dur > 6 * 3600) dur /= 1000.0;
+        if (dur > 0) return dur;
+      }
+    } catch (_) {}
+    try {
+      return await FfmpegService.probeDuration(path);
+    } catch (_) {
+      return null;
+    }
   }
 
   void _showClipContextMenu(BuildContext context, String clipId, String trackType, String clipType) {

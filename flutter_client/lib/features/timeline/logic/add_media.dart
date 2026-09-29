@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/models/timeline_models.dart';
+import '../../../core/native/ffmpeg_service.dart';
 import '../../../shared/providers/toast_provider.dart';
 import '../providers/timeline_provider.dart';
 
@@ -79,6 +80,7 @@ Future<AddMediaResult?> addMediaFromPath(
   }
 
   double mediaDuration = kUnknownMediaDurationFallback;
+  bool probed = false;
   try {
     final resolver = mediaInfoResolver ?? defaultMediaInfoResolver;
     final info = await resolver(path);
@@ -86,9 +88,23 @@ Future<AddMediaResult?> addMediaFromPath(
         info['status'] == 'success' &&
         info['duration'] != null) {
       final dur = (info['duration'] as num).toDouble();
-      if (dur > 0) mediaDuration = dur;
+      if (dur > 0) {
+        mediaDuration = dur;
+        probed = true;
+      }
     }
   } catch (_) {}
+  if (!probed) {
+    // Backend probe failed: ask the bundled FFmpeg directly before falling
+    // back to the 10s default (a wrong stored duration caps later extension).
+    try {
+      final local = await FfmpegService.probeDuration(path);
+      if (local != null && local > 0) {
+        mediaDuration = local;
+        probed = true;
+      }
+    } catch (_) {}
+  }
 
   // Unit sanity: some backends report milliseconds. Anything above 6h for a
   // single imported clip is almost certainly ms — convert. Hard-cap at 6h
