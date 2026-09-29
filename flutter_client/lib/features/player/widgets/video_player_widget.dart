@@ -896,6 +896,8 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         final double mediaDurSec = _mediaDuration.inMilliseconds / 1000.0;
         final double effectiveMax = mediaDurSec > 0 ? mediaDurSec : maxDuration;
         final double seekMax = effectiveMax > 0 ? effectiveMax : 1.0;
+        final bool hasMedia =
+            widget.videoPath != null && widget.videoPath!.isNotEmpty;
 
         return Container(
           decoration: const BoxDecoration(color: Colors.black),
@@ -913,10 +915,20 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // ── Row 1: current time · seek bar · duration ──
+                    // Kept LTR (like the timeline below) so the read order is
+                    // always "elapsed ─── total" regardless of UI locale.
                     Row(
+                      textDirection: TextDirection.ltr,
                       children: [
                         Text(
-                          _formatDuration(_player.state.position),
+                          // Same source as the slider above/below it: reading
+                          // _player.position here desyncs from the timeline
+                          // playhead whenever no media is loaded.
+                          _formatDuration(
+                            Duration(
+                              milliseconds: (playhead * 1000).round(),
+                            ),
+                          ),
                           style: const TextStyle(
                             fontSize: 10,
                             fontFamily: 'monospace',
@@ -936,29 +948,33 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                                   overlayRadius: 10.0,
                                 ),
                               ),
-                              child: Slider(
-                                value: playhead.clamp(0.0, seekMax),
-                                min: 0.0,
-                                max: seekMax,
-                                onChanged:
-                                    widget.videoPath != null && seekMax > 0
-                                    ? (val) {
-                                        _safeSeek((val * 1000).toInt());
-                                        ref
-                                            .read(timelineProvider.notifier)
-                                            .setPlayhead(val);
-                                      }
-                                    : null,
+                              child: Directionality(
+                                textDirection: TextDirection.ltr,
+                                child: Slider(
+                                  value: playhead.clamp(0.0, seekMax),
+                                  min: 0.0,
+                                  max: seekMax,
+                                  onChanged: hasMedia && seekMax > 0
+                                      ? (val) {
+                                          _safeSeek((val * 1000).toInt());
+                                          ref
+                                              .read(timelineProvider.notifier)
+                                              .setPlayhead(val);
+                                        }
+                                      : null,
+                                ),
                               ),
                             ),
                           ),
                         ),
                         Text(
-                          _formatDuration(
-                            Duration(
-                              milliseconds: (effectiveMax * 1000).round(),
-                            ),
-                          ),
+                          hasMedia
+                              ? _formatDuration(
+                                  Duration(
+                                    milliseconds: (effectiveMax * 1000).round(),
+                                  ),
+                                )
+                              : '--:--',
                           textAlign: TextAlign.end,
                           style: const TextStyle(
                             fontSize: 10,
@@ -972,6 +988,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Row(
+                        textDirection: TextDirection.ltr,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           IconButton(
@@ -980,9 +997,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                               size: 20,
                               color: AppColors.textSecondary,
                             ),
-                            onPressed: widget.videoPath != null
-                                ? () => _seekRelative(-10000)
-                                : null,
+                            onPressed: hasMedia ? () => _seekRelative(-10000) : null,
                             visualDensity: VisualDensity.compact,
                           ),
                           IconButton(
@@ -993,9 +1008,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                               size: 28,
                               color: AppColors.primary,
                             ),
-                            onPressed: widget.videoPath != null
-                                ? _togglePlay
-                                : null,
+                            onPressed: hasMedia ? _togglePlay : null,
                             visualDensity: VisualDensity.compact,
                           ),
                           IconButton(
@@ -1004,9 +1017,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                               size: 20,
                               color: AppColors.textSecondary,
                             ),
-                            onPressed: widget.videoPath != null
-                                ? () => _seekRelative(10000)
-                                : null,
+                            onPressed: hasMedia ? () => _seekRelative(10000) : null,
                             visualDensity: VisualDensity.compact,
                           ),
                           const SizedBox(width: 24),
@@ -1020,15 +1031,18 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                               size: 18,
                               color: AppColors.textSecondary,
                             ),
-                            onPressed: widget.videoPath != null
-                                ? _toggleMute
-                                : null,
+                            onPressed: hasMedia ? _toggleMute : null,
                             visualDensity: VisualDensity.compact,
                           ),
                           SizedBox(
-                            width: 70,
+                            width: 64,
                             child: SliderTheme(
                               data: SliderTheme.of(context).copyWith(
+                                // Deliberately NOT the accent colour: at this
+                                // size a primary track reads as a second
+                                // progress bar rather than a volume control.
+                                activeTrackColor: AppColors.textSecondary,
+                                inactiveTrackColor: AppColors.surfaceOverlay,
                                 trackHeight: 2.0,
                                 thumbShape: const RoundSliderThumbShape(
                                   enabledThumbRadius: 4.0,
@@ -1037,11 +1051,12 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                                   overlayRadius: 8.0,
                                 ),
                               ),
-                              child: Slider(
-                                value: _volume,
-                                onChanged: widget.videoPath != null
-                                    ? _changeVolume
-                                    : null,
+                              child: Directionality(
+                                textDirection: TextDirection.ltr,
+                                child: Slider(
+                                  value: _volume,
+                                  onChanged: hasMedia ? _changeVolume : null,
+                                ),
                               ),
                             ),
                           ),

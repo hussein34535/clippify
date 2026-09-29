@@ -372,6 +372,12 @@ class AppTheme {
       sliderTheme: SliderThemeData(
         activeTrackColor: accent,
         inactiveTrackColor: AppColors.surfaceOverlay,
+        // Disabled sliders must not look interactive: an explicit
+        // activeTrackColor above would otherwise override Flutter's
+        // disabled default and paint the track in full accent blue.
+        disabledActiveTrackColor: accent.withValues(alpha: 0.28),
+        disabledInactiveTrackColor: AppColors.surfaceOverlay,
+        disabledThumbColor: AppColors.textMuted,
         thumbColor: Colors.white,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
         overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
