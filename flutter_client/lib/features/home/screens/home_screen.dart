@@ -682,6 +682,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final hasVideoClips = ref.watch(timelineProvider.select(
       (d) => d.timeline.tracks.video.any((t) => t.clips.isNotEmpty),
     ));
+    final canUndo = ref.watch(timelineProvider.select((d) => d.undoStack.isNotEmpty));
+    final canRedo = ref.watch(timelineProvider.select((d) => d.redoStack.isNotEmpty));
     return Stack(
       children: [
         KeyboardShortcutsWidget(
@@ -718,8 +720,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   isExporting: _isExporting,
                   onWorkspacePreset: _handleWorkspacePreset,
                   currentWorkspaceId: _workspaceManager.currentId,
-                  onUndo: () => ref.read(timelineProvider.notifier).undo(),
-                  onRedo: () => ref.read(timelineProvider.notifier).redo(),
+                  onUndo: canUndo ? () => ref.read(timelineProvider.notifier).undo() : null,
+                  onRedo: canRedo ? () => ref.read(timelineProvider.notifier).redo() : null,
                   onSaveAs: _handleSave,
                   onCut: () { ref.read(timelineProvider.notifier).cutSelectedClips(); },
                   onCopy: () { ref.read(timelineProvider.notifier).copySelectedClips(); },

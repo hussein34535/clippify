@@ -94,6 +94,42 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     return null;
   }
 
+  /// Timeline → media-file position for the clip under [timelineSec].
+  /// Falls back to identity when over a gap (preserves old behaviour).
+  /// Uses the constant clip speed; variable speed-ramps are approximated.
+  double _timelineToMediaSec(double timelineSec) {
+    final clip = _findClipAtPlayhead(timelineSec);
+    if (clip == null) return timelineSec;
+    final speed = clip.speed == 0 ? 1.0 : clip.speed;
+    final clipLen = (clip.endTimeInTimeline - clip.startTimeInTimeline)
+        .clamp(0.0, double.infinity)
+        .toDouble();
+    final timeInClip = (timelineSec - clip.startTimeInTimeline)
+        .clamp(0.0, clipLen)
+        .toDouble();
+    final lo = math.min(clip.sourceTrimStart, clip.sourceTrimEnd);
+    final hi = math.max(clip.sourceTrimStart, clip.sourceTrimEnd);
+    return (clip.sourceTrimStart + timeInClip * speed).clamp(lo, hi).toDouble();
+  }
+
+  /// Media-file → timeline position. Null when the media position lies outside
+  /// every clip's trim range (gap/past end) — the caller then skips the update
+  /// instead of letting the playhead run away into unmapped territory.
+  double? _mediaToTimelineSec(double mediaSec) {
+    final state = ref.read(timelineProvider).timeline;
+    for (final track in state.tracks.video) {
+      for (final clip in track.clips) {
+        if (mediaSec >= clip.sourceTrimStart &&
+            mediaSec < clip.sourceTrimEnd) {
+          final speed = clip.speed == 0 ? 1.0 : clip.speed;
+          return clip.startTimeInTimeline +
+              (mediaSec - clip.sourceTrimStart) / speed;
+        }
+      }
+    }
+    return null;
+  }
+
   double _getTransitionProgress() {
     if (_currentClip == null) return 0.0;
     final clip = _currentClip!;
@@ -549,9 +585,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
 
     _positionSub = _player.stream.position.listen((pos) {
       if (_isPlaying) {
-        ref
-            .read(timelineProvider.notifier)
-            .setPlayhead(pos.inMilliseconds / 1000.0);
+        final mapped = _mediaToTimelineSec(pos.inMilliseconds / 1000.0);
+        if (mapped != null) {
+          ref.read(timelineProvider.notifier).setPlayhead(mapped);
+        }
       }
     });
 
@@ -598,8 +635,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
           _currentClip = _findClipAtPlayhead(newSec);
           _applyClipSettings();
           if (!_isPlaying) {
-            final targetPosMs = (newSec * 1000.0).round();
-            _safeSeek(targetPosMs);
+            _safeSeek((_timelineToMediaSec(newSec) * 1000.0).round());
           }
         },
       );
@@ -611,7 +647,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         if (!_isPlaying) {
           _currentClip = _findClipAtPlayhead(newVal);
           _applyClipSettings();
-          _safeSeek((newVal * 1000.0).round());
+          _safeSeek((_timelineToMediaSec(newVal) * 1000.0).round());
         }
       });
 
@@ -657,29 +693,23 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   }
 
   void _seekRelative(int deltaMs) {
-    final double mediaDurSec = _mediaDuration.inMilliseconds / 1000.0;
-    final double maxSec = mediaDurSec > 0
-        ? mediaDurSec
-        : ref.read(timelineProvider.notifier).totalDuration;
-    final int maxMs = (maxSec * 1000).round();
-    final int target = (_player.state.position.inMilliseconds + deltaMs)
-        .clamp(0, maxMs > 0 ? maxMs : deltaMs.abs())
-        .toInt();
-    _safeSeek(target);
-    ref.read(timelineProvider.notifier).setPlayhead(target / 1000.0);
+    final double maxSec = ref.read(timelineProvider.notifier).totalDuration;
+    final double playhead = ref.read(timelineProvider).timeline.playheadSec;
+    final double target = (playhead + deltaMs / 1000.0)
+        .clamp(0.0, maxSec > 0 ? maxSec : 0.0)
+        .toDouble();
+    _safeSeek((_timelineToMediaSec(target) * 1000).round());
+    ref.read(timelineProvider.notifier).setPlayhead(target);
   }
 
   void _goToStart() {
-    _safeSeek(0);
+    _safeSeek((_timelineToMediaSec(0) * 1000).round());
     ref.read(timelineProvider.notifier).setPlayhead(0);
   }
 
   void _goToEnd() {
-    final double mediaDurSec = _mediaDuration.inMilliseconds / 1000.0;
-    final double maxSec = mediaDurSec > 0
-        ? mediaDurSec
-        : ref.read(timelineProvider.notifier).totalDuration;
-    _safeSeek((maxSec * 1000).round());
+    final double maxSec = ref.read(timelineProvider.notifier).totalDuration;
+    _safeSeek((_timelineToMediaSec(maxSec) * 1000).round());
     ref.read(timelineProvider.notifier).setPlayhead(maxSec);
   }
 
@@ -927,9 +957,11 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
           );
         }
 
-        // Prefer the real media duration; fall back to timeline duration.
+        // The bar scrubs the TIMELINE (playhead domain). The media file is only
+        // the source: for trimmed clips its full length differs from the
+        // timeline, so the timeline total wins; media length is a fallback.
         final double mediaDurSec = _mediaDuration.inMilliseconds / 1000.0;
-        final double effectiveMax = mediaDurSec > 0 ? mediaDurSec : maxDuration;
+        final double effectiveMax = maxDuration > 0 ? maxDuration : mediaDurSec;
         final double seekMax = effectiveMax > 0 ? effectiveMax : 1.0;
         final bool hasMedia =
             widget.videoPath != null && widget.videoPath!.isNotEmpty;
@@ -991,7 +1023,7 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                                   max: seekMax,
                                   onChanged: hasMedia && seekMax > 0
                                       ? (val) {
-                                          _safeSeek((val * 1000).toInt());
+                                          _safeSeek((_timelineToMediaSec(val) * 1000).toInt());
                                           ref
                                               .read(timelineProvider.notifier)
                                               .setPlayhead(val);

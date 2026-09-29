@@ -144,11 +144,9 @@ class HeaderWidget extends ConsumerWidget {
               const _AccountButton(),
               const SizedBox(width: 4),
 
-              // Toolbar actions
-              if (onUndo != null)
-                _ToolbarBtn(icon: Icons.undo_rounded, tooltip: 'تراجع', onTap: onUndo!),
-              if (onRedo != null)
-                _ToolbarBtn(icon: Icons.redo_rounded, tooltip: 'إعادة', onTap: onRedo!),
+              // Toolbar actions (stay mounted when disabled to avoid layout jumps)
+              _ToolbarBtn(icon: Icons.undo_rounded, tooltip: 'تراجع', onTap: onUndo),
+              _ToolbarBtn(icon: Icons.redo_rounded, tooltip: 'إعادة', onTap: onRedo),
               const SizedBox(width: 12),
 
               // Export pill
@@ -200,8 +198,8 @@ class HeaderWidget extends ConsumerWidget {
 class _ToolbarBtn extends StatefulWidget {
   final IconData icon;
   final String tooltip;
-  final VoidCallback onTap;
-  const _ToolbarBtn({required this.icon, required this.tooltip, required this.onTap});
+  final VoidCallback? onTap;
+  const _ToolbarBtn({required this.icon, required this.tooltip, this.onTap});
 
   @override
   State<_ToolbarBtn> createState() => _ToolbarBtnState();
@@ -282,26 +280,31 @@ class _ToolbarBtnState extends State<_ToolbarBtn> {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: widget.tooltip,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: AppTheme.animFast,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _hovered ? EdgeTheme.surfaceOverlay : Colors.transparent,
-            ),
-            child: Icon(
-              widget.icon,
-              size: 16,
-              color: _hovered ? EdgeTheme.textPrimary : EdgeTheme.textSecondary,
+    final enabled = widget.onTap != null;
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.35,
+      child: Tooltip(
+        message: widget.tooltip,
+        child: MouseRegion(
+          cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: AppTheme.animFast,
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _hovered && enabled ? EdgeTheme.surfaceOverlay : Colors.transparent,
+              ),
+              child: Icon(
+                widget.icon,
+                size: 16,
+                color: _hovered && enabled ? EdgeTheme.textPrimary : EdgeTheme.textSecondary,
+              ),
             ),
           ),
         ),

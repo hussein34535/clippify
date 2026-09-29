@@ -138,6 +138,8 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
         children: [
           TabBar(
             controller: _tabController,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             indicatorColor: AppColors.primary,
             labelColor: AppColors.textPrimary,
             unselectedLabelColor: AppColors.textSecondary,
@@ -769,6 +771,8 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
       children: [
         TabBar(
           controller: _videoTabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           indicatorColor: AppColors.primary,
           labelColor: AppColors.textPrimary,
           unselectedLabelColor: AppColors.textSecondary,
@@ -859,6 +863,8 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
       children: [
         TabBar(
           controller: _aiTabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           indicatorColor: AppColors.primary,
           labelColor: AppColors.textPrimary,
           unselectedLabelColor: AppColors.textSecondary,

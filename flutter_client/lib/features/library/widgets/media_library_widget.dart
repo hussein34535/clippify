@@ -107,13 +107,6 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
     return 0.0;
   }
 
-  String _formatDuration(double seconds) {
-    if (seconds <= 0) return '00:00';
-    final mins = (seconds / 60).floor();
-    final secs = (seconds % 60).floor();
-    return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
-  }
-
   Future<void> _importLocalVideo() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -322,20 +315,11 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
               ),
             ),
 
-            // Duration (bottom right)
+            // Duration (bottom right) — self-healing: probes the file when the
+            // stored duration is unknown instead of claiming 00:00.
             Positioned(
               bottom: 6, right: 6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-                child: Text(
-                  _formatDuration(file.duration),
-                  style: const TextStyle(fontSize: 9, color: Colors.white, fontFamilyFallback: AppTypography.fallbacks),
-                ),
-              ),
+              child: _DurationBadge(path: file.path, initialSeconds: file.duration),
             ),
 
             // Auto-edit popup action (bottom left)
@@ -524,6 +508,77 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Duration pill that heals itself: when the stored duration is unknown
+/// (<= 0) it probes the file once via FFmpeg instead of displaying 00:00.
+class _DurationBadge extends StatefulWidget {
+  final String path;
+  final double initialSeconds;
+  const _DurationBadge({required this.path, required this.initialSeconds});
+
+  @override
+  State<_DurationBadge> createState() => _DurationBadgeState();
+}
+
+class _DurationBadgeState extends State<_DurationBadge> {
+  late double _seconds;
+  bool _probing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _seconds = widget.initialSeconds;
+    if (_seconds <= 0) _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DurationBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.path != oldWidget.path) {
+      _seconds = widget.initialSeconds;
+      _probing = false;
+      if (_seconds <= 0) _resolve();
+    } else if (widget.initialSeconds > 0 && _seconds <= 0) {
+      setState(() => _seconds = widget.initialSeconds);
+    }
+  }
+
+  Future<void> _resolve() async {
+    if (_probing) return;
+    _probing = true;
+    try {
+      final d = await FfmpegService.probeDuration(widget.path);
+      if (mounted && d != null && d > 0) setState(() => _seconds = d);
+    } catch (_) {}
+    _probing = false;
+  }
+
+  static String _fmt(double seconds) {
+    if (seconds <= 0) return '…';
+    final total = seconds.floor();
+    final h = total ~/ 3600;
+    final m = (total % 3600) ~/ 60;
+    final s = total % 60;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = s.toString().padLeft(2, '0');
+    return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Text(
+        _fmt(_seconds),
+        style: const TextStyle(fontSize: 9, color: Colors.white, fontFamilyFallback: AppTypography.fallbacks),
       ),
     );
   }
