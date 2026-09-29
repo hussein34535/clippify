@@ -106,6 +106,26 @@ class ClipItemWidget extends StatelessWidget {
     return 'clip';
   }
 
+  String _sourcePath() {
+    if (clip is VideoClip) return (clip as VideoClip).sourcePath;
+    if (clip is AudioClip) return (clip as AudioClip).sourcePath;
+    if (clip is OverlayClip) return (clip as OverlayClip).sourcePath;
+    return '';
+  }
+
+  /// A media clip whose file is empty or no longer on disk. Subtitle clips
+  /// carry inline text and are never offline.
+  bool get _isMediaOffline {
+    if (clipType == 'subtitle') return false;
+    final path = _sourcePath();
+    if (path.isEmpty) return true;
+    try {
+      return !File(path).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
   double _getClipWidth() {
     double duration = 0.0;
     if (clip is VideoClip) {
@@ -151,6 +171,21 @@ class ClipItemWidget extends StatelessWidget {
                   ),
                 ),
               ),
+              if (_isMediaOffline && constraints.maxWidth > 64) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                  decoration: BoxDecoration(
+                    color: AppColors.destructive.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(2),
+                    border: Border.all(color: AppColors.destructive, width: 0.5),
+                  ),
+                  child: const Text(
+                    'مفقود',
+                    style: TextStyle(fontSize: 7.5, color: AppColors.destructive, fontFamily: 'Inter', fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
               if (hasTransition) ...[
                 const SizedBox(width: 4),
                 GestureDetector(
@@ -287,8 +322,12 @@ class ClipItemWidget extends StatelessWidget {
                       gradient: _getBackgroundGradient(),
                       borderRadius: BorderRadius.circular(AppRadius.sm),
                       border: Border.all(
-                        color: isSelected ? _getSelectedBorderColor() : AppColors.border,
-                        width: isSelected ? 1.2 : 0.5,
+                        color: isSelected
+                            ? _getSelectedBorderColor()
+                            : (_isMediaOffline
+                                ? AppColors.destructive
+                                : AppColors.border),
+                        width: (isSelected || _isMediaOffline) ? 1.2 : 0.5,
                       ),
                       boxShadow: isSelected
                           ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.28), blurRadius: 10, spreadRadius: -2)]

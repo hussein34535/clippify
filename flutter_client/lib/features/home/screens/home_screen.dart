@@ -180,8 +180,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     }
     if (key == LogicalKeyboardKey.keyS || key == LogicalKeyboardKey.keyC) {
-      timelineNotifier.splitClipAtPlayhead(playhead);
-      ref.read(toastProvider.notifier).success('Split at playhead');
+      final splitDone = timelineNotifier.splitClipAtPlayhead(playhead);
+      if (splitDone) {
+        ref.read(toastProvider.notifier).success('Split at playhead');
+      } else {
+        ref.read(toastProvider.notifier).info('لا يوجد مقطع تحت المؤشر');
+      }
       return true;
     }
     if (isCtrl && (key == LogicalKeyboardKey.equal || key == LogicalKeyboardKey.numpadAdd)) {
@@ -247,6 +251,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     switch (res) {
       case Success(data: final data):
         if (data['status'] == 'success') {
+          ref.read(timelineProvider.notifier).markSaved();
           ref.read(toastProvider.notifier).success('تم حفظ المشروع!');
         } else {
           ref.read(toastProvider.notifier).error('فشل حفظ المشروع.');
@@ -673,6 +678,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final layoutPrefs = ref.watch(layoutPrefsProvider);
+    // Rebuild header/export affordances only when clip presence changes.
+    final hasVideoClips = ref.watch(timelineProvider.select(
+      (d) => d.timeline.tracks.video.any((t) => t.clips.isNotEmpty),
+    ));
     return Stack(
       children: [
         KeyboardShortcutsWidget(
@@ -701,7 +710,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 // iOS navigation bar
                 HeaderWidget(
                   height: layoutPrefs.headerHeight,
-                  onExport: _isExporting ? null : _handleExport,
+                  onExport: (_isExporting || !hasVideoClips) ? null : _handleExport,
                   onSettings: _handleSettings,
                   onSave: _handleSave,
                   onLoad: _handleLoad,
@@ -711,7 +720,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   currentWorkspaceId: _workspaceManager.currentId,
                   onUndo: () => ref.read(timelineProvider.notifier).undo(),
                   onRedo: () => ref.read(timelineProvider.notifier).redo(),
-                  onSplit: () { final ph = ref.read(timelineProvider).timeline.playheadSec; ref.read(timelineProvider.notifier).splitClipAtPlayhead(ph); },
                   onSaveAs: _handleSave,
                   onCut: () { ref.read(timelineProvider.notifier).cutSelectedClips(); },
                   onCopy: () { ref.read(timelineProvider.notifier).copySelectedClips(); },
@@ -828,14 +836,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       ),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
-                                        child: _importedFiles.isEmpty && activeVideoPath == null
-                                            ? WelcomeHero(
-                                                onImportVideo: _importVideo,
-                                                onOpenProject: _handleLoad,
-                                                recentProjects: _recentProjects,
-                                                onOpenRecent: _loadProjectFrom,
-                                              )
-                                            : VideoPlayerWidget(videoPath: activeVideoPath),
+                                        child: _buildViewer(activeVideoPath, hasVideoClips),
                                       ),
                                     ),
                                   ),
@@ -918,7 +919,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     isExporting: _isExporting,
                     exportProgress: _exportProgress,
                     exportStatus: _exportStatus,
-                    unsavedChanges: true,
+                    unsavedChanges: timelineData.isDirty,
                   );
                 }),
               ],
@@ -930,6 +931,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         // ONBOARDING-GATE — self-gated via FirstRunGate + replay provider
         const OnboardingOverlay(),
       ],
+    );
+  }
+
+  /// Viewer body with contextual empty states:
+  /// - truly empty project → WelcomeHero
+  /// - clip under playhead with an empty/missing source → "media offline" hint
+  /// - clips exist but playhead sits in a gap → "move playhead" hint
+  Widget _buildViewer(String? activeVideoPath, bool hasVideoClips) {
+    final showWelcome = _importedFiles.isEmpty &&
+        activeVideoPath == null &&
+        !hasVideoClips;
+    if (showWelcome) {
+      return WelcomeHero(
+        onImportVideo: _importVideo,
+        onOpenProject: _handleLoad,
+        recentProjects: _recentProjects,
+        onOpenRecent: _loadProjectFrom,
+      );
+    }
+    String? emptyLabel;
+    if (activeVideoPath != null && activeVideoPath.isEmpty) {
+      emptyLabel = 'ملف المقطع مفقود — أعد استيراده من المكتبة';
+    } else if (hasVideoClips) {
+      emptyLabel = 'حرّك المؤشر فوق مقطع للمعاينة';
+    }
+    return VideoPlayerWidget(
+      videoPath: activeVideoPath,
+      emptyLabel: emptyLabel,
+      onImportPressed: _importVideo,
     );
   }
 

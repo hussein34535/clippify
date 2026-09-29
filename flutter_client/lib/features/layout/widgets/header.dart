@@ -31,7 +31,6 @@ class HeaderWidget extends ConsumerWidget {
   final String? currentWorkspaceId;
   final VoidCallback? onUndo;
   final VoidCallback? onRedo;
-  final VoidCallback? onSplit;
   final VoidCallback? onSaveAs;
   final VoidCallback? onCut;
   final VoidCallback? onCopy;
@@ -53,7 +52,6 @@ class HeaderWidget extends ConsumerWidget {
     this.currentWorkspaceId,
     this.onUndo,
     this.onRedo,
-    this.onSplit,
     this.onSaveAs,
     this.onCut,
     this.onCopy,
@@ -69,7 +67,7 @@ class HeaderWidget extends ConsumerWidget {
     EdgeMenuEntry(label: 'حفظ', shortcut: 'Ctrl+S', icon: Icons.save_rounded, action: onSave),
     EdgeMenuEntry(label: 'حفظ باسم...', shortcut: 'Ctrl+Shift+S', icon: Icons.save_alt, action: onSaveAs),
     const EdgeMenuEntry.divider(),
-    EdgeMenuEntry(label: 'تصدير...', shortcut: 'Ctrl+E', icon: Icons.file_upload_rounded, action: onExport, enabled: !isExporting),
+    EdgeMenuEntry(label: 'تصدير...', shortcut: 'Ctrl+E', icon: Icons.file_upload_rounded, action: onExport, enabled: !isExporting && onExport != null),
     const EdgeMenuEntry.divider(),
     EdgeMenuEntry(label: 'الإعدادات...', shortcut: 'Ctrl+,', icon: Icons.settings_rounded, action: onSettings),
   ];
@@ -151,17 +149,15 @@ class HeaderWidget extends ConsumerWidget {
                 _ToolbarBtn(icon: Icons.undo_rounded, tooltip: 'تراجع', onTap: onUndo!),
               if (onRedo != null)
                 _ToolbarBtn(icon: Icons.redo_rounded, tooltip: 'إعادة', onTap: onRedo!),
-              if (onSplit != null)
-                _ToolbarBtn(icon: Icons.content_cut_rounded, tooltip: 'قص', onTap: onSplit!),
               const SizedBox(width: 12),
 
               // Export pill
               AnimatedOpacity(
-                opacity: isExporting ? 0.5 : 1.0,
+                opacity: (isExporting || onExport == null) ? 0.5 : 1.0,
                 duration: AppTheme.animBase,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: isExporting ? EdgeTheme.surfaceElevated : accent,
+                    color: (isExporting || onExport == null) ? EdgeTheme.surfaceElevated : accent,
                     borderRadius: BorderRadius.circular(AppRadius.pill),
                     boxShadow: isExporting ? null : AppShadows.button,
                   ),

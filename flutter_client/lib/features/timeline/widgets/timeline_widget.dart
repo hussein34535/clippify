@@ -122,7 +122,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     }
     for (final track in tracks.overlays) {
       configs.add(TrackConfig(
-        name: 'Overlay ${tracks.overlays.indexOf(track)}',
+        name: 'Overlay ${tracks.overlays.indexOf(track) + 1}',
         icon: Icons.layers_outlined,
         color: TimelineConstants.overlayTrackColor.withValues(alpha: 0.06),
         clips: track.clips, type: 'overlay',
@@ -131,7 +131,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     }
     for (final track in tracks.subtitles) {
       configs.add(TrackConfig(
-        name: 'Subtitle ${tracks.subtitles.indexOf(track)}',
+        name: 'Subtitle ${tracks.subtitles.indexOf(track) + 1}',
         icon: Icons.subtitles_outlined,
         color: TimelineConstants.subtitleTrackColor.withValues(alpha: 0.06),
         clips: track.clips, type: 'subtitle',

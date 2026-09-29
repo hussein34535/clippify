@@ -25,7 +25,19 @@ import '../../../core/rendering/color_matrix_utils.dart';
 class VideoPlayerWidget extends ConsumerStatefulWidget {
   final String? videoPath;
 
-  const VideoPlayerWidget({super.key, required this.videoPath});
+  /// Overrides the empty-state hint (e.g. "media offline", "playhead in a gap").
+  /// Defaults to the generic import hint.
+  final String? emptyLabel;
+
+  /// When set, the empty state shows an import button wired to this callback.
+  final VoidCallback? onImportPressed;
+
+  const VideoPlayerWidget({
+    super.key,
+    required this.videoPath,
+    this.emptyLabel,
+    this.onImportPressed,
+  });
 
   @override
   ConsumerState<VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
@@ -805,23 +817,32 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                   alignment: Alignment.center,
                 ),
               )
-            : const Center(
+            : Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.video_library_rounded,
                       size: 48,
                       color: AppColors.textMuted,
                     ),
-                    SizedBox(height: 12),
+                    const SizedBox(height: 12),
                     Text(
-                      'قم باستيراد فيديو للمعاينة',
-                      style: TextStyle(
+                      widget.emptyLabel ?? 'استورد فيديو لتبدأ المونتاج',
+                      style: const TextStyle(
                         color: AppColors.textMuted,
                         fontSize: 13,
                       ),
+                      textAlign: TextAlign.center,
                     ),
+                    if (widget.onImportPressed != null) ...[
+                      const SizedBox(height: 14),
+                      ElevatedButton.icon(
+                        onPressed: widget.onImportPressed,
+                        icon: const Icon(Icons.add_rounded, size: 16),
+                        label: const Text('استيراد فيديو'),
+                      ),
+                    ],
                   ],
                 ),
               );

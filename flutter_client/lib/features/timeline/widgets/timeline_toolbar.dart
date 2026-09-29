@@ -53,13 +53,19 @@ class TimelineToolbar extends ConsumerWidget {
                 ),
                 const VerticalDivider(width: 20, indent: 12, endIndent: 12),
                 IconButton(
-                  icon: const Icon(Icons.content_cut_rounded, size: 18, color: Colors.redAccent),
-                  onPressed: () {
-                    notifier.splitClipAtPlayhead(playhead);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('تم قص الكليبات عند المؤشر الحالي')),
-                    );
-                  },
+                  icon: const Icon(Icons.content_cut_rounded, size: 18),
+                  onPressed: notifier.canSplitAtPlayhead(playhead)
+                      ? () {
+                          if (notifier.splitClipAtPlayhead(playhead) &&
+                              context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text('تم قص الكليبات عند المؤشر الحالي')),
+                            );
+                          }
+                        }
+                      : null,
                   tooltip: 'قص الكليب (C)',
                 ),
                 IconButton(

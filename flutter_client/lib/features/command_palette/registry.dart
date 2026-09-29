@@ -100,8 +100,12 @@ List<PaletteCommand> defaultCommands(WidgetRef ref, BuildContext ctx) {
       shortcutHint: 'Ctrl+S',
       action: (_) {
         final playhead = ref.read(timelineProvider).timeline.playheadSec;
-        ref.read(timelineProvider.notifier).splitClipAtPlayhead(playhead);
-        ref.read(toastProvider.notifier).success('قص عند المؤشر');
+        final notifier = ref.read(timelineProvider.notifier);
+        if (notifier.splitClipAtPlayhead(playhead)) {
+          ref.read(toastProvider.notifier).success('قص عند المؤشر');
+        } else {
+          ref.read(toastProvider.notifier).info('لا يوجد مقطع تحت المؤشر');
+        }
       },
     ),
     // TODO(Squad-D0): اربط بمكتبة الوسائط الحقيقية عند توفر مصدر الفيديو الواحد

@@ -1063,7 +1063,7 @@ class EdgeStatusBar extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            isBackendConnected ? 'Backend Connected' : 'Disconnected',
+            isBackendConnected ? 'متصل بالخادم' : 'غير متصل',
             style: EdgeTypography.small.copyWith(fontSize: 10),
           ),
           if (statusMessage != null) ...[
@@ -1113,10 +1113,6 @@ class EdgeStatusBar extends StatelessWidget {
           const SizedBox(width: 8),
           // FPS
           Text('${fps.toInt()} fps', style: EdgeTypography.small.copyWith(fontSize: 10)),
-          const SizedBox(width: 8),
-          // Zoom
-          // Zoom shown as multiplier of the 30px/s default (matches toolbar ×)
-          Text('×${(zoomLevel / 30.0).toStringAsFixed(1)}', style: EdgeTypography.small.copyWith(fontSize: 10)),
           if (proxyCount > 0) ...[
             const SizedBox(width: 8),
             Container(

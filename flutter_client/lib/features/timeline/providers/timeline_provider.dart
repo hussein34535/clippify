@@ -9,12 +9,16 @@ class TimelineStateData {
   final List<TimelineState> undoStack;
   final List<TimelineState> redoStack;
   final Set<String> selectedClipIds;
+  /// True after any content edit since the last save/load. Playhead and zoom
+  /// moves never set it (they don't touch the undo stack).
+  final bool isDirty;
 
   TimelineStateData({
     required this.timeline,
     required this.undoStack,
     required this.redoStack,
     this.selectedClipIds = const {},
+    this.isDirty = false,
   });
 
   TimelineStateData copyWith({
@@ -22,14 +26,19 @@ class TimelineStateData {
     List<TimelineState>? undoStack,
     List<TimelineState>? redoStack,
     Set<String>? selectedClipIds,
+    bool? isDirty,
   }) {
     return TimelineStateData(
       timeline: timeline ?? this.timeline,
       undoStack: undoStack ?? this.undoStack,
       redoStack: redoStack ?? this.redoStack,
       selectedClipIds: selectedClipIds ?? this.selectedClipIds,
+      isDirty: isDirty ?? this.isDirty,
     );
   }
+
+  /// Clears the dirty flag after a successful save.
+  TimelineStateData asSaved() => copyWith(isDirty: false);
 }
 
 class TimelineNotifier extends StateNotifier<TimelineStateData> {
@@ -67,11 +76,17 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     }
     // نقوم بحفظ نسخة عميقة (أو مرجعية بما أن الفئات غير قابلة للتغيير بشكل مباشر immutable)
     currentHistory.add(state.timeline);
-    
+
     state = state.copyWith(
       undoStack: currentHistory,
       redoStack: [], // مسح الـ Redo stack بعد أي تعديل جديد
+      isDirty: true,
     );
+  }
+
+  /// يُستدعى بعد حفظ ناجح لمسح مؤشر "تغييرات غير محفوظة".
+  void markSaved() {
+    if (state.isDirty) state = state.asSaved();
   }
 
   /// التراجع (Undo)
@@ -1006,8 +1021,37 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     }
   }
 
-  /// تقسيم كليبات الفيديو، الصوت، أو الترجمات التي تتقاطع مع مؤشر القراءة
-  void splitClipAtPlayhead(double timeSec) {
+  /// هل يوجد كليب (فيديو/صوت/ترجمة) يتقاطع مع المؤشر وقابل للقص؟
+  bool canSplitAtPlayhead(double timeSec) {
+    final tracks = state.timeline.tracks;
+    for (final track in tracks.video) {
+      for (final clip in track.clips) {
+        if (timeSec > clip.startTimeInTimeline &&
+            timeSec < clip.endTimeInTimeline) {
+          return true;
+        }
+      }
+    }
+    for (final track in tracks.audio) {
+      for (final clip in track.clips) {
+        if (timeSec > clip.startTimeInTimeline &&
+            timeSec < clip.endTimeInTimeline) {
+          return true;
+        }
+      }
+    }
+    for (final track in tracks.subtitles) {
+      for (final clip in track.clips) {
+        if (timeSec > clip.startTime && timeSec < clip.endTime) return true;
+      }
+    }
+    return false;
+  }
+
+  /// تقسيم كليبات الفيديو، الصوت، أو الترجمات التي تتقاطع مع مؤشر القراءة.
+  /// يُرجع true فقط عند حدوث قص فعلي — لا يلمس الـ Undo/Redo عند الفشل.
+  bool splitClipAtPlayhead(double timeSec) {
+    if (!canSplitAtPlayhead(timeSec)) return false;
     _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     
@@ -1127,6 +1171,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
         ),
       ),
     );
+    return true;
   }
 
   /// تجميع الكليبات المحددة في تسلسل متداخل
