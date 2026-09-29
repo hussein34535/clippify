@@ -49,15 +49,24 @@ class BackendController {
 
   /// التحقق من أن الخادم على البورت هو الباك إند الصحيح (وليس خادم HTTP عشوائي)
   Future<bool> _verifyIsOurBackend() async {
+    // 1) محرّك Rust: /api/health → {"engine":"rust"}
+    if (await _probe('$_apiBaseUrl/api/health', (b) => b.contains('"engine"'))) {
+      return true;
+    }
+    // 2) خادم Python القديم: /docs → Swagger UI
+    return _probe('$_apiBaseUrl/docs',
+        (b) => b.contains('swagger') || b.contains('FastAPI'));
+  }
+
+  Future<bool> _probe(String url, bool Function(String body) ok) async {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 2);
-      final request = await client.getUrl(Uri.parse('$_apiBaseUrl/docs'));
+      final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
       client.close();
-      // FastAPI يرسل صفحة Swagger UI تحتوي على "swagger" أو "FastAPI"
-      return body.contains('swagger') || body.contains('FastAPI');
+      return ok(body);
     } catch (_) {
       return false;
     }
@@ -121,39 +130,45 @@ class BackendController {
       }
     }
 
-    final backendDir = await _findBackendCwd();
+    var backendDir = await _findBackendCwd();
     debugPrint('[BackendController] مجلد العمل للباك إند: ${backendDir.path}');
 
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
     String program;
-    List<String> arguments = [];
+    List<String> arguments = ['serve', '--port', '8000'];
 
-    // تحديد البرنامج والوسائط بناءً على بيئة التشغيل وجودة التطوير
-    if (kDebugMode) {
-      // في وضع التطوير، نستخدم بايثون النظام لتشغيل api.py
+    // ترتيب البحث عن الباك إند: محرّك Rust المدمج أولاً، ثم بايثون
+    final engineName = Platform.isWindows ? 'clippify_engine.exe' : 'clippify_engine';
+    final sidecarName =
+        Platform.isWindows ? 'clippify-backend.exe' : 'clippify-backend';
+    final engineCandidates = [
+      p.join(exeDir, engineName), // بجانب التطبيق (توزيع مدمج)
+      p.join(exeDir, sidecarName), // الاسم القديم للموزعة
+      p.join(backendDir.path, 'engine', 'target', 'release', engineName),
+      p.join(Directory.current.path, 'engine', 'target', 'release', engineName),
+    ];
+
+    String? found;
+    for (final c in engineCandidates) {
+      if (await File(c).exists()) {
+        found = c;
+        break;
+      }
+    }
+
+    if (found != null) {
+      // شغّل المحرّك من مجلد التطبيق حتى يجد ffmpeg.exe المجاور له
+      program = found;
+      backendDir = File(found).parent;
+    } else {
+      // لا يوجد محرّك؟ ارجع لبايثون (وضع التطوير)
       final apiPy = File(p.join(backendDir.path, 'api.py'));
       if (await apiPy.exists()) {
         program = Platform.isWindows ? 'python' : 'python3';
         arguments = ['api.py'];
       } else {
-        debugPrint('[BackendController] تحذير: لم يتم العثور على api.py في وضع التطوير!');
+        debugPrint('[BackendController] خطأ: لم يتم العثور على المحرّك أو api.py');
         return;
-      }
-    } else {
-      // في وضع الإنتاج، نبحث عن الملف التنفيذي المدمج بجانب التطبيق
-      final exeDir = File(Platform.resolvedExecutable).parent;
-      final sidecarExe = File(p.join(exeDir.path, Platform.isWindows ? 'clippify-backend.exe' : 'clippify-backend'));
-      
-      if (await sidecarExe.exists()) {
-        program = sidecarExe.path;
-      } else {
-        // محاولة البحث في مجلد المخرجات (build/windows/runner/Release)
-        final buildSidecar = File(p.join(backendDir.path, 'dist', Platform.isWindows ? 'clippify-backend.exe' : 'clippify-backend'));
-        if (await buildSidecar.exists()) {
-          program = buildSidecar.path;
-        } else {
-          debugPrint('[BackendController] خطأ: لم يتم العثور على ملف الباك إند التنفيذي sidecar!');
-          return;
-        }
       }
     }
 

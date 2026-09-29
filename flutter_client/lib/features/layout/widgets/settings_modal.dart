@@ -1,13 +1,56 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/cupertino.dart' show CupertinoSwitch;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../core/api/api_client.dart';
+import '../../../core/backend/backend_service.dart';
 import '../../../core/theme/app_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/providers/toast_provider.dart';
 import '../../../shared/providers/theme_provider.dart';
 import '../../../shared/providers/layout_prefs_provider.dart';
+import '../../../shared/widgets/ios_kit.dart';
+import '../../onboarding/first_run_gate.dart';
+import '../../onboarding/onboarding_overlay.dart' show onboardingReplayProvider;
+
+/// ☁️ تخزين وضع التشغيل (محلي/سحابي) في SharedPreferences.
+///
+/// القيم: `'local'` | `'cloud'` — مفتاح: [BackendModePref.key].
+/// لا provider هنا عن قصد: المالك هو core/backend/backend_service.dart.
+///
+/// TODO(owner: core/backend/backend_service.dart): عند الإقلاع اقرأ هذا المفتاح
+/// (SharedPreferences) وادمجه مع dotenv `LOCAL_MODE` داخل
+/// `BackendService.chooseBackend` حتى يُطبَّق اختيار المستخدم فعلياً
+/// بعد إعادة تشغيل التطبيق.
+class BackendModePref {
+  static const String key = 'clippify_backend_mode';
+
+  /// يقرأ الوضع المحفوظ؛ يعيد null إن كان غائباً أو قيمة غير معروفة.
+  static Future<String?> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getString(key);
+      return (v == 'local' || v == 'cloud') ? v : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> save(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, mode);
+  }
+}
 
 class SettingsModal extends ConsumerStatefulWidget {
   const SettingsModal({super.key});
+
+  /// حرية إظهار قسم «وضع التشغيل» — دالة نقية قابلة للاختبار
+  /// (لا يمكن محاكاة Platform.isWindows داخل اختبارات على Windows).
+  static bool shouldShowCloudSection({required bool isWindows}) => isWindows;
 
   @override
   ConsumerState<SettingsModal> createState() => _SettingsModalState();
@@ -33,11 +76,16 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
   int _autosaveIntervalMin = 5;
   int _cacheSizeMB = 500;
 
+  /// ☁️ وضع التشغيل المختار ('local' | 'cloud') — تخزين محلي فقط،
+  /// يُطبَّق عند إعادة التشغيل (انظر BackendModePref).
+  final ValueNotifier<String?> _backendMode = ValueNotifier<String?>(null);
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadSettings();
+    _loadBackendMode();
   }
 
   @override
@@ -48,7 +96,20 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
     _durationController.dispose();
     _pexelsKeyController.dispose();
     _pixabayKeyController.dispose();
+    _backendMode.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadBackendMode() async {
+    _backendMode.value = await BackendModePref.load();
+  }
+
+  Future<void> _onBackendModeChanged(BackendMode mode) async {
+    if (_backendMode.value == mode.name) return;
+    _backendMode.value = mode.name;
+    await BackendModePref.save(mode.name);
+    if (!mounted) return;
+    ref.read(toastProvider.notifier).info('سيتم التطبيق عند إعادة التشغيل');
   }
 
   Future<void> _loadSettings() async {
@@ -123,27 +184,14 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
   }
 
   Future<void> _clearCache() async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showIOSDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('تنظيف الكاش 🧹', style: TextStyle(color: Colors.white, fontFamily: 'Outfit', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma']), textAlign: TextAlign.right),
-        content: const Text(
-          'هل تريد حذف كافة الملفات المؤقتة ولفتات الكروما القديمة لتوفير مساحة على القرص؟',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          textAlign: TextAlign.right,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء', style: TextStyle(color: AppColors.textMuted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('تنظيف', style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
+      title: 'تنظيف الكاش؟',
+      content: 'هل تريد حذف كافة الملفات المؤقتة ولقطات الكروما القديمة لتوفير مساحة على القرص؟',
+      actions: const [
+        IOSDialogAction('إلغاء'),
+        IOSDialogAction('تنظيف', isDestructive: true, isDefault: true),
+      ],
     );
 
     if (confirm != true) return;
@@ -198,11 +246,9 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.88),
         decoration: BoxDecoration(
           color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.xxl),
-          border: Border.all(color: AppColors.border),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 48, offset: const Offset(0, 24)),
-          ],
+          borderRadius: BorderRadius.circular(AppRadius.xl),
+          border: Border.all(color: AppColors.border, width: 0.5),
+          boxShadow: AppShadows.modal,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -326,7 +372,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                             onPressed: () => Navigator.pop(context),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.textSecondary,
-                              side: const BorderSide(color: AppColors.border),
+                    side: const BorderSide(color: AppColors.border),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
                               padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 20),
                             ),
@@ -605,12 +651,91 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
             ),
           ),
 
+          // ☁️ وضع التشغيل (Windows فقط)
+          if (SettingsModal.shouldShowCloudSection(
+            isWindows: !kIsWeb && Platform.isWindows,
+          )) ...[
+            const SizedBox(height: 24),
+            const Divider(height: 1, color: AppColors.borderSubtle),
+            const SizedBox(height: 16),
+            _sectionLabel('☁️ وضع التشغيل'),
+            const SizedBox(height: 4),
+            const Text(
+              'محلي: معالجة كاملة على هذا الجهاز. سحابي: عبر خوادم Clippify.',
+              style: TextStyle(fontSize: 10, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 12),
+            ValueListenableBuilder<String?>(
+              valueListenable: _backendMode,
+              builder: (context, mode, _) {
+                final current =
+                    mode == 'cloud' ? BackendMode.cloud : BackendMode.local;
+                return SegmentedButton<BackendMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: BackendMode.local,
+                      label: Text('محلي (Windows)'),
+                      icon: Icon(Icons.desktop_windows_rounded, size: 14),
+                    ),
+                    ButtonSegment(
+                      value: BackendMode.cloud,
+                      label: Text('سحابي'),
+                      icon: Icon(Icons.cloud_outlined, size: 14),
+                    ),
+                  ],
+                  selected: {current},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (selection) =>
+                      _onBackendModeChanged(selection.first),
+                  style: ButtonStyle(
+                    backgroundColor:
+                        WidgetStateProperty.resolveWith((states) => states
+                                .contains(WidgetState.selected)
+                            ? AppColors.surfaceVariant
+                            : AppColors.card),
+                    foregroundColor:
+                        WidgetStateProperty.resolveWith((states) => states
+                                .contains(WidgetState.selected)
+                            ? prefs.accentColor
+                            : AppColors.textSecondary),
+                    side: const WidgetStatePropertyAll(
+                        BorderSide(color: AppColors.border)),
+                    textStyle: const WidgetStatePropertyAll(TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'],
+                    )),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                );
+              },
+            ),
+          ],
+
           const SizedBox(height: 12),
           Center(
             child: TextButton.icon(
               onPressed: () => ref.read(layoutPrefsProvider.notifier).resetToDefaults(),
               icon: const Icon(Icons.refresh_rounded, size: 16),
               label: const Text('استعادة الإعدادات الافتراضية'),
+              style: TextButton.styleFrom(foregroundColor: prefs.accentColor),
+            ),
+          ),
+
+          const SizedBox(height: 4),
+          Center(
+            child: TextButton.icon(
+              key: const Key('settings_replay_onboarding'),
+              onPressed: () async {
+                final sp = await SharedPreferences.getInstance();
+                await FirstRunGate.reset(sp);
+                if (!mounted) return;
+                ref.read(onboardingReplayProvider.notifier).state = true;
+                ref.read(toastProvider.notifier).info('سيظهر الشرح الآن');
+              },
+              icon: const Icon(Icons.school_rounded, size: 16),
+              label: const Text('إعادة عرض شرح التطبيق'),
               style: TextButton.styleFrom(foregroundColor: prefs.accentColor),
             ),
           ),
@@ -779,21 +904,17 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    final accent = ref.read(appPrefsProvider).accentColor;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Switch(
+          CupertinoSwitch(
             value: value,
             onChanged: onChanged,
-            activeTrackColor: accent,
-            activeThumbColor: Colors.white,
-            inactiveTrackColor: AppColors.surfaceVariant,
-            inactiveThumbColor: AppColors.textMuted,
+            activeTrackColor: AppColors.secondary,
           ),
-          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontFamilyFallback: AppTypography.fallbacks)),
         ],
       ),
     );

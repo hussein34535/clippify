@@ -10,7 +10,9 @@ import '../../../core/theme/app_theme.dart';
 //  Riverpod Providers
 // ────────────────────────────────────────────────────────────
 
-final screenRecorderProvider = Provider<ScreenRecorder>((ref) => ScreenRecorder());
+final screenRecorderProvider = Provider<ScreenRecorder>(
+  (ref) => ScreenRecorder(),
+);
 final webcamCaptureProvider = Provider<WebcamCapture>((ref) => WebcamCapture());
 final audioRecorderProvider = Provider<AudioRecorder>((ref) => AudioRecorder());
 
@@ -43,21 +45,43 @@ class ScreenRecorder {
   VoidCallback? onStop;
   void Function(String)? onError;
 
-  Future<bool> startRecording(String outputPath, {Rect? region, bool includeAudio = true}) async {
+  Future<bool> startRecording(
+    String outputPath, {
+    Rect? region,
+    bool includeAudio = true,
+  }) async {
     if (_isRecording) return false;
 
     final args = <String>['-y', '-f', 'gdigrab'];
 
     if (region != null) {
-      args.addAll(['-offset_x', '${region.left.toInt()}', '-offset_y', '${region.top.toInt()}']);
-      args.addAll(['-video_size', '${region.width.toInt()}x${region.height.toInt()}']);
+      args.addAll([
+        '-offset_x',
+        '${region.left.toInt()}',
+        '-offset_y',
+        '${region.top.toInt()}',
+      ]);
+      args.addAll([
+        '-video_size',
+        '${region.width.toInt()}x${region.height.toInt()}',
+      ]);
     }
 
     if (!includeAudio) {
       args.add('-an');
     }
 
-    args.addAll(['-i', 'desktop', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', outputPath]);
+    args.addAll([
+      '-i',
+      'desktop',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-crf',
+      '23',
+      outputPath,
+    ]);
 
     try {
       _process = await Process.start('ffmpeg', args);
@@ -65,7 +89,8 @@ class ScreenRecorder {
       _outputPath = outputPath;
       _startTime = DateTime.now();
       _timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
-        _duration = DateTime.now().difference(_startTime!).inMilliseconds / 1000.0;
+        _duration =
+            DateTime.now().difference(_startTime!).inMilliseconds / 1000.0;
       });
       onStart?.call();
       return true;
@@ -106,6 +131,7 @@ class WebcamCapture {
   Process? _captureProcess;
   Process? _previewProcess;
   StreamSubscription<List<int>>? _previewSub;
+  StreamSubscription<List<int>>? _previewStderrSub;
   bool _isRecording = false;
   String? _currentOutputPath;
   String _currentDevice = '';
@@ -129,7 +155,12 @@ class WebcamCapture {
   static Future<List<String>> listCameras() async {
     try {
       final result = await Process.run('ffmpeg', [
-        '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy',
+        '-list_devices',
+        'true',
+        '-f',
+        'dshow',
+        '-i',
+        'dummy',
       ], runInShell: true);
       final stderr = result.stderr.toString();
       final cameras = <String>[];
@@ -164,7 +195,20 @@ class WebcamCapture {
     final device = deviceName ?? _currentDevice;
     if (device.isEmpty) return false;
 
-    final args = <String>['-y', '-f', 'dshow', '-i', 'video=$device', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', outputPath];
+    final args = <String>[
+      '-y',
+      '-f',
+      'dshow',
+      '-i',
+      'video=$device',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-crf',
+      '23',
+      outputPath,
+    ];
 
     try {
       _captureProcess = await Process.start('ffmpeg', args);
@@ -186,31 +230,49 @@ class WebcamCapture {
 
     try {
       Process.start('ffmpeg', [
-        '-f', 'dshow', '-i', 'video=$device',
-        '-vf', 'scale=${_pipW}:${_pipH}',
-        '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '2', '-',
-      ]).then((proc) {
-        _previewProcess = proc;
-        final completer = Completer<void>();
-        final buffer = <int>[];
-        proc.stdout.listen((data) {
-          buffer.addAll(data);
-          while (true) {
-            final startIdx = _findMarker(buffer, [0xFF, 0xD8]);
-            if (startIdx == -1) break;
-            final endIdx = _findMarker(buffer, [0xFF, 0xD9], startIdx + 2);
-            if (endIdx == -1) break;
-            final frame = buffer.sublist(startIdx, endIdx + 2);
-            buffer.removeRange(0, endIdx + 2);
-            _frameController.add(Uint8List.fromList(frame));
-          }
-        }, onDone: () {
-          if (!completer.isCompleted) completer.complete();
-        });
-        proc.stderr.listen((_) {});
-      }).catchError((e) {
-        debugPrint('[WebcamCapture] Preview error: $e');
-      });
+            '-f',
+            'dshow',
+            '-i',
+            'video=$device',
+            '-vf',
+            'scale=${_pipW}:${_pipH}',
+            '-f',
+            'image2pipe',
+            '-vcodec',
+            'mjpeg',
+            '-q:v',
+            '2',
+            '-',
+          ])
+          .then((proc) {
+            _previewProcess = proc;
+            final completer = Completer<void>();
+            final buffer = <int>[];
+            _previewSub = proc.stdout.listen(
+              (data) {
+                buffer.addAll(data);
+                while (true) {
+                  final startIdx = _findMarker(buffer, [0xFF, 0xD8]);
+                  if (startIdx == -1) break;
+                  final endIdx = _findMarker(buffer, [
+                    0xFF,
+                    0xD9,
+                  ], startIdx + 2);
+                  if (endIdx == -1) break;
+                  final frame = buffer.sublist(startIdx, endIdx + 2);
+                  buffer.removeRange(0, endIdx + 2);
+                  _frameController.add(Uint8List.fromList(frame));
+                }
+              },
+              onDone: () {
+                if (!completer.isCompleted) completer.complete();
+              },
+            );
+            _previewStderrSub = proc.stderr.listen((_) {});
+          })
+          .catchError((e) {
+            debugPrint('[WebcamCapture] Preview error: $e');
+          });
     } catch (e) {
       debugPrint('[WebcamCapture] Preview start error: $e');
     }
@@ -234,6 +296,9 @@ class WebcamCapture {
     if (!_isRecording) return null;
 
     _previewSub?.cancel();
+    _previewSub = null;
+    _previewStderrSub?.cancel();
+    _previewStderrSub = null;
     _previewProcess?.kill();
     _previewProcess = null;
     _captureProcess?.kill();
@@ -247,7 +312,13 @@ class WebcamCapture {
     return path;
   }
 
-  void setPiP(bool enabled, {int x = 0, int y = 0, int width = 240, int height = 180}) {
+  void setPiP(
+    bool enabled, {
+    int x = 0,
+    int y = 0,
+    int width = 240,
+    int height = 180,
+  }) {
     _pipEnabled = enabled;
     _pipX = x;
     _pipY = y;
@@ -257,6 +328,9 @@ class WebcamCapture {
 
   void dispose() {
     _previewSub?.cancel();
+    _previewSub = null;
+    _previewStderrSub?.cancel();
+    _previewStderrSub = null;
     _previewProcess?.kill();
     _captureProcess?.kill();
     _frameController.close();
@@ -281,7 +355,12 @@ class AudioRecorder {
   static Future<List<String>> listAudioDevices() async {
     try {
       final result = await Process.run('ffmpeg', [
-        '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy',
+        '-list_devices',
+        'true',
+        '-f',
+        'dshow',
+        '-i',
+        'dummy',
       ], runInShell: true);
       final stderr = result.stderr.toString();
       final devices = <String>[];
@@ -314,7 +393,16 @@ class AudioRecorder {
     if (_isRecording) return false;
 
     final device = deviceName ?? 'Microphone';
-    final args = <String>['-y', '-f', 'dshow', '-i', 'audio=$device', '-c:a', 'pcm_s16le', outputPath];
+    final args = <String>[
+      '-y',
+      '-f',
+      'dshow',
+      '-i',
+      'audio=$device',
+      '-c:a',
+      'pcm_s16le',
+      outputPath,
+    ];
 
     try {
       _process = await Process.start('ffmpeg', args);
@@ -362,7 +450,8 @@ class CapturePanel extends ConsumerStatefulWidget {
   ConsumerState<CapturePanel> createState() => _CapturePanelState();
 }
 
-class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerProviderStateMixin {
+class _CapturePanelState extends ConsumerState<CapturePanel>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   // Screen recorder state
@@ -449,7 +538,10 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
           // Region selector
           Row(
             children: [
-              const Text('المنطقة:', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              const Text(
+                'المنطقة:',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
               const SizedBox(width: 8),
               ChoiceChip(
                 label: const Text('شاشة كاملة', style: TextStyle(fontSize: 11)),
@@ -457,16 +549,27 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
                 onSelected: (v) => setState(() => _screenFullscreen = v),
                 selectedColor: AppColors.primary.withValues(alpha: 0.3),
                 backgroundColor: AppColors.surfaceVariant,
-                labelStyle: TextStyle(color: _screenFullscreen ? Colors.white : AppColors.textSecondary),
+                labelStyle: TextStyle(
+                  color: _screenFullscreen
+                      ? Colors.white
+                      : AppColors.textSecondary,
+                ),
               ),
               const SizedBox(width: 8),
               ChoiceChip(
-                label: const Text('منطقة مخصصة', style: TextStyle(fontSize: 11)),
+                label: const Text(
+                  'منطقة مخصصة',
+                  style: TextStyle(fontSize: 11),
+                ),
                 selected: !_screenFullscreen,
                 onSelected: (v) => setState(() => _screenFullscreen = !v),
                 selectedColor: AppColors.primary.withValues(alpha: 0.3),
                 backgroundColor: AppColors.surfaceVariant,
-                labelStyle: TextStyle(color: !_screenFullscreen ? Colors.white : AppColors.textSecondary),
+                labelStyle: TextStyle(
+                  color: !_screenFullscreen
+                      ? Colors.white
+                      : AppColors.textSecondary,
+                ),
               ),
             ],
           ),
@@ -475,7 +578,10 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
           // Audio toggle
           Row(
             children: [
-              const Text('الصوت:', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              const Text(
+                'الصوت:',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
               const SizedBox(width: 8),
               Switch(
                 value: _screenIncludeAudio,
@@ -483,7 +589,15 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
                 activeColor: AppColors.primary,
               ),
               const SizedBox(width: 8),
-              Text(_screenIncludeAudio ? 'مضمن' : 'بدون صوت', style: TextStyle(fontSize: 11, color: _screenIncludeAudio ? AppColors.textPrimary : AppColors.textMuted)),
+              Text(
+                _screenIncludeAudio ? 'مضمن' : 'بدون صوت',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: _screenIncludeAudio
+                      ? AppColors.textPrimary
+                      : AppColors.textMuted,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -500,13 +614,22 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 10, height: 10,
-                    decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.redAccent),
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.redAccent,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Text(
                     _formatDuration(sr.recordingDuration),
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white, fontFamily: 'monospace'),
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ],
               ),
@@ -520,12 +643,27 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
             child: ElevatedButton.icon(
               onPressed: () => _toggleScreenRecording(sr, isRecording),
               style: ElevatedButton.styleFrom(
-                backgroundColor: isRecording ? AppColors.destructive : AppColors.primary,
+                backgroundColor: isRecording
+                    ? AppColors.destructive
+                    : AppColors.primary,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              icon: Icon(isRecording ? Icons.stop_rounded : Icons.fiber_manual_record_rounded, size: 18),
-              label: Text(isRecording ? 'إيقاف التسجيل' : 'بدء تسجيل الشاشة', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              icon: Icon(
+                isRecording
+                    ? Icons.stop_rounded
+                    : Icons.fiber_manual_record_rounded,
+                size: 18,
+              ),
+              label: Text(
+                isRecording ? 'إيقاف التسجيل' : 'بدء تسجيل الشاشة',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ],
@@ -533,16 +671,22 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
     );
   }
 
-  Future<void> _toggleScreenRecording(ScreenRecorder sr, bool isRecording) async {
+  Future<void> _toggleScreenRecording(
+    ScreenRecorder sr,
+    bool isRecording,
+  ) async {
     if (isRecording) {
       final path = await sr.stopRecording();
       ref.read(isScreenRecordingProvider.notifier).state = false;
       if (path != null) widget.onCaptureComplete?.call(path);
     } else {
       final path = _defaultPath('screen_recording', 'mp4');
-      final success = await sr.startRecording(path,
+      final success = await sr.startRecording(
+        path,
         includeAudio: _screenIncludeAudio,
-        region: _screenFullscreen ? null : const Rect.fromLTWH(0, 0, 1920, 1080),
+        region: _screenFullscreen
+            ? null
+            : const Rect.fromLTWH(0, 0, 1920, 1080),
       );
       if (success) {
         ref.read(isScreenRecordingProvider.notifier).state = true;
@@ -561,7 +705,10 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Camera dropdown
-          const Text('الكاميرا:', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          const Text(
+            'الكاميرا:',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
             value: _selectedCamera.isEmpty ? null : _selectedCamera,
@@ -569,11 +716,27 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
             decoration: InputDecoration(
               filled: true,
               fillColor: AppColors.surfaceVariant,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
             ),
-            hint: const Text('اختر كاميرا', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
-            items: _cameraList.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 12)))).toList(),
+            hint: const Text(
+              'اختر كاميرا',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+            items: _cameraList
+                .map(
+                  (c) => DropdownMenuItem(
+                    value: c,
+                    child: Text(c, style: const TextStyle(fontSize: 12)),
+                  ),
+                )
+                .toList(),
             onChanged: (v) {
               if (v != null) setState(() => _selectedCamera = v);
             },
@@ -590,14 +753,25 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
             ),
             child: isActive
                 ? _buildWebcamPreview()
-                : const Center(child: Text('معاينة الكاميرا', style: TextStyle(color: AppColors.textMuted, fontSize: 12))),
+                : const Center(
+                    child: Text(
+                      'معاينة الكاميرا',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
           ),
           const SizedBox(height: 12),
 
           // PiP toggle
           Row(
             children: [
-              const Text('PiP:', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              const Text(
+                'PiP:',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
               const SizedBox(width: 8),
               Switch(
                 value: _webcamPip,
@@ -605,20 +779,36 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
                 activeColor: AppColors.primary,
               ),
               const SizedBox(width: 8),
-              Text(_webcamPip ? 'مفعل' : 'غير مفعل', style: TextStyle(fontSize: 11, color: _webcamPip ? AppColors.textPrimary : AppColors.textMuted)),
+              Text(
+                _webcamPip ? 'مفعل' : 'غير مفعل',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: _webcamPip
+                      ? AppColors.textPrimary
+                      : AppColors.textMuted,
+                ),
+              ),
             ],
           ),
           if (_webcamPip) ...[
             const SizedBox(height: 8),
             Row(
               children: [
-                Expanded(child: _buildNumberField('X', _pipX, (v) => _pipX = v)),
+                Expanded(
+                  child: _buildNumberField('X', _pipX, (v) => _pipX = v),
+                ),
                 const SizedBox(width: 8),
-                Expanded(child: _buildNumberField('Y', _pipY, (v) => _pipY = v)),
+                Expanded(
+                  child: _buildNumberField('Y', _pipY, (v) => _pipY = v),
+                ),
                 const SizedBox(width: 8),
-                Expanded(child: _buildNumberField('العرض', _pipW, (v) => _pipW = v)),
+                Expanded(
+                  child: _buildNumberField('العرض', _pipW, (v) => _pipW = v),
+                ),
                 const SizedBox(width: 8),
-                Expanded(child: _buildNumberField('الارتفاع', _pipH, (v) => _pipH = v)),
+                Expanded(
+                  child: _buildNumberField('الارتفاع', _pipH, (v) => _pipH = v),
+                ),
               ],
             ),
           ],
@@ -630,12 +820,27 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
             child: ElevatedButton.icon(
               onPressed: () => _toggleWebcamCapture(isActive),
               style: ElevatedButton.styleFrom(
-                backgroundColor: isActive ? AppColors.destructive : AppColors.primary,
+                backgroundColor: isActive
+                    ? AppColors.destructive
+                    : AppColors.primary,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              icon: Icon(isActive ? Icons.stop_rounded : Icons.fiber_manual_record_rounded, size: 18),
-              label: Text(isActive ? 'إيقاف الكاميرا' : 'بدء تسجيل الكاميرا', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              icon: Icon(
+                isActive
+                    ? Icons.stop_rounded
+                    : Icons.fiber_manual_record_rounded,
+                size: 18,
+              ),
+              label: Text(
+                isActive ? 'إيقاف الكاميرا' : 'بدء تسجيل الكاميرا',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ],
@@ -644,20 +849,39 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
   }
 
   Widget _buildWebcamPreview() {
-    return ref.watch(webcamFrameProvider).when(
-      data: (frame) {
-        if (frame == null) return const Center(child: Text('بانتظار الكاميرا...', style: TextStyle(color: AppColors.textMuted, fontSize: 12)));
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: Image.memory(frame, fit: BoxFit.contain),
+    return ref
+        .watch(webcamFrameProvider)
+        .when(
+          data: (frame) {
+            if (frame == null) {
+              return const Center(
+                child: Text(
+                  'بانتظار الكاميرا...',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+              );
+            }
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.memory(frame, fit: BoxFit.contain),
+            );
+          },
+          error: (e, _) => Center(
+            child: Text(
+              'خطأ: $e',
+              style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+            ),
+          ),
+          loading: () =>
+              const Center(child: CircularProgressIndicator(strokeWidth: 2)),
         );
-      },
-      error: (e, _) => Center(child: Text('خطأ: $e', style: const TextStyle(color: Colors.redAccent, fontSize: 11))),
-      loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-    );
   }
 
-  Widget _buildNumberField(String label, double value, void Function(double) onChanged) {
+  Widget _buildNumberField(
+    String label,
+    double value,
+    void Function(double) onChanged,
+  ) {
     return SizedBox(
       width: 80,
       child: TextField(
@@ -667,8 +891,14 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
           labelStyle: const TextStyle(fontSize: 10, color: AppColors.textMuted),
           filled: true,
           fillColor: AppColors.surfaceVariant,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: AppColors.border)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: AppColors.border),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 6,
+          ),
         ),
         keyboardType: TextInputType.number,
         controller: TextEditingController(text: value.toInt().toString()),
@@ -691,7 +921,13 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
       final path = _defaultPath('webcam_recording', 'mp4');
       final success = await wc.startCapture(path, deviceName: _selectedCamera);
       if (success) {
-        wc.setPiP(_webcamPip, x: _pipX.toInt(), y: _pipY.toInt(), width: _pipW.toInt(), height: _pipH.toInt());
+        wc.setPiP(
+          _webcamPip,
+          x: _pipX.toInt(),
+          y: _pipY.toInt(),
+          width: _pipW.toInt(),
+          height: _pipH.toInt(),
+        );
         ref.read(isWebcamActiveProvider.notifier).state = true;
         ref.read(webcamDeviceProvider.notifier).state = _selectedCamera;
       }
@@ -708,7 +944,10 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('الميكروفون:', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          const Text(
+            'الميكروفون:',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
             value: _selectedAudioDevice.isEmpty ? null : _selectedAudioDevice,
@@ -716,11 +955,27 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
             decoration: InputDecoration(
               filled: true,
               fillColor: AppColors.surfaceVariant,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.border)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
             ),
-            hint: const Text('اختر ميكروفون', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
-            items: _audioDeviceList.map((d) => DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontSize: 12)))).toList(),
+            hint: const Text(
+              'اختر ميكروفون',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+            items: _audioDeviceList
+                .map(
+                  (d) => DropdownMenuItem(
+                    value: d,
+                    child: Text(d, style: const TextStyle(fontSize: 12)),
+                  ),
+                )
+                .toList(),
             onChanged: (v) {
               if (v != null) setState(() => _selectedAudioDevice = v);
             },
@@ -728,7 +983,10 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
           const SizedBox(height: 16),
 
           // Levels meter
-          const Text('مستوى الصوت:', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          const Text(
+            'مستوى الصوت:',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
           const SizedBox(height: 6),
           Container(
             height: 24,
@@ -747,7 +1005,9 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
                     gradient: LinearGradient(
                       colors: [
                         AppColors.primary,
-                        _audioLevel > 0.7 ? AppColors.destructive : AppColors.secondary,
+                        _audioLevel > 0.7
+                            ? AppColors.destructive
+                            : AppColors.secondary,
                       ],
                     ),
                   ),
@@ -761,9 +1021,19 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.redAccent)),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.redAccent,
+                    ),
+                  ),
                   const SizedBox(width: 6),
-                  const Text('جاري التسجيل...', style: TextStyle(color: Colors.redAccent, fontSize: 11)),
+                  const Text(
+                    'جاري التسجيل...',
+                    style: TextStyle(color: Colors.redAccent, fontSize: 11),
+                  ),
                 ],
               ),
             ),
@@ -775,12 +1045,27 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
             child: ElevatedButton.icon(
               onPressed: () => _toggleAudioRecording(isRecording),
               style: ElevatedButton.styleFrom(
-                backgroundColor: isRecording ? AppColors.destructive : AppColors.primary,
+                backgroundColor: isRecording
+                    ? AppColors.destructive
+                    : AppColors.primary,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              icon: Icon(isRecording ? Icons.stop_rounded : Icons.fiber_manual_record_rounded, size: 18),
-              label: Text(isRecording ? 'إيقاف التسجيل' : 'بدء تسجيل الصوت', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              icon: Icon(
+                isRecording
+                    ? Icons.stop_rounded
+                    : Icons.fiber_manual_record_rounded,
+                size: 18,
+              ),
+              label: Text(
+                isRecording ? 'إيقاف التسجيل' : 'بدء تسجيل الصوت',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ],
@@ -798,11 +1083,19 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
     } else {
       if (_selectedAudioDevice.isEmpty) return;
       final path = _defaultPath('audio_recording', 'wav');
-      final success = await ar.startRecording(path, deviceName: _selectedAudioDevice);
+      final success = await ar.startRecording(
+        path,
+        deviceName: _selectedAudioDevice,
+      );
       if (success) {
         ref.read(isAudioRecordingProvider.notifier).state = true;
-        _audioLevelTimer = Timer.periodic(const Duration(milliseconds: 150), (_) {
-          setState(() => _audioLevel = 0.2 + 0.8 * (DateTime.now().millisecond % 100) / 100.0);
+        _audioLevelTimer = Timer.periodic(const Duration(milliseconds: 150), (
+          _,
+        ) {
+          setState(
+            () => _audioLevel =
+                0.2 + 0.8 * (DateTime.now().millisecond % 100) / 100.0,
+          );
         });
       }
     }
@@ -823,84 +1116,138 @@ class _CapturePanelState extends ConsumerState<CapturePanel> with SingleTickerPr
     final webcamActive = ref.watch(isWebcamActiveProvider);
     final audioRecording = ref.watch(isAudioRecordingProvider);
 
-    return Container(
-      width: 440,
-      height: 520,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: [
-          // Title bar
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-            child: Row(
-              children: [
-                const Icon(Icons.fiber_manual_record_rounded, size: 14, color: Colors.redAccent),
-                const SizedBox(width: 8),
-                const Text('التسجيل الاحترافي', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Outfit', fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'])),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.textSecondary),
-                  onPressed: () => Navigator.pop(context),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double width = constraints.maxWidth < 440
+            ? constraints.maxWidth
+            : 440;
+        final double height = constraints.maxHeight < 520
+            ? constraints.maxHeight
+            : 520;
+        return Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
           ),
+          child: Column(
+            children: [
+              // Title bar
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.fiber_manual_record_rounded,
+                      size: 14,
+                      color: Colors.redAccent,
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'التسجيل الاحترافي',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Outfit',
+                        fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'],
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: AppColors.textSecondary,
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              ),
 
-          // Tabs
-          TabBar(
-            controller: _tabController,
-            tabs: [
-              Tab(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (screenRecording) Container(width: 6, height: 6, margin: const EdgeInsets.only(left: 4), decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.redAccent)),
-                    const SizedBox(width: 4),
-                    const Text('تسجيل الشاشة'),
-                  ],
-                ),
+              // Tabs
+              TabBar(
+                controller: _tabController,
+                tabs: [
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (screenRecording)
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(left: 4),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        const SizedBox(width: 4),
+                        const Text('تسجيل الشاشة'),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (webcamActive)
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(left: 4),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        const SizedBox(width: 4),
+                        const Text('كاميرا ويب'),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (audioRecording)
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(left: 4),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        const SizedBox(width: 4),
+                        const Text('تسجيل صوت'),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              Tab(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+
+              // Tab content
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
                   children: [
-                    if (webcamActive) Container(width: 6, height: 6, margin: const EdgeInsets.only(left: 4), decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.redAccent)),
-                    const SizedBox(width: 4),
-                    const Text('كاميرا ويب'),
-                  ],
-                ),
-              ),
-              Tab(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (audioRecording) Container(width: 6, height: 6, margin: const EdgeInsets.only(left: 4), decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.redAccent)),
-                    const SizedBox(width: 4),
-                    const Text('تسجيل صوت'),
+                    _buildScreenTab(),
+                    _buildWebcamTab(),
+                    _buildAudioTab(),
                   ],
                 ),
               ),
             ],
           ),
-
-          // Tab content
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildScreenTab(),
-                _buildWebcamTab(),
-                _buildAudioTab(),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/timeline_provider.dart';
+import '../logic/add_media.dart';
 import '../../../core/models/timeline_models.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/timeline_constants.dart';
@@ -10,14 +11,11 @@ import 'timeline_toolbar.dart';
 import 'transition_picker.dart';
 import 'timeline_painters.dart';
 import '../../text/widgets/text_editor_dialog.dart';
-import '../../../shared/providers/macro_provider.dart';
 import '../../../shared/providers/toast_provider.dart';
-import '../../../core/api/api_client.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../../../shared/widgets/advanced_gestures.dart';
 import '../../../shared/providers/layout_prefs_provider.dart';
-
 
 class TimelineWidget extends ConsumerStatefulWidget {
   final String? selectedClipId;
@@ -26,6 +24,7 @@ class TimelineWidget extends ConsumerStatefulWidget {
   final VoidCallback? onAutoCut;
   final VoidCallback? onAutoFrame;
   final bool isLoading;
+  final MediaInfoResolver? mediaInfoResolver;
 
   const TimelineWidget({
     super.key,
@@ -35,6 +34,7 @@ class TimelineWidget extends ConsumerStatefulWidget {
     this.onAutoCut,
     this.onAutoFrame,
     this.isLoading = false,
+    this.mediaInfoResolver,
   });
 
   @override
@@ -81,9 +81,12 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final lanes = <Widget>[];
     final configs = _getTrackConfigs(tracks, nestedSequences: nestedSequences);
     debugPrint('[DnD] _buildAllTrackLanes: ${configs.length} lanes (video=${tracks.video.length}, audio=${tracks.audio.length}, overlay=${tracks.overlays.length})');
+    final Set<String> keyedTypes = {};
     for (final cfg in configs) {
       if (lanes.isNotEmpty) lanes.add(const SizedBox(height: TimelineConstants.trackGap));
+      final String? laneKeyId = keyedTypes.add(cfg.type) ? 'lane_${cfg.type}' : null;
       lanes.add(_buildTrackLane(
+        key: laneKeyId != null ? ValueKey<String>(laneKeyId) : null,
         title: cfg.name,
         color: cfg.color,
         icon: cfg.icon,
@@ -169,6 +172,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKeyEvent);
+    _scrollController.dispose();
+    _playheadScrubNotifier.dispose();
     super.dispose();
   }
 
@@ -630,7 +635,6 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   Widget build(BuildContext context) {
     final timelineData = ref.watch(timelineProvider);
     final timelineNotifier = ref.read(timelineProvider.notifier);
-    final layoutPrefs = ref.watch(layoutPrefsProvider);
 
     final timelineState = timelineData.timeline;
     final double zoomLevel = timelineState.zoomLevel;
@@ -649,7 +653,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           if (_scrollController.position.hasContentDimensions) {
             viewportWidth = _scrollController.position.viewportDimension;
           }
-        } catch (_) {}
+        } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
 
         double targetScroll = scrollOffset;
 
@@ -694,7 +698,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           if (_scrollController.position.hasContentDimensions) {
             viewportWidth = _scrollController.position.viewportDimension;
           }
-        } catch (_) {}
+        } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
 
         if (playheadX > scrollOffset + viewportWidth - 60.0 || playheadX < scrollOffset + 120.0) {
           final double targetScroll = playheadX - (viewportWidth / 2);
@@ -708,7 +712,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       }
     });
 
-    return Container(
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Container(
       color: AppColors.background,
       child: Column(
         children: [
@@ -739,7 +745,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                     if (_scrollController.hasClients) {
                       try {
                         scrollOffset = _scrollController.offset;
-                      } catch (_) {}
+                      } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
                     }
                     _zoomAnchorSec = (localX + scrollOffset) / _scaleStartZoom;
                   },
@@ -754,7 +760,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                       if (_scrollController.hasClients) {
                         try {
                           scrollOffset = _scrollController.offset;
-                        } catch (_) {}
+                        } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
                       }
                       _zoomAnchorSec = (localX + scrollOffset) / ref.read(timelineProvider).timeline.zoomLevel;
 
@@ -787,7 +793,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                           if (_scrollController.hasClients) {
                             try {
                               scrollOffset = _scrollController.offset;
-                            } catch (_) {}
+                            } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
                           }
                           _zoomAnchorSec = (localX + scrollOffset) / currentZoom;
 
@@ -823,7 +829,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                         if (_scrollController.hasClients) {
                           try {
                             scrollOffset = _scrollController.offset;
-                          } catch (_) {}
+                          } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
                         }
                         _zoomAnchorSec = (localX + scrollOffset) / _scaleStartZoom;
                       }
@@ -841,7 +847,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                         if (_scrollController.hasClients) {
                           try {
                             scrollOffset = _scrollController.offset;
-                          } catch (_) {}
+                          } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
                         }
                         _zoomAnchorSec = (localX + scrollOffset) / ref.read(timelineProvider).timeline.zoomLevel;
 
@@ -883,7 +889,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                               if (_scrollController.position.hasContentDimensions) {
                                 viewportWidth = _scrollController.position.viewportDimension;
                               }
-                            } catch (_) {}
+                            } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
                           }
 
                           final double computedTimelineWidth = maxDuration * zoomLevel + viewportWidth * 0.8;
@@ -900,6 +906,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
                           return SizedBox(
                             width: actualTimelineWidth,
+                            height: constraints.maxHeight,
                             child: Stack(
                               clipBehavior: Clip.none,
                               children: [
@@ -934,7 +941,39 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                         child: _buildTimeRuler(zoomLevel, maxDuration, scrollOffset, viewportWidth),
                                       ),
                                       Expanded(
-                                        child: SingleChildScrollView(
+                                        child: Builder(
+                                          builder: (lanesAreaContext) => DragTarget<String>(
+                                            hitTestBehavior: HitTestBehavior.opaque,
+                                            onWillAcceptWithDetails: (details) => true,
+                                            onAcceptWithDetails: (dropDetails) async {
+                                              String? resolvedType;
+                                              double dropTime = ref.read(timelineProvider).timeline.playheadSec;
+                                              try {
+                                                final RenderBox areaBox = lanesAreaContext.findRenderObject() as RenderBox;
+                                                final Offset local = areaBox.globalToLocal(dropDetails.offset);
+                                                final configs = _getTrackConfigs(timelineState.tracks, nestedSequences: timelineState.nestedSequences);
+                                                String nearest = configs.isNotEmpty ? configs.last.type : 'video';
+                                                double bestDist = double.infinity;
+                                                double y = 0.0;
+                                                for (final cfg in configs) {
+                                                  final double dist = (local.dy - (y + cfg.height / 2)).abs();
+                                                  if (dist < bestDist) { bestDist = dist; nearest = cfg.type; }
+                                                  y += cfg.height + TimelineConstants.trackGap;
+                                                }
+                                                resolvedType = nearest;
+                                                if (local.dx > 0) dropTime = local.dx / zoomLevel;
+                                              } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
+                                              if (resolvedType != null && _lockedTracks.contains(resolvedType)) return;
+                                              await addMediaFromPath(
+                                                ref,
+                                                lanesAreaContext,
+                                                dropDetails.data,
+                                                trackType: resolvedType,
+                                                atSec: dropTime.clamp(0.0, double.infinity),
+                                                mediaInfoResolver: widget.mediaInfoResolver,
+                                              );
+                                            },
+                                            builder: (context, candidateData, rejectedData) => SingleChildScrollView(
                                           physics: _scrollPhysics,
                                           child: SizedBox(
                                             width: actualTimelineWidth,
@@ -947,12 +986,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                               ),
                                             ),
                                           ),
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
-                              ],
 
                                 SnapGuide(
                                   position: _snapLinePositionSec != null ? _snapLinePositionSec! * zoomLevel : null,
@@ -975,8 +1015,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                           // stealing the drop hit-test.
                                           IgnorePointer(
                                             child: Container(
-                                              width: 1.5,
-                                              color: const Color(0xFFF0F0F5),
+                                              width: 1,
+                                              color: Colors.white,
                                             ),
                                           ),
                                             Positioned(
@@ -994,12 +1034,15 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                                 onHorizontalDragCancel: () {
                                                   _commitScrub();
                                                 },
-                                                child: ClipPath(
-                                                  clipper: const PlayheadTriangle(),
-                                                  child: Container(
-                                                    width: 10,
-                                                    height: 10,
-                                                    color: const Color(0xFFF0F0F5),
+                                                child: Container(
+                                                  width: 10,
+                                                  height: 10,
+                                                  decoration: const BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    color: Colors.white,
+                                                    boxShadow: [
+                                                      BoxShadow(color: Colors.black38, blurRadius: 3, offset: Offset(0, 1)),
+                                                    ],
                                                   ),
                                                 ),
                                               ),
@@ -1026,7 +1069,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   VideoClip? _findClipById(String clipId) {
@@ -1125,10 +1169,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     return Container(
       height: height,
       decoration: const BoxDecoration(
-        color: Color(0xFF131317),
+        color: Color(0xFF141416),
         border: Border(
-          right: BorderSide(color: AppColors.divider),
-            bottom: BorderSide(color: AppColors.divider, width: TimelineConstants.borderWidth),
+          right: BorderSide(color: AppColors.border),
+            bottom: BorderSide(color: AppColors.border, width: TimelineConstants.borderWidth),
           ),
         ),
         child: Row(
@@ -1152,64 +1196,73 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (trackType == 'audio')
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                  icon: Icon(
-                    isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                    size: 13,
-                    color: isMuted ? const Color(0xFFF59E0B) : Colors.white30,
+                Tooltip(
+                  message: isMuted ? 'إلغاء كتم الصوت' : 'كتم الصوت',
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (isMuted) {
+                          _mutedTracks.remove(trackType);
+                        } else {
+                          _mutedTracks.add(trackType);
+                        }
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(3),
+                      child: Icon(
+                        isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                        size: 14,
+                        color: isMuted ? const Color(0xFFF59E0B) : Colors.white30,
+                      ),
+                    ),
                   ),
-                  onPressed: () {
-                    setState(() {
-                      if (isMuted) {
-                        _mutedTracks.remove(trackType);
-                      } else {
-                        _mutedTracks.add(trackType);
-                      }
-                    });
-                  },
-                  tooltip: isMuted ? 'إلغاء كتم الصوت' : 'كتم الصوت',
                 )
               else
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                  icon: Icon(
-                    isHidden ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                    size: 13,
-                    color: isHidden ? Colors.white30 : Colors.white54,
+                Tooltip(
+                  message: isHidden ? 'إظهار المسار' : 'إخفاء المسار',
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (isHidden) {
+                          _hiddenTracks.remove(trackType);
+                        } else {
+                          _hiddenTracks.add(trackType);
+                        }
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(3),
+                      child: Icon(
+                        isHidden ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                        size: 14,
+                        color: isHidden ? Colors.white30 : Colors.white54,
+                      ),
+                    ),
                   ),
-                  onPressed: () {
+                ),
+              const SizedBox(width: 2),
+              Tooltip(
+                message: isLocked ? 'إلغاء قفل المسار' : 'قفل المسار',
+                child: GestureDetector(
+                  onTap: () {
                     setState(() {
-                      if (isHidden) {
-                        _hiddenTracks.remove(trackType);
+                      if (isLocked) {
+                        _lockedTracks.remove(trackType);
                       } else {
-                        _hiddenTracks.add(trackType);
+                        _lockedTracks.add(trackType);
                       }
                     });
                   },
-                  tooltip: isHidden ? 'إظهار المسار' : 'إخفاء المسار',
+                  child: Padding(
+                    padding: const EdgeInsets.all(3),
+                    child: Icon(
+                      isLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                      size: 14,
+                      color: isLocked ? const Color(0xFFEF4444) : Colors.white30,
+                    ),
+                  ),
                 ),
-              const SizedBox(width: 2),
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                icon: Icon(
-                  isLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                  size: 13,
-                  color: isLocked ? const Color(0xFFEF4444) : Colors.white30,
-                ),
-                onPressed: () {
-                  setState(() {
-                    if (isLocked) {
-                      _lockedTracks.remove(trackType);
-                    } else {
-                      _lockedTracks.add(trackType);
-                    }
-                  });
-                },
-                tooltip: isLocked ? 'إلغاء قفل المسار' : 'قفل المسار',
               ),
             ],
           ),
@@ -1241,8 +1294,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       child: Container(
         height: 24,
         decoration: const BoxDecoration(
-          color: Color(0xFF0D0D11),
-          border: Border(bottom: BorderSide(color: AppColors.divider)),
+          color: Color(0xFF0E0E10),
+          border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
         ),
         child: Stack(
           clipBehavior: Clip.none,
@@ -1281,6 +1334,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   }
 
   Widget _buildTrackLane({
+    Key? key,
     required String title,
     required Color color,
     required IconData icon,
@@ -1294,7 +1348,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final bool isHidden = _hiddenTracks.contains(trackType);
     final bool isMuted = _mutedTracks.contains(trackType);
 
+    BuildContext? laneDropContext;
     return DragTarget<String>(
+      key: key,
+      hitTestBehavior: HitTestBehavior.opaque,
       onWillAcceptWithDetails: (details) {
         debugPrint('[DnD] willAccept on track "$trackType" (locked=$isLocked) data="${details.data}"');
         return !isLocked;
@@ -1305,96 +1362,31 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       onAcceptWithDetails: (details) async {
         debugPrint('[DnD] ACCEPT on track "$trackType"');
         if (isLocked) return;
-        final filePath = details.data;
-        
         double dropTime = ref.read(timelineProvider).timeline.playheadSec;
         try {
-          final RenderBox renderBox = context.findRenderObject() as RenderBox;
-          final localPos = renderBox.globalToLocal(details.offset);
-          final dropX = localPos.dx - TimelineConstants.sidebarWidth + _scrollController.offset + 70;
-          if (dropX > 0) {
-            dropTime = dropX / zoomLevel;
+          final RenderBox laneBox = laneDropContext!.findRenderObject() as RenderBox;
+          final double localX = laneBox.globalToLocal(details.offset).dx;
+          if (localX > 0) {
+            dropTime = localX / zoomLevel;
           }
-        } catch (_) {}
-        final playhead = dropTime;
+        } catch (e) { debugPrint('[Timeline] ${e.toString()}'); }
 
-        double mediaDuration = 10.0;
-        try {
-          final infoResult = await ApiClient().getMediaInfo(filePath);
-          if (!mounted) return;
-          switch (infoResult) {
-            case Success(data: final info):
-              if (info['status'] == 'success' && info['duration'] != null) {
-                final double actDur = (info['duration'] as num).toDouble();
-                if (actDur > 0) {
-                  mediaDuration = actDur;
-                }
-              }
-            case Failure():
-              break;
-          }
-        } catch (e) {
-          // Backend down / network error — still add the clip with a sane default
-          // duration so the user sees their media land on the timeline.
-          debugPrint('Drag&drop: getMediaInfo failed, using default duration: $e');
-          if (!mounted) return;
-        }
-
-        // Use the REAL media duration for both the on-timeline span and the
-        // source trim. (Previously this capped every clip at 10s, hiding long
-        // media.) Fall back to a sensible 10s only when the duration is unknown.
-        final double dur = mediaDuration > 0.1 ? mediaDuration : 10.0;
-
+        final result = await addMediaFromPath(
+          ref,
+          context,
+          details.data,
+          trackType: trackType,
+          atSec: dropTime.clamp(0.0, double.infinity),
+          mediaInfoResolver: widget.mediaInfoResolver,
+        );
+        if (!mounted || result == null) return;
         if (trackType == 'video') {
-          final newClip = VideoClip(
-            id: 'clip_v_${DateTime.now().millisecondsSinceEpoch}',
-            sourcePath: filePath,
-            startTimeInTimeline: playhead,
-            endTimeInTimeline: playhead + dur,
-            sourceTrimStart: 0.0,
-            sourceTrimEnd: dur,
-            sourceDuration: mediaDuration,
-            transform: TransformState.defaultState(),
-            colorGrading: ColorGradingState(),
-            filters: [],
-            aiFeatures: AIFeatures(),
-          );
-          ref.read(timelineProvider.notifier).addVideoClip(newClip);
-          if (widget.onSelectVideo != null) {
-            widget.onSelectVideo!(filePath);
-          }
-          widget.onSelectClip(newClip.id, 'video');
-          ref.read(timelineProvider.notifier).setPlayhead(playhead);
-        } else if (trackType == 'audio') {
-          final newClip = AudioClip(
-            id: 'clip_a_${DateTime.now().millisecondsSinceEpoch}',
-            sourcePath: filePath,
-            startTimeInTimeline: playhead,
-            endTimeInTimeline: playhead + dur,
-            sourceTrimStart: 0.0,
-            sourceTrimEnd: dur,
-            sourceDuration: mediaDuration,
-            effects: [],
-          );
-          ref.read(timelineProvider.notifier).addAudioClip(newClip);
-          ref.read(timelineProvider.notifier).setPlayhead(playhead);
-        } else if (trackType == 'overlay') {
-          final newClip = OverlayClip(
-            id: 'clip_o_${DateTime.now().millisecondsSinceEpoch}',
-            type: 'image',
-            sourcePath: filePath,
-            startTimeInTimeline: playhead,
-            endTimeInTimeline: playhead + dur,
-            sourceTrimStart: 0.0,
-            sourceTrimEnd: dur,
-            sourceDuration: mediaDuration,
-            transform: TransformState.defaultState(),
-          );
-          ref.read(timelineProvider.notifier).addOverlayClip(newClip);
-          ref.read(timelineProvider.notifier).setPlayhead(playhead);
+          widget.onSelectVideo?.call(details.data);
+          widget.onSelectClip(result.clipId, 'video');
         }
       },
       builder: (context, candidateData, rejectedData) {
+        laneDropContext = context;
         final isHovering = candidateData.isNotEmpty && !isLocked;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 150),
@@ -1457,15 +1449,15 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                 onTap: () => widget.onSelectClip(clipId, trackType),
                                 child: Container(
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF7C3AED).withValues(alpha: 0.15),
-                                    border: Border.all(color: const Color(0xFF7C3AED).withValues(alpha: 0.4)),
-                                    borderRadius: BorderRadius.circular(4),
+                                    color: AppColors.indigo.withValues(alpha: 0.15),
+                                    border: Border.all(color: AppColors.indigo.withValues(alpha: 0.4), width: 0.5),
+                                    borderRadius: BorderRadius.circular(AppRadius.sm),
                                   ),
                                   child: Row(
                                     children: [
                                       Container(
                                         width: 20,
-                                        color: const Color(0xFF7C3AED).withValues(alpha: 0.3),
+                                        color: AppColors.indigo.withValues(alpha: 0.3),
                                         alignment: Alignment.center,
                                         child: const Icon(Icons.subdirectory_arrow_right, size: 12, color: Colors.white70),
                                       ),

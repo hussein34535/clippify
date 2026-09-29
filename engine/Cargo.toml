@@ -1,0 +1,48 @@
+[package]
+name = "clippify_engine"
+version = "0.2.0"
+edition = "2021"
+description = "Clippify Rust Engine — full backend replacement"
+
+[dependencies]
+# Web server (replaces FastAPI)
+axum = { version = "0.7", features = ["ws", "multipart"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# HTTP client (LLM calls)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Utilities
+anyhow = "1"
+thiserror = "2"
+regex = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+walkdir = "2"
+rand = "0.8"
+md5 = "0.7"
+
+# Database (replaces sqlite3)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Auth (replaces python-jose + passlib)
+jsonwebtoken = "9"
+bcrypt = "0.15"
+
+# Async utilities
+futures = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

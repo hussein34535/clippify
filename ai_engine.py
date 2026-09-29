@@ -121,7 +121,8 @@ EMOJI_DICT = {
 def _transcribe_chunk(args):
     """Transcribe a single audio chunk (runs in its own process)."""
     chunk_path, start_offset = args
-    model = WhisperModel("tiny", device="cpu", compute_type="int8",
+    model_size = os.getenv("WHISPER_MODEL", "tiny")
+    model = WhisperModel(model_size, device="cpu", compute_type="int8",
                          cpu_threads=2, num_workers=1)
     segs, _ = model.transcribe(
         chunk_path, word_timestamps=True,
@@ -359,8 +360,9 @@ def translate_chunks_to_arabic(chunks_texts: list) -> list:
         
     api_key = os.getenv("GEMMA_API_KEY") or GEMMA_API_KEY
     if api_key:
-        model = "gemma-2-27b-it"
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        import llm_config as _llm_cfg
+        MODELS = _llm_cfg.MODEL_CHAIN
+        models_to_try = list(MODELS)  # full live chain from llm_config (P0: gemini-1.5 retired)
         headers = {"Content-Type": "application/json"}
         
         batch_size = 25
@@ -396,33 +398,37 @@ Example output format:
             }
             
             batch_translated = None
-            for attempt in range(1, 4):
-                try:
-                    response = requests.post(url, json=payload, headers=headers, timeout=120)
-                    if response.status_code == 200:
-                        data = response.json()
-                        candidates = data.get("candidates", [])
-                        if candidates:
-                            parts = candidates[0].get("content", {}).get("parts", [])
-                            text_parts = [p.get("text", "") for p in parts if not p.get("thought")]
-                            resp_text = "".join(text_parts).strip()
-                            
-                            if resp_text.startswith("```"):
-                                lines = resp_text.splitlines()
-                                cleaned_lines = []
-                                for line in lines:
-                                    if not line.strip().startswith("```"):
-                                        cleaned_lines.append(line)
-                                resp_text = "\n".join(cleaned_lines).strip()
-                                
-                            translated = json.loads(resp_text)
-                            if isinstance(translated, list) and len(translated) == len(batch):
-                                batch_translated = [str(item).strip() for item in translated]
-                                break
+            for model in models_to_try:
+                url = _llm_cfg.llm_url(model)
+                for attempt in range(1, 4):
+                    try:
+                        response = requests.post(url, json=payload, headers=headers, timeout=120)
+                        if response.status_code == 200:
+                            data = response.json()
+                            candidates = data.get("candidates", [])
+                            if candidates:
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                text_parts = [p.get("text", "") for p in parts if not p.get("thought")]
+                                resp_text = "".join(text_parts).strip()
+
+                                if resp_text.startswith("```"):
+                                    lines = resp_text.splitlines()
+                                    cleaned_lines = []
+                                    for line in lines:
+                                        if not line.strip().startswith("```"):
+                                            cleaned_lines.append(line)
+                                    resp_text = "\n".join(cleaned_lines).strip()
+
+                                translated = json.loads(resp_text)
+                                if isinstance(translated, list) and len(translated) == len(batch):
+                                    batch_translated = [str(item).strip() for item in translated]
+                                    break
+                        time.sleep(1)
+                    except Exception as ex:
+                        print(f"  [TRANSLATION] {model} attempt {attempt} failed: {ex}")
                     time.sleep(1)
-                except Exception as ex:
-                    print(f"  [TRANSLATION] Gemma attempt {attempt} failed: {ex}")
-                time.sleep(1)
+                if batch_translated is not None:
+                    break
                 
             if batch_translated is not None:
                 translated_all.extend(batch_translated)

@@ -1,0 +1,20 @@
+# cooking.yaml — Scenario profile: طبخ / وصفات (ASMR-friendly)
+name_ar: "طبخ"
+name_en: "cooking"
+
+hook_strategy: >-
+  Find the single most mouth-watering or surprising moment from this cooking
+  transcript. Prefer the final reveal, a satisfying technique, or an
+  irresistible description of the dish.
+
+caption_theme: "TikTok Yellow"
+zoom_style: "punch"
+color_grade: "cinematic_warm"   # warm appetizing tones
+sfx_mood: "sizzling_satisfying" # sizzles, crunches, ASMR accents
+
+pacing: 8                       # cuts_per_minute — quick recipe-step rhythm
+min_clip_sec: 15.0
+max_clip_sec: 45.0
+
+broll_density: 0.45             # heavy food close-ups and ingredient cutaways
+emphasis_words_boost: 1.5       # boost tasty adjectives ("crispy", "melty")

@@ -1,0 +1,40 @@
+.git
+.gitignore
+.github
+
+# Flutter desktop client (not part of backend image)
+flutter_client/build
+flutter_client/.dart_tool
+flutter_client/windows
+flutter_client/linux
+flutter_client/macos
+
+# Python artifacts
+__pycache__
+*.pyc
+.pytest_cache
+
+# Runtime data
+*.db
+storage/
+temp/
+cache/
+output/
+projects/
+profiles/
+yt_login_profile/
+
+# Node / misc
+node_modules
+dist
+build
+scratch
+
+# Secrets & logs
+.env
+*.log
+cookies.txt
+
+# Docs & CI not needed in image
+docs
+agents

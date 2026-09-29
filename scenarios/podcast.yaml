@@ -1,0 +1,22 @@
+# podcast.yaml — Scenario profile: بودكاست / حوار هادئ
+# Loaded by scenario_library.py — fallback profile for unknown content types.
+name_ar: "بودكاست"
+name_en: "podcast"
+
+# Prompt fragment injected into hook-finding LLM calls.
+hook_strategy: >-
+  Find the single most compelling calm sentence from this podcast transcript
+  that would stop someone mid-scroll. Prefer questions, shocking reveals,
+  or counterintuitive statements.
+
+caption_theme: "Minimalist Clean"
+zoom_style: "gentle"
+color_grade: "none"
+sfx_mood: "soft_chill"          # low-key thuds and chimes, never aggressive
+
+pacing: 4                       # cuts_per_minute — slow conversational rhythm
+min_clip_sec: 25.0
+max_clip_sec: 60.0
+
+broll_density: 0.15             # rare cutaways; faces carry the clip
+emphasis_words_boost: 1.2       # mild emphasis on punch words only

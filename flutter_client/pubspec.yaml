@@ -1,4 +1,4 @@
-name: flutter_client
+﻿name: flutter_client
 description: "Clippify — Professional NLE Desktop Video Editor"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -30,6 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -48,12 +50,21 @@ dependencies:
   shared_preferences: ^2.3.0
   flutter_dotenv: ^5.1.0
   crypto: ^3.0.3
+  flutter_secure_storage: ^9.2.2
+  url_launcher: ^6.3.0
+  share_plus: ^10.0.2
+  gal: ^2.3.0
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
   flutter_lints: ^5.0.0
+
+  # AGENT-E3 (store builds) â€” appended, do not remove existing entries
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -96,3 +107,29 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+  # ==== Squad-B0 [TokenSmith] premium typography - appended, do not remove ====
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo-Variable.ttf
+    - family: Rubik
+      fonts:
+        - asset: assets/fonts/Rubik-Variable.ttf
+
+# ==== AGENT-E3 (store builds) â€” appended config blocks ====
+flutter_launcher_icons:
+  image_path: "assets/icon/icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_background: "#4F46E5"
+  adaptive_icon_foreground: "assets/icon/icon.png"
+
+flutter_native_splash:
+  color: "#0B0B10"
+  image: "assets/icon/icon.png"
+  android_12:
+    color: "#0B0B10"
+    icon_background_color: "#0B0B10"
+    image: "assets/icon/icon.png"

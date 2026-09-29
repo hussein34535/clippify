@@ -49,6 +49,10 @@ venv.bak/
 *.sqlite
 *.sqlite3
 
+# Rust
+engine/target/
+*.pdb
+
 # Build artifacts and analysis
 analysis.json
 analysis_options.json.bak
@@ -90,9 +94,25 @@ flutter_client/.dart_tool/
 flutter_client/.pub-cache/
 flutter_client/.flutter-plugins-dependencies
 flutter_client/coverage/
+flutter_client/android/.gradle/
+flutter_client/android/local.properties
+flutter_client/android/app/.cxx/
+flutter_client/ios/Pods/
+*.iml
 
 # IDE / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Live secrets (must never be committed)
+pexels_key.txt
+cookies.txt
+users.db
+storage/
+
+# Model / HF caches
+.hf-cache/
+*.gguf
+*.bin

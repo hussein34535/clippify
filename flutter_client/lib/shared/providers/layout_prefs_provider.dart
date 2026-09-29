@@ -40,8 +40,8 @@ class LayoutPrefsState {
   const LayoutPrefsState({
     this.workspacePadding = 6.0,
     this.panelGap = 6.0,
-    this.panelRadius = 8.0,
-    this.panelBorderWidth = 1.0,
+    this.panelRadius = 12.0,
+    this.panelBorderWidth = 0.5,
     this.headerHeight = 56.0,
     this.leftPanelFraction = 0.18,
     this.rightPanelFraction = 0.22,
@@ -88,8 +88,8 @@ class LayoutPrefsNotifier extends StateNotifier<LayoutPrefsState> {
     state = LayoutPrefsState(
       workspacePadding: prefs.getDouble('layout_workspace_padding') ?? 6.0,
       panelGap: prefs.getDouble('layout_panel_gap') ?? 6.0,
-      panelRadius: prefs.getDouble('layout_panel_radius') ?? 8.0,
-      panelBorderWidth: prefs.getDouble('layout_panel_border_width') ?? 1.0,
+      panelRadius: prefs.getDouble('layout_panel_radius') ?? 12.0,
+      panelBorderWidth: prefs.getDouble('layout_panel_border_width') ?? 0.5,
       headerHeight: prefs.getDouble('layout_header_height') ?? 56.0,
       leftPanelFraction: prefs.getDouble('layout_left_fraction') ?? 0.18,
       rightPanelFraction: prefs.getDouble('layout_right_fraction') ?? 0.22,

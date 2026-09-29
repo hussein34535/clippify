@@ -1,19 +1,29 @@
 @echo off
-title Clippify Studio Starter
-echo =========================================
-echo Starting Clippify Studio...
-echo =========================================
+chcp 65001 >nul
+title Clippify Studio
+setlocal
+cd /d "%~dp0"
 
-echo Starting FastAPI Backend Server...
-start "Clippify Backend" cmd /c "python api.py"
+rem ============================================================
+rem  Clippify Studio — one-click launcher
+rem  كل المنطق داخل run_clippify.py: اكتشاف بايثون المشروع،
+rem  تشغيل الباك إند (api.py)، ثم واجهة Flutter Desktop.
+rem  تعمل بأي بايثون متاح — حتى embedded (لا يحتاج fastapi).
+rem ============================================================
 
-echo Starting Flutter Desktop Application...
-cd flutter_client
-start "Clippify Frontend" cmd /c "flutter run -d windows"
+set "PY=python"
+python -c "print(1)" >nul 2>nul
+if errorlevel 1 set "PY=py -3"
 
-echo =========================================
-echo Clippify Studio is running!
-echo Backend: http://127.0.0.1:8000
-echo Frontend: Flutter Desktop
-echo =========================================
-pause
+%PY% run_clippify.py %*
+set "EXITCODE=%errorlevel%"
+
+if not "%EXITCODE%"=="0" (
+    echo.
+    echo [!] Clippify exited with code %EXITCODE%.
+    echo     - لو بايثون غير مثبت: ثبت Python 3.10+ أو اضبط CLIPPIFY_PYTHON.
+    echo     - لو المتطلبات ناقصة: pip install -r requirements.txt
+    echo     - للفحص بدون تشغيل: python run_clippify.py --dry-run
+    pause
+)
+exit /b %EXITCODE%

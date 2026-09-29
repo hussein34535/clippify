@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../core/models/timeline_models.dart';
 import '../../../core/constants/timeline_constants.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/audio_waveform.dart';
 import '../../../shared/utils/thumbnail_generator.dart';
 
@@ -48,36 +49,37 @@ class ClipItemWidget extends StatelessWidget {
   });
 
   LinearGradient _getBackgroundGradient() {
+    // Low-saturation, dark-tinted washes of the iOS system palette.
     switch (clipType) {
       case 'video':
         return const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF10B981), Color(0xFF047857)],
+          colors: [Color(0xFF1E3450), Color(0xFF152438)],
         );
       case 'audio':
         return const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF8B5CF6), Color(0xFF6D28D9)],
+          colors: [Color(0xFF1D3A2C), Color(0xFF14291F)],
         );
       case 'overlay':
         return const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFF59E0B), Color(0xFFB45309)],
+          colors: [Color(0xFF3D2C13), Color(0xFF2A1F0F)],
         );
       case 'subtitle':
         return const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF0EA5E9), Color(0xFF1D4ED8)],
+          colors: [Color(0xFF123240), Color(0xFF0D232C)],
         );
       default:
         return const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF1A1B20), Color(0xFF1A1B20)],
+          colors: [Color(0xFF232326), Color(0xFF1A1A1D)],
         );
     }
   }
@@ -87,13 +89,8 @@ class ClipItemWidget extends StatelessWidget {
   }
 
   Color _getSelectedBorderColor() {
-    switch (clipType) {
-      case 'video':   return const Color(0xFF818CF8); // Soft Pastel Indigo
-      case 'audio':   return const Color(0xFF2DD4BF); // Soft Mint Teal
-      case 'overlay': return const Color(0xFFFB923C); // Soft Pastel Orange
-      case 'subtitle': return const Color(0xFF34D399); // Soft Sage Emerald
-      default:        return Colors.white;
-    }
+    // iOS system blue selection frame for every clip type.
+    return AppColors.primary;
   }
 
   String _getLabel() {
@@ -150,6 +147,7 @@ class ClipItemWidget extends StatelessWidget {
                     style: const TextStyle(fontSize: 8.5, color: Colors.white, fontWeight: FontWeight.w500, fontFamily: 'Inter'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    textDirection: TextDirection.ltr, // filenames: keep extension sane in RTL
                   ),
                 ),
               ),
@@ -188,7 +186,7 @@ class ClipItemWidget extends StatelessWidget {
                   child: Row(
                     children: [
                       Text(
-                        clipType == 'video' ? 'Adjust Video' : 'Adjust VO',
+                        clipType == 'video' ? 'ضبط' : 'صوت',
                         style: TextStyle(fontSize: 7.5, color: Colors.white.withValues(alpha: 0.7), fontFamily: 'Inter'),
                       ),
                       const SizedBox(width: 1),
@@ -237,7 +235,7 @@ class ClipItemWidget extends StatelessWidget {
       final audioClip = clip as AudioClip;
       final Color waveColor = isMuted
           ? const Color(0xFF55555F).withValues(alpha: 0.4)
-          : const Color(0xFF0D9488).withValues(alpha: 0.6);
+          : AppColors.secondary.withValues(alpha: 0.6);
 
       return Expanded(
         child: Padding(
@@ -263,7 +261,6 @@ class ClipItemWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double clipWidth = _getClipWidth();
     return Opacity(
       opacity: isHidden ? 0.35 : 1.0,
       child: GestureDetector(
@@ -288,11 +285,14 @@ class ClipItemWidget extends StatelessWidget {
                     clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
                       gradient: _getBackgroundGradient(),
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
                       border: Border.all(
-                        color: isSelected ? _getSelectedBorderColor() : Colors.white.withValues(alpha: 0.08),
-                        width: isSelected ? 1.5 : 0.8,
+                        color: isSelected ? _getSelectedBorderColor() : AppColors.border,
+                        width: isSelected ? 1.2 : 0.5,
                       ),
+                      boxShadow: isSelected
+                          ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.28), blurRadius: 10, spreadRadius: -2)]
+                          : null,
                     ),
                     child: clipType == 'subtitle'
                         ? Center(
@@ -467,7 +467,7 @@ class _TimelineVideoThumbnailState extends State<TimelineVideoThumbnail> {
 
   Widget _buildPlaceholder() {
     return Container(
-      color: const Color(0xFF1E1F24),
+      color: const Color(0xFF1C1C1E),
       child: Center(
         child: Icon(Icons.videocam_outlined, color: Colors.white.withValues(alpha: 0.08), size: 16),
       ),

@@ -1,0 +1,27 @@
+# Clippify API server (FastAPI + ffmpeg)
+FROM python:3.11-slim
+
+# ffmpeg required by clipper/audio pipelines; curl not needed (healthcheck uses python)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Dependencies first for layer caching
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# App code (heavy dirs excluded via .dockerignore)
+COPY . .
+
+ENV STORAGE_DIR=/app/storage \
+    DATABASE_URL=sqlite:////app/data/clippify.db \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD python -c "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health', timeout=4)"
+
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]

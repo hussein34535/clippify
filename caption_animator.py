@@ -27,6 +27,59 @@ def _t(seconds: float) -> str:
 
 
 # -----------------------------------------------------------------------------
+#  P0: Continuous caption windows — bridge speech pauses
+# -----------------------------------------------------------------------------
+
+# Minimum time any caption word stays visible (seconds).
+MIN_WORD_DISPLAY = 0.2
+# Pauses longer than this are still bridged, but get logged (seconds).
+MAX_ALLOWED_GAP = 0.3
+
+
+def _extend_word_windows(words: list, min_display: float = MIN_WORD_DISPLAY,
+                         max_gap: float = MAX_ALLOWED_GAP) -> list:
+    """Return per-word (start, end) display windows with all gaps bridged.
+
+    P0 fix: word-level dialogues used to end exactly at word["end"], leaving
+    the screen empty during speech pauses (observed 0.9s caption holes).
+    Rules:
+      - every word displays for at least `min_display` seconds, capped at the
+        next word's start so events never overlap;
+      - each word stays visible until the next word begins — pauses longer
+        than `max_gap` are bridged too ("continuous caption" contract:
+        >=95% coverage of the spoken span).
+    """
+    n = len(words)
+    windows = []
+    for i, w in enumerate(words):
+        start = max(0.0, float(w.get("start", 0.0)))
+        end = max(start, float(w.get("end", start)))
+        if end < start + min_display:
+            end = start + min_display
+        if i + 1 < n:
+            next_start = max(0.0, float(words[i + 1].get("start", end)))
+            if end > next_start:
+                end = next_start          # never overlap the next word
+            elif next_start > end:
+                if next_start - end > max_gap:
+                    print(f"[Captions] Bridging {next_start - end:.2f}s pause gap "
+                          f"(> {max_gap:.2f}s) for continuous captions")
+                end = next_start          # fill the gap
+        windows.append((start, max(start + 0.05, end)))
+    return windows
+
+
+def _w_start(w: dict) -> float:
+    """Display start of a word (gap-extended when annotated)."""
+    return float(w.get("_disp_start", w.get("start", 0.0)))
+
+
+def _w_end(w: dict) -> float:
+    """Display end of a word (gap-extended when annotated)."""
+    return float(w.get("_disp_end", w.get("end", 0.0)))
+
+
+# -----------------------------------------------------------------------------
 #  Color helpers (ASS uses BGR hex &HBBGGRR&)
 # -----------------------------------------------------------------------------
 
@@ -291,7 +344,7 @@ def _mode_karaoke(chunks: list, font_name: str,
             line = " ".join(parts)
             alignment = "\\an5" if is_hook else "\\an2"
             events.append(_dialogue(
-                active_word["start"], active_word["end"], style,
+                _w_start(active_word), _w_end(active_word), style,
                 f"{{{alignment}}}{line}", res_y=res_y
             ))
     return _ass_header(styles, res_x, res_y) + "\n".join(events)
@@ -348,7 +401,7 @@ def _mode_word_pop(chunks: list, font_name: str,
             line = " ".join(parts)
             alignment = "\\an5" if is_hook else "\\an2"
             events.append(_dialogue(
-                active_word["start"], active_word["end"], style,
+                _w_start(active_word), _w_end(active_word), style,
                 f"{{{alignment}}}{line}", res_y=res_y
             ))
     return _ass_header(styles, res_x, res_y) + "\n".join(events)
@@ -403,7 +456,7 @@ def _mode_dual_color(chunks: list, font_name: str,
             line = " ".join(parts)
             alignment = "\\an5" if is_hook else "\\an2"
             events.append(_dialogue(
-                active_word["start"], active_word["end"], style,
+                _w_start(active_word), _w_end(active_word), style,
                 f"{{{alignment}}}{line}", res_y=res_y
             ))
     return _ass_header(styles, res_x, res_y) + "\n".join(events)
@@ -427,8 +480,8 @@ def _mode_cinematic(chunks: list, font_name: str,
     for chunk in chunks:
         words = chunk
         phrase = " ".join(w["text"].upper() for w in words)
-        chunk_start = words[0]["start"]
-        chunk_end = words[-1]["end"]
+        chunk_start = _w_start(words[0])
+        chunk_end = _w_end(words[-1])
         duration_ms = max(50, int((chunk_end - chunk_start) * 1000))
         fade_in = min(150, duration_ms // 4)
         fade_out = min(100, duration_ms // 5)
@@ -497,7 +550,7 @@ def _mode_flash(chunks: list, font_name: str,
             style = "Hook" if is_hook else "Main"
             alignment = "\\an5" if is_hook else "\\an2"
             events.append(_dialogue(
-                active_word["start"], active_word["end"], style,
+                _w_start(active_word), _w_end(active_word), style,
                 f"{{{alignment}}}{line}", res_y=res_y
             ))
     return _ass_header(styles, res_x, res_y) + "\n".join(events)
@@ -538,6 +591,12 @@ def generate_animated_ass(
     if not emphasis_words:
         emphasis_words = []
     emphasis_words = list(set([w.lower().strip(".,!?;:") for w in emphasis_words] + detected_emp))
+
+    # P0: annotate each word with its gap-bridged display window so every
+    # mode (word-level and chunk-level) keeps captions continuously on screen.
+    for w, (ws, we) in zip(words, _extend_word_windows(words)):
+        w["_disp_start"] = ws
+        w["_disp_end"] = we
 
     # Handle Arabic translation
     if translate_to_arabic:
@@ -607,8 +666,8 @@ def _generate_arabic_ass(words: list, output_path: str, mode: str,
     events = []
     for ci, chunk in enumerate(chunks):
         arabic_text = translated[ci] if ci < len(translated) else " ".join(w["text"] for w in chunk)
-        chunk_start = chunk[0]["start"]
-        chunk_end = chunk[-1]["end"]
+        chunk_start = _w_start(chunk[0])
+        chunk_end = _w_end(chunk[-1])
         
         is_hook = False
         if hook_start_sec is not None and hook_end_sec is not None and hook_end_sec > hook_start_sec:

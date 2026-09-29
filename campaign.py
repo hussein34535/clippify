@@ -219,10 +219,11 @@ def generate_ai_captions(
     api_key: str,
 ) -> List[str]:
     """
-    Generates 5 highly engaging, platform-native viral captions using gemma-2-27b-it.
+    Generates 5 highly engaging, platform-native viral captions using the primary configured LLM.
     """
     import requests
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemma-2-27b-it:generateContent?key={api_key}"
+    import llm_config
+    url = llm_config.llm_url(llm_config.MODEL_CHAIN[0])
     headers = {"Content-Type": "application/json"}
 
     prompt = f"""
@@ -356,7 +357,8 @@ Return ONLY a valid JSON object matching this exact format:
 }}
 """
 
-    models_to_try = ["gemma-2-27b-it", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"]
+    MODELS = __import__('llm_config').MODEL_CHAIN
+    models_to_try = list(MODELS)  # full live chain from llm_config (P0: gemini-1.5 retired)
     response = None
     last_err = None
     for model in models_to_try:

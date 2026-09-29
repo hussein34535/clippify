@@ -1,0 +1,122 @@
+{
+  "sr": 44100,
+  "seed": 42,
+  "sounds": [
+    {
+      "name": "whoosh_up",
+      "file": "whoosh_up.wav",
+      "duration_sec": 0.6,
+      "mood_tags": [
+        "transition",
+        "energy"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "whoosh_down",
+      "file": "whoosh_down.wav",
+      "duration_sec": 0.6,
+      "mood_tags": [
+        "transition"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "riser",
+      "file": "riser.wav",
+      "duration_sec": 1.4,
+      "mood_tags": [
+        "buildup",
+        "hook"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "impact",
+      "file": "impact.wav",
+      "duration_sec": 0.35,
+      "mood_tags": [
+        "hit",
+        "emphasis"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "pop",
+      "file": "pop.wav",
+      "duration_sec": 0.05,
+      "mood_tags": [
+        "ui",
+        "caption"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "click",
+      "file": "click.wav",
+      "duration_sec": 0.012,
+      "mood_tags": [
+        "ui"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "ding",
+      "file": "ding.wav",
+      "duration_sec": 1.0,
+      "mood_tags": [
+        "success",
+        "ui"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "tick",
+      "file": "tick.wav",
+      "duration_sec": 0.03,
+      "mood_tags": [
+        "ui",
+        "countdown"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "sub_drop",
+      "file": "sub_drop.wav",
+      "duration_sec": 0.7,
+      "mood_tags": [
+        "drop",
+        "punchline"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "sparkle",
+      "file": "sparkle.wav",
+      "duration_sec": 0.5,
+      "mood_tags": [
+        "magic",
+        "reveal"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "transition_up",
+      "file": "transition_up.wav",
+      "duration_sec": 0.5,
+      "mood_tags": [
+        "scene-change"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    },
+    {
+      "name": "transition_down",
+      "file": "transition_down.wav",
+      "duration_sec": 0.5,
+      "mood_tags": [
+        "scene-change"
+      ],
+      "license": "Generated in-app (own work, CC0-dedicated)"
+    }
+  ]
+}

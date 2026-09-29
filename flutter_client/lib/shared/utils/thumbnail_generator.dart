@@ -1,8 +1,9 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import '../../core/native/ffmpeg_service.dart';
 import '../../core/cache/cache_manager.dart';
 
 class ThumbnailCache {
@@ -99,34 +100,50 @@ class ThumbnailCache {
 }
 
 class ThumbnailGenerator {
-  static Future<String?> generate(String videoPath, double timestampSec, {int width = 160, int height = 90}) async {
+  ThumbnailGenerator._();
+
+  /// ffmpeg is NOT guaranteed on PATH (the imageio fallback lives backend-side).
+  /// Resolve once via /api/system/ffmpeg; cache statically.
+  static String? _exe;
+  static bool _exeResolved = false;
+
+  static Future<String> _ffmpegExe() async {
+    if (_exeResolved) return _exe ?? 'ffmpeg';
+    _exeResolved = true;
+    _exe = await FfmpegService.resolveExe();
+    return _exe!;
+  }
+
+  static Future<String?> generate(String videoPath, double timestampSec,
+      {int width = 160, int height = 90}) async {
     final cache = ThumbnailCache();
 
-    final cached = await cache.get(videoPath, timestampSec, width: width, height: height);
+    final cached =
+        await cache.get(videoPath, timestampSec, width: width, height: height);
     if (cached != null) return cached;
 
     try {
       final tempDir = await getTemporaryDirectory();
-      final tempFile = p.join(tempDir.path, 'thumb_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final tempFile =
+          p.join(tempDir.path, 'thumb_${DateTime.now().millisecondsSinceEpoch}.jpg');
 
-      final result = await Process.run(
-        'ffmpeg',
-        [
-          '-ss', timestampSec.toStringAsFixed(1),
-          '-i', videoPath,
-          '-vframes', '1',
-          '-q:v', '2',
-          '-vf', 'scale=$width:$height',
-          '-y',
-          tempFile,
-        ],
-      );
+      final exe = await _ffmpegExe();
+      final result = await Process.run(exe, [
+        '-ss', timestampSec.toStringAsFixed(1),
+        '-i', videoPath,
+        '-vframes', '1',
+        '-q:v', '2',
+        '-vf', 'scale=$width:$height',
+        '-y',
+        tempFile,
+      ]);
 
       if (result.exitCode != 0 || !await File(tempFile).exists()) {
         return null;
       }
 
-      final cachedPath = await cache.set(videoPath, timestampSec, tempFile, width: width, height: height);
+      final cachedPath = await cache.set(videoPath, timestampSec, tempFile,
+          width: width, height: height);
 
       try {
         await File(tempFile).delete();
@@ -152,7 +169,8 @@ class ThumbnailGenerator {
 
     for (int i = 0; i < count; i++) {
       final timestamp = startTimestamp + i * step;
-      final thumb = await generate(videoPath, timestamp, width: width, height: height);
+      final thumb =
+          await generate(videoPath, timestamp, width: width, height: height);
       if (thumb != null) {
         results.add(thumb);
       }

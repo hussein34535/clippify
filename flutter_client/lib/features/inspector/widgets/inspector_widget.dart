@@ -7,10 +7,10 @@ import '../../../core/theme/app_theme.dart';
 import 'ai_tool_palette.dart';
 import 'subtitle_editor.dart';
 import 'speed_ramp_editor.dart';
-import 'color_grading_panel.dart';
 import 'inspector_shared.dart';
 import '../../../shared/providers/comments_provider.dart';
 import '../../../shared/widgets/audio_mixer.dart';
+import '../../../shared/widgets/ios_kit.dart';
 import '../../ai/widgets/ai_panels.dart';
 import '../../audio/widgets/audio_automation.dart';
 import '../../tracking/tracker_system.dart';
@@ -171,22 +171,22 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppColors.divider)),
+            border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
           ),
           child: Row(
             children: [
               Container(
                 width: 28, height: 28,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: [AppColors.primary, Color(0xFF7B2FF7)]),
-                  borderRadius: BorderRadius.circular(7),
+                  gradient: const LinearGradient(colors: [AppColors.primary, AppColors.indigo]),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(Icons.auto_awesome_rounded, size: 14, color: Colors.white),
               ),
               const SizedBox(width: 8),
               const Text(
                 'AI Copilot',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white, fontFamilyFallback: AppTypography.fallbacks),
               ),
             ],
           ),
@@ -198,31 +198,36 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
               ...List.generate(6, (i) {
                 final suggestions = ['تقطيع ذكي', 'إزالة الخلفية', 'تحسين الصوت', 'تتبع الكادر', 'ترجمة تلقائية', 'ضبط الألوان'];
                 final icons = [Icons.content_cut_rounded, Icons.backup_table_rounded, Icons.hearing_rounded, Icons.center_focus_strong_rounded, Icons.translate_rounded, Icons.color_lens_rounded];
-                return Card(
-                  color: AppColors.card,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                      radius: 18,
-                      child: Icon(icons[i], size: 18, color: AppColors.primary),
-                    ),
-                    title: Text(suggestions[i], style: const TextStyle(fontSize: 13, color: Colors.white)),
-                    trailing: const Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: AppColors.textMuted),
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: IOSCard(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     onTap: () {
                       ref.read(copilotProvider.notifier).sendPrompt(suggestions[i], ref);
                     },
+                    child: ListTile(
+                      dense: true,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg)),
+                      leading: CircleAvatar(
+                        backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                        radius: 18,
+                        child: Icon(icons[i], size: 18, color: AppColors.primary),
+                      ),
+                      title: Text(suggestions[i], style: const TextStyle(fontSize: 13, color: Colors.white, fontFamilyFallback: AppTypography.fallbacks)),
+                      trailing: const Icon(Icons.arrow_back_ios_new_rounded, size: 13, color: AppColors.textMuted),
+                    ),
                   ),
                 );
               }),
               const SizedBox(height: 24),
-              const Text('مساعد الذكاء الاصطناعي', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
+              const Text('مساعد الذكاء الاصطناعي', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white, fontFamilyFallback: AppTypography.fallbacks)),
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: AppColors.card,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  border: Border.all(color: AppColors.border, width: 0.5),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -235,11 +240,11 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
                           child: const Icon(Icons.psychology, size: 16, color: AppColors.primary),
                         ),
                         const SizedBox(width: 10),
-                        const Text('المساعد الذكي', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        const Text('المساعد الذكي', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontFamilyFallback: AppTypography.fallbacks)),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    const Text('مرحباً! أنا مساعد Clippify الذكي. كيف يمكنني مساعدتك في تحرير الفيديو اليوم؟', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                    const Text('مرحباً! أنا مساعد Clippify الذكي. كيف يمكنني مساعدتك في تحرير الفيديو اليوم؟', style: TextStyle(fontSize: 12, color: Colors.white70, fontFamilyFallback: AppTypography.fallbacks)),
                   ],
                 ),
               ),
@@ -249,7 +254,7 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
         Container(
           padding: const EdgeInsets.all(12),
           decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: AppColors.divider)),
+            border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
           ),
           child: Row(
             children: [
@@ -261,10 +266,10 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
                       hintStyle: const TextStyle(fontSize: 12, color: AppColors.textMuted),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
                       filled: true,
-                      fillColor: AppColors.background,
+                      fillColor: AppColors.surfaceVariant,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     ),
-                    style: const TextStyle(fontSize: 12, color: Colors.white),
+                    style: const TextStyle(fontSize: 12, color: Colors.white, fontFamilyFallback: AppTypography.fallbacks),
                     onSubmitted: (val) {
                       if (val.trim().isNotEmpty) {
                         ref.read(copilotProvider.notifier).sendPrompt(val.trim(), ref);
@@ -291,61 +296,6 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildTransformTab(VideoClip clip) {
-    final notifier = ref.read(timelineProvider.notifier);
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        InspectorSectionHeader(title: 'الموقع (Position)'),
-        const SizedBox(height: 8),
-        InspectorPropertySlider(
-          label: 'الموقع X',
-          value: clip.transform.position.x,
-          min: -500, max: 500,
-          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(position: c.transform.position.copyWith(x: v)))),
-        ),
-        InspectorPropertySlider(
-          label: 'الموقع Y',
-          value: clip.transform.position.y,
-          min: -500, max: 500,
-          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(position: c.transform.position.copyWith(y: v)))),
-        ),
-        const SizedBox(height: 16),
-        InspectorSectionHeader(title: 'القياس (Scale)'),
-        const SizedBox(height: 8),
-        InspectorPropertySlider(
-          label: 'العرض %',
-          value: clip.transform.scale.x,
-          min: 1, max: 200,
-          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(scale: c.transform.scale.copyWith(x: v)))),
-        ),
-        InspectorPropertySlider(
-          label: 'الارتفاع %',
-          value: clip.transform.scale.y,
-          min: 1, max: 200,
-          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(scale: c.transform.scale.copyWith(y: v)))),
-        ),
-        const SizedBox(height: 16),
-        InspectorSectionHeader(title: 'الدوران (Rotation)'),
-        const SizedBox(height: 8),
-        InspectorPropertySlider(
-          label: 'زاوية الدوران',
-          value: clip.transform.rotation,
-          min: -180, max: 180,
-          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(rotation: v))),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildColorTab(VideoClip clip) {
-    final notifier = ref.read(timelineProvider.notifier);
-    return ColorGradingPanel(
-      clip: clip,
-      onChanged: (cg) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(colorGrading: cg)),
     );
   }
 
@@ -578,68 +528,6 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
       onBassChanged: (v) => notifier.updateVideoClip(clipId, (c) => c.copyWith(bass: v)),
       onMidChanged: (v) => notifier.updateVideoClip(clipId, (c) => c.copyWith(mid: v)),
       onTrebleChanged: (v) => notifier.updateVideoClip(clipId, (c) => c.copyWith(treble: v)),
-    );
-  }
-
-  Widget _buildKeyframesTab(VideoClip clip) {
-    final notifier = ref.read(timelineProvider.notifier);
-    final cd = clip.endTimeInTimeline - clip.startTimeInTimeline;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InspectorSectionHeader(title: 'Graph Editor'),
-          const SizedBox(height: 8),
-          Text('حرر keyframes بالجراف',
-              style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
-          const SizedBox(height: 16),
-          CurveEditorWidget(
-            allKeyframes: clip.transform.keyframes,
-            clipDuration: cd,
-            initialProperty: 'position_x',
-            onChanged: (kfs) {
-              notifier.updateVideoClip(clip.id, (c) => c.copyWith(
-                  transform: c.transform.copyWith(keyframes: kfs)));
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAITab(VideoClip clip) {
-    final notifier = ref.read(timelineProvider.notifier);
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        InspectorSectionHeader(title: 'Smart Cut (قص ذكي)'),
-        const SizedBox(height: 8),
-        SmartCutPanel(videoPath: clip.sourcePath),
-        const Divider(height: 24, color: AppColors.divider),
-        InspectorSectionHeader(title: 'إزالة الخلفية'),
-        const SizedBox(height: 8),
-        BackgroundRemovalPanel(
-          currentMethod: clip.aiFeatures.bgRemoveMethod,
-          chromakeyColor: clip.aiFeatures.chromakeyColor,
-          onMethodChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(aiFeatures: c.aiFeatures.copyWith(bgRemoveMethod: v))),
-          onColorChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(aiFeatures: c.aiFeatures.copyWith(chromakeyColor: v))),
-        ),
-        const Divider(height: 24, color: AppColors.divider),
-        InspectorSectionHeader(title: 'تتبع الكادر الذكي'),
-        SwitchListTile(
-          title: const Text('عزل الصوت', style: TextStyle(fontSize: 12)),
-          value: clip.aiFeatures.vocalIsolation,
-          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(aiFeatures: c.aiFeatures.copyWith(vocalIsolation: v))),
-          activeTrackColor: AppColors.primary,
-        ),
-        SwitchListTile(
-          title: const Text('خفض الضوضاء', style: TextStyle(fontSize: 12)),
-          value: clip.aiFeatures.autoDucking,
-          onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(aiFeatures: c.aiFeatures.copyWith(autoDucking: v))),
-          activeTrackColor: AppColors.primary,
-        ),
-      ],
     );
   }
 
@@ -910,7 +798,7 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        InspectorSectionHeader(title: 'الموقع (Position)'),
+        InspectorSectionHeader(title: 'الموقع'),
         const SizedBox(height: 8),
         InspectorPropertySlider(
           label: 'الموقع X',
@@ -925,7 +813,7 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
           onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(position: c.transform.position.copyWith(y: v)))),
         ),
         const SizedBox(height: 16),
-        InspectorSectionHeader(title: 'القياس (Scale)'),
+        InspectorSectionHeader(title: 'القياس'),
         const SizedBox(height: 8),
         InspectorPropertySlider(
           label: 'العرض %',
@@ -940,7 +828,7 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
           onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(scale: c.transform.scale.copyWith(y: v)))),
         ),
         const SizedBox(height: 16),
-        InspectorSectionHeader(title: 'الدوران (Rotation)'),
+        InspectorSectionHeader(title: 'الدوران'),
         const SizedBox(height: 8),
         InspectorPropertySlider(
           label: 'زاوية الدوران',
@@ -949,9 +837,9 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
           onChanged: (v) => notifier.updateVideoClip(clip.id, (c) => c.copyWith(transform: c.transform.copyWith(rotation: v))),
         ),
         const Divider(height: 32, color: AppColors.divider),
-        InspectorSectionHeader(title: 'Keyframes (مخطط الحركة)'),
+        InspectorSectionHeader(title: 'مخطط الحركة'),
         const SizedBox(height: 8),
-        const Text('حرر keyframes بالجراف', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+        const Text('حرر الإطارات المفتاحية بالجراف', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
         const SizedBox(height: 16),
         CurveEditorWidget(
           allKeyframes: clip.transform.keyframes,
@@ -977,7 +865,7 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
           tabs: const [
             Tab(text: 'مساعد AI'),
             Tab(text: 'أدوات ذكية'),
-            Tab(text: 'Viral'),
+            Tab(text: 'ترند'),
           ],
         ),
         Expanded(

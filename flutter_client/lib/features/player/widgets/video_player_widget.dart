@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,10 +25,7 @@ import '../../../core/rendering/color_matrix_utils.dart';
 class VideoPlayerWidget extends ConsumerStatefulWidget {
   final String? videoPath;
 
-  const VideoPlayerWidget({
-    super.key,
-    required this.videoPath,
-  });
+  const VideoPlayerWidget({super.key, required this.videoPath});
 
   @override
   ConsumerState<VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
@@ -48,6 +47,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   ProviderSubscription? _isPlayingSub;
   ProviderSubscription? _playheadSub;
   ProviderSubscription? _scrubSub;
+  StreamSubscription<Duration>? _durationSub;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<bool>? _playingSub;
+  Duration _mediaDuration = Duration.zero;
 
   Future<void> _safeSeek(int targetPosMs) async {
     if (_isSeeking) {
@@ -70,7 +73,8 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     final state = ref.read(timelineProvider).timeline;
     for (final track in state.tracks.video) {
       for (final clip in track.clips) {
-        if (playheadSec >= clip.startTimeInTimeline && playheadSec < clip.endTimeInTimeline) {
+        if (playheadSec >= clip.startTimeInTimeline &&
+            playheadSec < clip.endTimeInTimeline) {
           return clip;
         }
       }
@@ -86,9 +90,12 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     final transitionDuration = clip.outTransition.duration;
     final clipDuration = clip.endTimeInTimeline - clip.startTimeInTimeline;
     final transitionStart = clipDuration - transitionDuration;
-    final currentTimeInClip = ref.read(timelineProvider).timeline.playheadSec - clip.startTimeInTimeline;
+    final currentTimeInClip =
+        ref.read(timelineProvider).timeline.playheadSec -
+        clip.startTimeInTimeline;
 
-    if (currentTimeInClip >= transitionStart && currentTimeInClip < clipDuration) {
+    if (currentTimeInClip >= transitionStart &&
+        currentTimeInClip < clipDuration) {
       return (currentTimeInClip - transitionStart) / transitionDuration;
     }
     return 0.0;
@@ -99,24 +106,15 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
       case 'fade_to_black':
         return Opacity(
           opacity: 1.0 - progress,
-          child: Container(
-            color: Colors.black,
-            child: child,
-          ),
+          child: Container(color: Colors.black, child: child),
         );
       case 'fade_to_white':
         return Opacity(
           opacity: 1.0 - progress,
-          child: Container(
-            color: Colors.white,
-            child: child,
-          ),
+          child: Container(color: Colors.white, child: child),
         );
       case 'cross_dissolve':
-        return Opacity(
-          opacity: 1.0 - progress,
-          child: child,
-        );
+        return Opacity(opacity: 1.0 - progress, child: child);
       case 'wipe_left':
         return ClipRect(
           child: FractionalTranslation(
@@ -148,39 +146,43 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
       case 'zoom_in':
         return Transform.scale(
           scale: 1.0 + progress,
-          child: Opacity(
-            opacity: 1.0 - progress,
-            child: child,
-          ),
+          child: Opacity(opacity: 1.0 - progress, child: child),
         );
       case 'zoom_out':
         return Transform.scale(
           scale: 1.0 - progress,
-          child: Opacity(
-            opacity: 1.0 - progress,
-            child: child,
-          ),
+          child: Opacity(opacity: 1.0 - progress, child: child),
         );
       case 'spin':
         return Transform.rotate(
           angle: progress * math.pi * 2,
-          child: Opacity(
-            opacity: 1.0 - progress,
-            child: child,
-          ),
+          child: Opacity(opacity: 1.0 - progress, child: child),
         );
       case 'blur':
         return ColorFiltered(
           colorFilter: ColorFilter.matrix([
-            1.0 - progress, 0, 0, 0, 0,
-            0, 1.0 - progress, 0, 0, 0,
-            0, 0, 1.0 - progress, 0, 0,
-            0, 0, 0, 1, 0,
+            1.0 - progress,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1.0 - progress,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1.0 - progress,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
           ]),
-          child: Opacity(
-            opacity: 1.0 - progress,
-            child: child,
-          ),
+          child: Opacity(opacity: 1.0 - progress, child: child),
         );
       default:
         return child;
@@ -195,7 +197,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     final playhead = ref.read(timelineProvider).timeline.playheadSec;
     final timeInClip = playhead - clip.startTimeInTimeline;
     if (clip.speedRamp.points.isNotEmpty) {
-      final rampSpeed = clip.speedRamp.getSpeedAtTime(timeInClip, clip.endTimeInTimeline - clip.startTimeInTimeline);
+      final rampSpeed = clip.speedRamp.getSpeedAtTime(
+        timeInClip,
+        clip.endTimeInTimeline - clip.startTimeInTimeline,
+      );
       _player.setRate(rampSpeed);
     } else {
       _player.setRate(clip.speed);
@@ -203,7 +208,12 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
 
     // Apply EQ-based volume: bass/mid/treble averaged then scaled by volume
     final eqMultiplier = (clip.bass + clip.mid + clip.treble) / 3.0;
-    _player.setVolume((eqMultiplier * clip.volume * _volume * (_isMuted ? 0.0 : 1.0)).clamp(0.0, 100.0));
+    _player.setVolume(
+      (eqMultiplier * clip.volume * _volume * (_isMuted ? 0.0 : 1.0)).clamp(
+        0.0,
+        100.0,
+      ),
+    );
 
     // Build AudioEffectChain from clip.audioEffects
     final chain = AudioEffectChain();
@@ -218,13 +228,20 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
       chain.add(delay);
     }
     if (clip.audioEffects.contains('compressor')) {
-      chain.add(CompressorEffect(
-        threshold: 1.0 - clip.compressorAmount.clamp(0.0, 1.0),
-        ratio: 2.0 + clip.compressorAmount * 18.0,
-      ));
+      chain.add(
+        CompressorEffect(
+          threshold: 1.0 - clip.compressorAmount.clamp(0.0, 1.0),
+          ratio: 2.0 + clip.compressorAmount * 18.0,
+        ),
+      );
     }
     if (clip.audioEffects.contains('noise_gate')) {
-      final gate = CompressorEffect(threshold: 0.05, ratio: 20, attack: 0.001, release: 0.05);
+      final gate = CompressorEffect(
+        threshold: 0.05,
+        ratio: 20,
+        attack: 0.001,
+        release: 0.05,
+      );
       chain.add(gate);
     }
     if (clip.audioEffects.contains('distortion')) {
@@ -264,7 +281,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     double scale = 1.0;
 
     if (clip.animationType != null) {
-      final animProgress = (timeInClip / clip.animationDuration).clamp(0.0, 1.0);
+      final animProgress = (timeInClip / clip.animationDuration).clamp(
+        0.0,
+        1.0,
+      );
       switch (clip.animationType) {
         case 'fade_in':
           opacity = animProgress;
@@ -334,7 +354,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
               alignment: alignment,
               padding: const EdgeInsets.all(24),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 decoration: clip.backgroundColorValue != null
                     ? BoxDecoration(
                         color: Color(clip.backgroundColorValue!),
@@ -347,14 +370,21 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                     fontFamily: clip.fontFamily,
                     fontSize: clip.fontSize,
                     color: Color(clip.colorValue),
-                    fontWeight: clip.isBold ? FontWeight.bold : FontWeight.normal,
-                    fontStyle: clip.isItalic ? FontStyle.italic : FontStyle.normal,
+                    fontWeight: clip.isBold
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    fontStyle: clip.isItalic
+                        ? FontStyle.italic
+                        : FontStyle.normal,
                     shadows: clip.shadowColorValue != null
                         ? [
                             Shadow(
                               blurRadius: clip.shadowBlur,
                               color: Color(clip.shadowColorValue!),
-                              offset: Offset(clip.shadowOffsetX, clip.shadowOffsetY),
+                              offset: Offset(
+                                clip.shadowOffsetX,
+                                clip.shadowOffsetY,
+                              ),
                             ),
                           ]
                         : null,
@@ -369,7 +399,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     );
   }
 
-  List<Widget> _buildParticleOverlays(BoxConstraints constraints, VideoClip clip) {
+  List<Widget> _buildParticleOverlays(
+    BoxConstraints constraints,
+    VideoClip clip,
+  ) {
     final widgets = <Widget>[];
     for (final effect in clip.particleEffects) {
       if (effect['enabled'] != true) continue;
@@ -388,51 +421,84 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         'explosion' => ParticleEmitter.explosion(position),
         _ => ParticleEmitter.fire(position),
       };
-      widgets.add(Positioned.fill(
-        child: IgnorePointer(child: ParticleWidget(emitter: emitter)),
-      ));
+      widgets.add(
+        Positioned.fill(
+          child: IgnorePointer(child: ParticleWidget(emitter: emitter)),
+        ),
+      );
     }
     return widgets;
   }
 
-  Widget _buildShapeOverlay(BoxConstraints constraints, VideoClip clip, double playheadSec) {
+  Widget _buildShapeOverlay(
+    BoxConstraints constraints,
+    VideoClip clip,
+    double playheadSec,
+  ) {
     final shapes = <ShapeLayer>[];
     for (int i = 0; i < clip.shapeOverlays.length; i++) {
       final s = clip.shapeOverlays[i];
       if (s['opacity'] == 0) continue;
       final type = s['type'] as String? ?? 'rectangle';
       final color = Color(s['color'] as int? ?? 0xFFFFFFFF);
-      final posX = (s['position_x'] as num?)?.toDouble() ?? constraints.maxWidth / 2;
-      final posY = (s['position_y'] as num?)?.toDouble() ?? constraints.maxHeight / 2;
+      final posX =
+          (s['position_x'] as num?)?.toDouble() ?? constraints.maxWidth / 2;
+      final posY =
+          (s['position_y'] as num?)?.toDouble() ?? constraints.maxHeight / 2;
       final rotation = (s['rotation'] as num?)?.toDouble() ?? 0.0;
       final opacity = (s['opacity'] as num?)?.toDouble() ?? 1.0;
       final w = (s['width'] as num?)?.toDouble() ?? 100;
       final h = (s['height'] as num?)?.toDouble() ?? 100;
       shapes.add(switch (type) {
         'ellipse' => EllipseShape(
-            id: 'shape_$i', position: Offset(posX, posY), color: color,
-            radiusX: w / 2, radiusY: h / 2, rotation: rotation, opacity: opacity,
-          ),
+          id: 'shape_$i',
+          position: Offset(posX, posY),
+          color: color,
+          radiusX: w / 2,
+          radiusY: h / 2,
+          rotation: rotation,
+          opacity: opacity,
+        ),
         'polygon' => PolygonShape(
-            id: 'shape_$i', position: Offset(posX, posY), color: color,
-            radius: w / 2, rotation: rotation, opacity: opacity,
-          ),
+          id: 'shape_$i',
+          position: Offset(posX, posY),
+          color: color,
+          radius: w / 2,
+          rotation: rotation,
+          opacity: opacity,
+        ),
         'star' => StarShape(
-            id: 'shape_$i', position: Offset(posX, posY), color: color,
-            outerRadius: w / 2, innerRadius: w / 4, rotation: rotation, opacity: opacity,
-          ),
+          id: 'shape_$i',
+          position: Offset(posX, posY),
+          color: color,
+          outerRadius: w / 2,
+          innerRadius: w / 4,
+          rotation: rotation,
+          opacity: opacity,
+        ),
         'line' => LineShape(
-            id: 'shape_$i', position: Offset(posX, posY), color: color,
-            endPoint: Offset(posX + w, posY + h), rotation: rotation, opacity: opacity,
-          ),
+          id: 'shape_$i',
+          position: Offset(posX, posY),
+          color: color,
+          endPoint: Offset(posX + w, posY + h),
+          rotation: rotation,
+          opacity: opacity,
+        ),
         _ => RectangleShape(
-            id: 'shape_$i', position: Offset(posX, posY), color: color,
-            width: w, height: h, rotation: rotation, opacity: opacity,
-          ),
+          id: 'shape_$i',
+          position: Offset(posX, posY),
+          color: color,
+          width: w,
+          height: h,
+          rotation: rotation,
+          opacity: opacity,
+        ),
       });
     }
     return Positioned.fill(
-      child: IgnorePointer(child: ShapeLayerWidget(shapes: shapes, time: playheadSec)),
+      child: IgnorePointer(
+        child: ShapeLayerWidget(shapes: shapes, time: playheadSec),
+      ),
     );
   }
 
@@ -469,13 +535,15 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
 
     _controller = VideoController(_player);
 
-    _player.stream.position.listen((pos) {
+    _positionSub = _player.stream.position.listen((pos) {
       if (_isPlaying) {
-        ref.read(timelineProvider.notifier).setPlayhead(pos.inMilliseconds / 1000.0);
+        ref
+            .read(timelineProvider.notifier)
+            .setPlayhead(pos.inMilliseconds / 1000.0);
       }
     });
 
-    _player.stream.playing.listen((playing) {
+    _playingSub = _player.stream.playing.listen((playing) {
       if (mounted) {
         setState(() {
           _isPlaying = playing;
@@ -486,10 +554,23 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
       }
     });
 
+    // Track the ACTUAL media duration reported by the player backend
+    // (media_kit resolves it from the file itself, unlike timeline duration).
+    _durationSub = _player.stream.duration.listen((duration) {
+      if (mounted) {
+        setState(() {
+          _mediaDuration = duration;
+        });
+      }
+    });
+
     _loadVideo();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _isPlayingSub = ref.listenManual<bool>(isPlayingProvider, (oldVal, newVal) {
+      _isPlayingSub = ref.listenManual<bool>(isPlayingProvider, (
+        oldVal,
+        newVal,
+      ) {
         if (newVal != _isPlaying) {
           if (newVal) {
             _player.play();
@@ -511,7 +592,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         },
       );
 
-      _scrubSub = ref.listenManual<double>(scrubPlayheadProvider, (oldVal, newVal) {
+      _scrubSub = ref.listenManual<double>(scrubPlayheadProvider, (
+        oldVal,
+        newVal,
+      ) {
         if (!_isPlaying) {
           _currentClip = _findClipAtPlayhead(newVal);
           _applyClipSettings();
@@ -519,7 +603,9 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         }
       });
 
-      _currentClip = _findClipAtPlayhead(ref.read(timelineProvider).timeline.playheadSec);
+      _currentClip = _findClipAtPlayhead(
+        ref.read(timelineProvider).timeline.playheadSec,
+      );
       _applyClipSettings();
     });
   }
@@ -547,12 +633,28 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     _isPlayingSub?.close();
     _playheadSub?.close();
     _scrubSub?.close();
+    _durationSub?.cancel();
+    _positionSub?.cancel();
+    _playingSub?.cancel();
     _player.dispose();
     super.dispose();
   }
 
   void _togglePlay() {
     ref.read(isPlayingProvider.notifier).update((state) => !state);
+  }
+
+  void _seekRelative(int deltaMs) {
+    final double mediaDurSec = _mediaDuration.inMilliseconds / 1000.0;
+    final double maxSec = mediaDurSec > 0
+        ? mediaDurSec
+        : ref.read(timelineProvider.notifier).totalDuration;
+    final int maxMs = (maxSec * 1000).round();
+    final int target = (_player.state.position.inMilliseconds + deltaMs)
+        .clamp(0, maxMs > 0 ? maxMs : deltaMs.abs())
+        .toInt();
+    _safeSeek(target);
+    ref.read(timelineProvider.notifier).setPlayhead(target / 1000.0);
   }
 
   void _toggleMute() {
@@ -579,17 +681,38 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     _currentClip = _findClipAtPlayhead(playhead);
 
     // Keyframe animation interpolation
-    TransformState animatedTransform = _currentClip?.transform ?? TransformState.defaultState();
+    TransformState animatedTransform =
+        _currentClip?.transform ?? TransformState.defaultState();
 
     if (_currentClip != null && _currentClip!.transform.keyframes.isNotEmpty) {
       final timeInClip = playhead - _currentClip!.startTimeInTimeline;
       final kfs = _currentClip!.transform.keyframes;
 
-      final posX = KeyframeAnimationEngine.interpolate(kfs, 'position_x', timeInClip);
-      final posY = KeyframeAnimationEngine.interpolate(kfs, 'position_y', timeInClip);
-      final scaleX = KeyframeAnimationEngine.interpolate(kfs, 'scale_x', timeInClip);
-      final scaleY = KeyframeAnimationEngine.interpolate(kfs, 'scale_y', timeInClip);
-      final rot = KeyframeAnimationEngine.interpolate(kfs, 'rotation', timeInClip);
+      final posX = KeyframeAnimationEngine.interpolate(
+        kfs,
+        'position_x',
+        timeInClip,
+      );
+      final posY = KeyframeAnimationEngine.interpolate(
+        kfs,
+        'position_y',
+        timeInClip,
+      );
+      final scaleX = KeyframeAnimationEngine.interpolate(
+        kfs,
+        'scale_x',
+        timeInClip,
+      );
+      final scaleY = KeyframeAnimationEngine.interpolate(
+        kfs,
+        'scale_y',
+        timeInClip,
+      );
+      final rot = KeyframeAnimationEngine.interpolate(
+        kfs,
+        'rotation',
+        timeInClip,
+      );
 
       if (kfs.any((k) => k.property.startsWith('position'))) {
         animatedTransform = animatedTransform.copyWith(
@@ -611,9 +734,15 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         _currentClip!.trackedPosition.isNotEmpty) {
       final timeInClip = playhead - _currentClip!.startTimeInTimeline;
       final trackedX = KeyframeAnimationEngine.interpolate(
-          _currentClip!.trackedPosition, 'tracked_x', timeInClip);
+        _currentClip!.trackedPosition,
+        'tracked_x',
+        timeInClip,
+      );
       final trackedY = KeyframeAnimationEngine.interpolate(
-          _currentClip!.trackedPosition, 'tracked_y', timeInClip);
+        _currentClip!.trackedPosition,
+        'tracked_y',
+        timeInClip,
+      );
 
       if (_currentClip!.trackingType == 'crop') {
         final croppedX = -(trackedX - 960);
@@ -632,20 +761,28 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     final clipProColor = _currentClip?.proColor ?? const ProColorState();
 
     final bool hasColorGrading =
-        clipColor.brightness != 0.0 || clipColor.contrast != 1.0 || clipColor.saturation != 1.0 ||
-        clipProColor.lift.saturation > 0.0 || clipProColor.gamma.saturation > 0.0 ||
-        clipProColor.gain.saturation > 0.0 || clipProColor.offset != 0.0 ||
-        clipProColor.contrast != 1.0 || clipProColor.shadowClip > 0.0 ||
+        clipColor.brightness != 0.0 ||
+        clipColor.contrast != 1.0 ||
+        clipColor.saturation != 1.0 ||
+        clipProColor.lift.saturation > 0.0 ||
+        clipProColor.gamma.saturation > 0.0 ||
+        clipProColor.gain.saturation > 0.0 ||
+        clipProColor.offset != 0.0 ||
+        clipProColor.contrast != 1.0 ||
+        clipProColor.shadowClip > 0.0 ||
         clipProColor.highlightClip > 0.0;
 
     final bool hasTransform =
-        clipTransform.position.x != 0 || clipTransform.position.y != 0 ||
-        clipTransform.scale.x != 100 || clipTransform.scale.y != 100 ||
+        clipTransform.position.x != 0 ||
+        clipTransform.position.y != 0 ||
+        clipTransform.scale.x != 100 ||
+        clipTransform.scale.y != 100 ||
         clipTransform.rotation != 0.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        Widget videoContent = widget.videoPath != null && widget.videoPath!.isNotEmpty
+        Widget videoContent =
+            widget.videoPath != null && widget.videoPath!.isNotEmpty
             ? ClipRect(
                 child: Video(
                   controller: _controller,
@@ -658,11 +795,18 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.video_library_rounded, size: 48, color: AppColors.textMuted),
+                    Icon(
+                      Icons.video_library_rounded,
+                      size: 48,
+                      color: AppColors.textMuted,
+                    ),
                     SizedBox(height: 12),
                     Text(
                       'قم باستيراد فيديو للمعاينة',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -680,8 +824,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
           final double scaleX = clipTransform.scale.x / 100.0;
           final double scaleY = clipTransform.scale.y / 100.0;
           final double rot = clipTransform.rotation * math.pi / 180.0;
-          final Offset translate =
-              Offset(clipTransform.position.x, clipTransform.position.y);
+          final Offset translate = Offset(
+            clipTransform.position.x,
+            clipTransform.position.y,
+          );
 
           videoContent = Transform(
             transform: Matrix4.identity()
@@ -696,25 +842,40 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         final transitionProgress = _getTransitionProgress();
         if (transitionProgress > 0.0 && _currentClip != null) {
           final transitionType = _currentClip!.outTransition.type;
-          videoContent = _applyTransition(videoContent, transitionType, transitionProgress);
+          videoContent = _applyTransition(
+            videoContent,
+            transitionType,
+            transitionProgress,
+          );
         }
 
         if (_currentClip != null && _currentClip!.shaderEffects.isNotEmpty) {
-          videoContent = _wrapWithShaderEffects(videoContent, _currentClip!.shaderEffects);
+          videoContent = _wrapWithShaderEffects(
+            videoContent,
+            _currentClip!.shaderEffects,
+          );
         }
 
         final activeTextClips = _getActiveTextClips(playhead);
         final hasText = activeTextClips.isNotEmpty;
-        final hasParticles = _currentClip != null && _currentClip!.particleEffects.isNotEmpty;
-        final hasShapes = _currentClip != null && _currentClip!.shapeOverlays.isNotEmpty;
+        final hasParticles =
+            _currentClip != null && _currentClip!.particleEffects.isNotEmpty;
+        final hasShapes =
+            _currentClip != null && _currentClip!.shapeOverlays.isNotEmpty;
         if (hasText || hasParticles || hasShapes) {
           final stackChildren = <Widget>[videoContent];
-          stackChildren.addAll(activeTextClips.map((clip) => _buildTextOverlay(clip, playhead)));
+          stackChildren.addAll(
+            activeTextClips.map((clip) => _buildTextOverlay(clip, playhead)),
+          );
           if (hasParticles) {
-            stackChildren.addAll(_buildParticleOverlays(constraints, _currentClip!));
+            stackChildren.addAll(
+              _buildParticleOverlays(constraints, _currentClip!),
+            );
           }
           if (hasShapes) {
-            stackChildren.add(_buildShapeOverlay(constraints, _currentClip!, playhead));
+            stackChildren.add(
+              _buildShapeOverlay(constraints, _currentClip!, playhead),
+            );
           }
           videoContent = Stack(fit: StackFit.expand, children: stackChildren);
         }
@@ -726,96 +887,171 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
             fit: StackFit.expand,
             children: [
               videoContent,
-              Positioned(
-                right: 16,
-                bottom: 60,
-                child: _WebcamPipWidget(),
-              ),
+              Positioned(right: 16, bottom: 60, child: _WebcamPipWidget()),
             ],
           );
         }
 
+        // Prefer the real media duration; fall back to timeline duration.
+        final double mediaDurSec = _mediaDuration.inMilliseconds / 1000.0;
+        final double effectiveMax = mediaDurSec > 0 ? mediaDurSec : maxDuration;
+        final double seekMax = effectiveMax > 0 ? effectiveMax : 1.0;
+
         return Container(
-          decoration: const BoxDecoration(
-            color: Colors.black,
-          ),
+          decoration: const BoxDecoration(color: Colors.black),
           child: Column(
             children: [
               Expanded(child: videoContent),
-              Container(
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: const BoxDecoration(
-                  color: AppColors.surface,
-                ),
-                child: Row(
+              // Frosted iOS control bar over the video frame.
+              ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  child: Container(
+                    decoration: const BoxDecoration(color: Color(0xCC1C1C1E)),
+                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+                    child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      icon: Icon(
-                        _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        size: 24,
-                        color: AppColors.primary,
-                      ),
-                      onPressed: widget.videoPath != null ? _togglePlay : null,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        _isMuted || _volume == 0
-                            ? Icons.volume_mute_rounded
-                            : _volume < 0.5
-                                ? Icons.volume_down_rounded
-                                : Icons.volume_up_rounded,
-                        size: 18,
-                        color: AppColors.textSecondary,
-                      ),
-                      onPressed: widget.videoPath != null ? _toggleMute : null,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    SizedBox(
-                      width: 60,
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 2.0,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4.0),
-                        ),
-                        child: Slider(
-                          value: _volume,
-                          onChanged: widget.videoPath != null ? _changeVolume : null,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatDuration(_player.state.position),
-                      style: const TextStyle(fontSize: 10, fontFamily: 'monospace', color: AppColors.textSecondary),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        child: SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 3.0,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5.0),
-                          ),
-                          child: Slider(
-                            value: playhead.clamp(0.0, maxDuration),
-                            min: 0.0,
-                            max: maxDuration,
-                            onChanged: (val) {
-                              _safeSeek((val * 1000).toInt());
-                              ref.read(timelineProvider.notifier).setPlayhead(val);
-                            },
+                    // ── Row 1: current time · seek bar · duration ──
+                    Row(
+                      children: [
+                        Text(
+                          _formatDuration(_player.state.position),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontFamily: 'monospace',
+                            color: AppColors.textSecondary,
                           ),
                         ),
-                      ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackHeight: 3.0,
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 5.0,
+                                ),
+                                overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 10.0,
+                                ),
+                              ),
+                              child: Slider(
+                                value: playhead.clamp(0.0, seekMax),
+                                min: 0.0,
+                                max: seekMax,
+                                onChanged:
+                                    widget.videoPath != null && seekMax > 0
+                                    ? (val) {
+                                        _safeSeek((val * 1000).toInt());
+                                        ref
+                                            .read(timelineProvider.notifier)
+                                            .setPlayhead(val);
+                                      }
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _formatDuration(
+                            Duration(
+                              milliseconds: (effectiveMax * 1000).round(),
+                            ),
+                          ),
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontFamily: 'monospace',
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      _formatDuration(Duration(milliseconds: (maxDuration * 1000).toInt())),
-                      style: const TextStyle(fontSize: 10, fontFamily: 'monospace', color: AppColors.textSecondary),
+                    // ── Row 2: transport buttons (skip back · play · skip fwd · mute · volume) ──
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.replay_10_rounded,
+                              size: 20,
+                              color: AppColors.textSecondary,
+                            ),
+                            onPressed: widget.videoPath != null
+                                ? () => _seekRelative(-10000)
+                                : null,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              _isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 28,
+                              color: AppColors.primary,
+                            ),
+                            onPressed: widget.videoPath != null
+                                ? _togglePlay
+                                : null,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.forward_10_rounded,
+                              size: 20,
+                              color: AppColors.textSecondary,
+                            ),
+                            onPressed: widget.videoPath != null
+                                ? () => _seekRelative(10000)
+                                : null,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          const SizedBox(width: 24),
+                          IconButton(
+                            icon: Icon(
+                              _isMuted || _volume == 0
+                                  ? Icons.volume_mute_rounded
+                                  : _volume < 0.5
+                                  ? Icons.volume_down_rounded
+                                  : Icons.volume_up_rounded,
+                              size: 18,
+                              color: AppColors.textSecondary,
+                            ),
+                            onPressed: widget.videoPath != null
+                                ? _toggleMute
+                                : null,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          SizedBox(
+                            width: 70,
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackHeight: 2.0,
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 4.0,
+                                ),
+                                overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 8.0,
+                                ),
+                              ),
+                              child: Slider(
+                                value: _volume,
+                                onChanged: widget.videoPath != null
+                                    ? _changeVolume
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
+              ),
+              ),
               ),
             ],
           ),
@@ -825,9 +1061,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   }
 
   String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
+    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
   }
 }
 
@@ -847,7 +1084,11 @@ class _WebcamPipWidget extends ConsumerWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.white24, width: 1),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 8, offset: const Offset(0, 2)),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       clipBehavior: Clip.antiAlias,
@@ -873,7 +1114,10 @@ class _WebcamPipWidget extends ConsumerWidget {
           children: [
             Icon(Icons.videocam_rounded, size: 28, color: Colors.white38),
             SizedBox(height: 4),
-            Text('كاميرا ويب', style: TextStyle(color: Colors.white38, fontSize: 10)),
+            Text(
+              'كاميرا ويب',
+              style: TextStyle(color: Colors.white38, fontSize: 10),
+            ),
           ],
         ),
       ),

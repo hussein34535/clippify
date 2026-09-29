@@ -5,7 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../../../core/api/api_client.dart';
+import '../../../core/native/ffmpeg_service.dart';
+import '../../../core/native/youtube_service.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/widgets/ios_kit.dart';
+import '../../timeline/logic/add_media.dart';
 
 class MediaFile {
   final String path;
@@ -38,6 +42,11 @@ class MediaLibraryWidget extends ConsumerStatefulWidget {
   final List<MediaFile> importedFiles;
   final Function(MediaFile) onFileAdded;
   final Function(int index)? onFileRemoved;
+  final void Function(String path)? onAutoEdit;
+
+  /// Injectable media-info resolver (duration lookup). Defaults to the real
+  /// backend call; tests inject a fake so no network is needed.
+  final MediaInfoResolver? mediaInfoResolver;
 
   const MediaLibraryWidget({
     super.key,
@@ -45,6 +54,8 @@ class MediaLibraryWidget extends ConsumerStatefulWidget {
     required this.importedFiles,
     required this.onFileAdded,
     this.onFileRemoved,
+    this.onAutoEdit,
+    this.mediaInfoResolver,
   });
 
   @override
@@ -55,6 +66,7 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
   String _downloadStatus = '';
+  int? _hoveredIndex;
 
   Future<String?> _generateThumbnail(String videoPath) async {
     try {
@@ -151,93 +163,42 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
       _downloadStatus = 'بدء معالجة رابط يوتيوب...';
     });
 
-    final apiClient = ApiClient();
-    final downloadResult = await apiClient.downloadYoutube(url);
-
-    switch (downloadResult) {
-      case Success(data: final sessionId):
-        _pollDownloadStatus(sessionId);
-      case Failure():
-        setState(() {
-          _isDownloading = false;
-          _downloadStatus = 'فشل بدء التحميل. تأكد من اتصالك بالإنترنت والباك إند.';
-        });
-    }
-  }
-
-  void _pollDownloadStatus(String sessionId) async {
-    final apiClient = ApiClient();
-    int failedAttempts = 0;
-
-    while (_isDownloading) {
-      await Future.delayed(const Duration(seconds: 1));
-      if (!mounted) return;
-
-      final statusData = await apiClient.getSessionStatus(sessionId);
-      switch (statusData) {
-        case Success(data: final data):
-          failedAttempts = 0;
-          final progress = (data['progress'] as num?)?.toDouble() ?? 0.0;
-          final status = data['status'] as String? ?? '';
-          final results = data['results'] as List<dynamic>? ?? [];
-          final errors = data['errors'] as List<dynamic>? ?? [];
-
+    // ── STANDALONE: yt-dlp directly, no backend needed ──
+    final tmpDir = Directory.systemTemp.path;
+    final downloaded = await YoutubeService.download(
+      url,
+      tmpDir,
+      onProgress: (progress, status) {
+        if (mounted) {
           setState(() {
             _downloadProgress = progress;
             _downloadStatus = status;
           });
+        }
+      },
+    );
 
-          if (status.toLowerCase() == 'done' && results.isNotEmpty) {
-            final videoPath = results.first as String;
-            final name = videoPath.split('/').last.split('\\').last;
-
-            setState(() {
-              _isDownloading = false;
-            });
-
-            final apiClient = ApiClient();
-            final mediaInfo = await apiClient.getMediaInfo(videoPath);
-
-            double duration = 0.0;
-            String? thumbPath;
-
-            switch (mediaInfo) {
-              case Success(data: final mi):
-                if (mi['status'] == 'success') {
-                  duration = (mi['duration'] as num?)?.toDouble() ?? 0.0;
-                  thumbPath = mi['thumbnail_path'] as String?;
-                } else {
-                  thumbPath = await _generateThumbnail(videoPath);
-                  duration = await _getVideoDuration(videoPath);
-                }
-              case Failure():
-                thumbPath = await _generateThumbnail(videoPath);
-                duration = await _getVideoDuration(videoPath);
-            }
-
-            final media = MediaFile(path: videoPath, name: name, isYoutube: true, thumbnailPath: thumbPath, duration: duration);
-            widget.onFileAdded(media);
-            widget.onSelectVideo(videoPath);
-            return;
-          }
-
-          if (status.toLowerCase() == 'failed' || errors.isNotEmpty) {
-            setState(() {
-              _isDownloading = false;
-              _downloadStatus = 'فشل التحميل: ${errors.isNotEmpty ? errors.join(', ') : 'خطأ غير معروف'}';
-            });
-            return;
-          }
-        case Failure():
-          failedAttempts++;
-          if (failedAttempts > 10) {
-            setState(() {
-              _isDownloading = false;
-              _downloadStatus = 'انقطع الاتصال بالخادم أثناء التحميل.';
-            });
-            return;
-          }
-      }
+    if (downloaded != null && mounted) {
+      // Get duration via FfmpegService
+      final duration = await FfmpegService.probeDuration(downloaded) ?? 0.0;
+      final name = downloaded.split(Platform.pathSeparator).last;
+      final media = MediaFile(
+        path: downloaded,
+        name: name,
+        isYoutube: true,
+        duration: duration,
+      );
+      widget.onFileAdded(media);
+      setState(() {
+        _isDownloading = false;
+        _downloadProgress = 1.0;
+        _downloadStatus = '';
+      });
+    } else if (mounted) {
+      setState(() {
+        _isDownloading = false;
+        _downloadStatus = 'فشل التحميل. تأكد من تثبيت yt-dlp ومن اتصالك بالإنترنت.';
+      });
     }
   }
 
@@ -248,23 +209,29 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
         final ctrl = TextEditingController();
         return AlertDialog(
           backgroundColor: AppColors.surface,
-          title: const Text('تحميل من يوتيوب', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+            side: const BorderSide(color: AppColors.border, width: 0.5),
+          ),
+          title: const Text('تحميل من يوتيوب', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontFamilyFallback: AppTypography.fallbacks)),
           content: TextField(
             controller: ctrl,
             autofocus: true,
-            style: const TextStyle(fontSize: 12),
+            style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
             decoration: InputDecoration(
               hintText: 'أدخل رابط فيديو يوتيوب...',
+              hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
               filled: true,
-              fillColor: AppColors.card,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              fillColor: AppColors.surfaceVariant,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.md), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء', style: TextStyle(color: AppColors.textSecondary))),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.destructive),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.destructive, foregroundColor: Colors.white),
               child: const Text('تحميل'),
             ),
           ],
@@ -278,14 +245,31 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
 
   Widget _buildMediaCard(MediaFile file, int index) {
     final isAudio = file.path.toLowerCase().endsWith('.mp3') || file.path.toLowerCase().endsWith('.wav');
-    
-    return GestureDetector(
+    final isHovered = _hoveredIndex == index;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoveredIndex = index),
+      onExit: (_) => setState(() => _hoveredIndex = null),
+      child: GestureDetector(
       onTap: () => widget.onSelectVideo(file.path),
-      child: Container(
+      // Click-to-add: double-tap drops the media at the playhead (desktop-friendly).
+      onDoubleTap: () async {
+        await addMediaFromPath(
+          ref,
+          context,
+          file.path,
+          mediaInfoResolver: widget.mediaInfoResolver,
+        );
+      },
+      child: AnimatedContainer(
+        duration: AppTheme.animFast,
+        curve: AppTheme.animCurve,
+        transform: Matrix4.translationValues(0, isHovered ? -2 : 0, 0),
         decoration: BoxDecoration(
           color: AppColors.card,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppColors.border, width: 0.5),
+          boxShadow: isHovered ? AppShadows.card : null,
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -298,10 +282,10 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: isAudio
-                              ? [const Color(0xFF1c1c1e), const Color(0xFF2c2c2e)]
+                              ? [const Color(0xFF1C1C1E), const Color(0xFF2C2C2E)]
                               : file.isYoutube
-                                  ? [const Color(0xFFcc0000), const Color(0xFF990000)]
-                                  : [const Color(0xFF4c3db5), const Color(0xFF6b5ce7)],
+                                  ? [const Color(0xFF421D22), const Color(0xFF2B1417)]
+                                  : [const Color(0xFF1B2A41), const Color(0xFF131C2B)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -310,12 +294,12 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                         child: Icon(
                           isAudio ? Icons.music_note_rounded : (file.isYoutube ? Icons.play_circle_fill_rounded : Icons.videocam_rounded),
                           size: 32,
-                          color: isAudio ? Colors.greenAccent : Colors.white.withValues(alpha: 0.85),
+                          color: isAudio ? AppColors.secondary : (file.isYoutube ? AppColors.destructive : AppColors.teal).withValues(alpha: 0.85),
                         ),
                       ),
                     ),
             ),
-            
+
             // Name overlay (top)
             Positioned(
               top: 0, left: 0, right: 0,
@@ -323,15 +307,16 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+                    colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),
                 ),
                 child: Text(
                   file.name,
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white),
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white, fontFamilyFallback: AppTypography.fallbacks),
                   maxLines: 1,
+                  textDirection: TextDirection.ltr, // keep "name.mp4" sane in RTL layout
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -341,18 +326,47 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
             Positioned(
               bottom: 6, right: 6,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(4),
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
                 child: Text(
                   _formatDuration(file.duration),
-                  style: const TextStyle(fontSize: 9, color: Colors.white),
+                  style: const TextStyle(fontSize: 9, color: Colors.white, fontFamilyFallback: AppTypography.fallbacks),
                 ),
               ),
             ),
-            
+
+            // Auto-edit popup action (bottom left)
+            if (widget.onAutoEdit != null)
+              Positioned(
+                bottom: 6,
+                left: 6,
+                child: PopupMenuButton<String>(
+                  tooltip: 'مونتاج تلقائي',
+                  padding: EdgeInsets.zero,
+                  color: AppColors.surfaceVariant,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+                  onSelected: (_) => widget.onAutoEdit!(file.path),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'auto',
+                      height: 36,
+                      child: Text('⚡ مونتاج تلقائي', style: TextStyle(fontSize: 12, color: AppColors.textPrimary)),
+                    ),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.auto_awesome, size: 12, color: AppColors.warning),
+                  ),
+                ),
+              ),
+
             // Delete button (top right)
             Positioned(
               top: 4, right: 4,
@@ -363,9 +377,9 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                   }
                 },
                 child: Container(
-                  padding: const EdgeInsets.all(2),
+                  padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
+                    color: Colors.black.withValues(alpha: 0.55),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.close_rounded, size: 12, color: Colors.white),
@@ -375,96 +389,80 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
           ],
         ),
       ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(right: BorderSide(color: AppColors.divider)),
-      ),
+      color: AppColors.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // عنوان اللوحة
-          const Padding(
-            padding: EdgeInsets.all(16.0),
+          // عنوان اللوحة + أزرار الاستيراد
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
             child: Text(
-              'مكتبة الوسائط',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+              'الملفات المستوردة',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+                color: AppColors.textMuted,
+                fontFamilyFallback: AppTypography.fallbacks,
               ),
             ),
           ),
 
-          // قائمة الملفات + رأس الأدوات
+          // أزرار الاستيراد (pill)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             child: Row(
               children: [
-                const Expanded(
-                  child: Text(
-                    'الملفات المستوردة',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
-                  ),
-                ),
-                Tooltip(
-                  message: 'إضافة فيديو من الجهاز',
-                  child: InkWell(
-                    onTap: _isDownloading ? null : _importLocalVideo,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: AppColors.border),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Icon(Icons.add_rounded, size: 16, color: AppColors.textSecondary),
-                    ),
+                Expanded(
+                  child: IOSButton(
+                    label: 'استيراد',
+                    icon: Icons.add_rounded,
+                    fontSize: 12,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    expand: true,
+                    onPressed: _isDownloading ? null : _importLocalVideo,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Tooltip(
-                  message: 'تحميل من يوتيوب',
-                  child: InkWell(
-                    onTap: _isDownloading ? null : _showYoutubeDialog,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: AppColors.border),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Icon(Icons.play_circle_outline, size: 16, color: AppColors.textSecondary),
-                    ),
+                Expanded(
+                  child: IOSButton(
+                    label: 'يوتيوب',
+                    icon: Icons.play_circle_outline_rounded,
+                    fontSize: 12,
+                    style: IOSButtonStyle.ghost,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    expand: true,
+                    onPressed: _isDownloading ? null : _showYoutubeDialog,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
 
           // ملفات التحميل من يوتيوب (تقدم)
           if (_isDownloading)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Column(
                 children: [
                   LinearProgressIndicator(
                     value: _downloadProgress,
-                    backgroundColor: AppColors.card,
+                    backgroundColor: AppColors.surfaceVariant,
                     minHeight: 2,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     _downloadStatus,
-                    style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
+                    style: const TextStyle(fontSize: 10, color: AppColors.textMuted, fontFamilyFallback: AppTypography.fallbacks),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -474,10 +472,17 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
 
           Expanded(
             child: widget.importedFiles.isEmpty
-                ? const Center(
-                    child: Text(
-                      'اضغط + لإضافة ملفات',
-                      style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.video_library_outlined, size: 36, color: AppColors.textMuted),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'استورد فيديو لتبدأ المونتاج',
+                          style: TextStyle(fontSize: 12, color: AppColors.textMuted, fontFamilyFallback: AppTypography.fallbacks),
+                        ),
+                      ],
                     ),
                   )
                 : GridView.builder(
@@ -493,6 +498,10 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                       final file = widget.importedFiles[index];
                       return Draggable<String>(
                         data: file.path,
+                        // Anchor the feedback under the POINTER (not the
+                        // child's grab offset) so the drop position delivered
+                        // to timeline targets is exactly where the finger is.
+                        dragAnchorStrategy: pointerDragAnchorStrategy,
                         onDragStarted: () {
                           debugPrint('[DnD] DRAG STARTED — data="${file.path}"');
                         },
@@ -502,8 +511,8 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                             width: 140,
                             height: 100,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF7c6af7).withValues(alpha: 0.9),
-                              borderRadius: BorderRadius.circular(8),
+                              color: AppColors.primary.withValues(alpha: 0.9),
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
                             ),
                             child: const Center(child: Icon(Icons.add_circle_outline, size: 24, color: Colors.white)),
                           ),

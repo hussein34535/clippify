@@ -111,7 +111,8 @@ def _get_gemma_captions_batched(pil_images: List[Image.Image], api_key: str) -> 
             backoff = 2.0
             for attempt in range(retries):
                 try:
-                    models_to_try = ["gemma-2-27b-it", "gemini-1.5-flash", "gemini-2.5-flash"]
+                    MODELS = __import__('llm_config').MODEL_CHAIN
+                    models_to_try = list(MODELS)  # full live chain from llm_config (P0: gemini-1.5 retired)
                     response = None
                     last_err = None
                     for model in models_to_try:

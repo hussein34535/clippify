@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/models/timeline_models.dart';
+import '../../../core/theme/app_theme.dart';
 
 class TextEditorDialog extends StatefulWidget {
   final TextClip? existingClip;
@@ -115,17 +116,18 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
     return Dialog(
       child: Container(
-        width: 800,
-        height: 700,
+        width: screenSize.width * 0.85 < 800 ? screenSize.width * 0.85 : 800,
+        height: screenSize.height * 0.85 < 700 ? screenSize.height * 0.85 : 700,
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               widget.existingClip == null ? 'إضافة نص' : 'تعديل النص',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.3, color: AppColors.textPrimary),
             ),
             const SizedBox(height: 24),
             Expanded(
@@ -138,7 +140,10 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('النص', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'النص',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 8),
                           TextField(
                             controller: _textController,
@@ -150,7 +155,10 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                             onChanged: (_) => setState(() {}),
                           ),
                           const SizedBox(height: 16),
-                          const Text('الخط', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'الخط',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 8),
                           DropdownButtonFormField<String>(
                             initialValue: _fontFamily,
@@ -161,7 +169,10 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                             items: _fontFamilies.map((font) {
                               return DropdownMenuItem(
                                 value: font,
-                                child: Text(font, style: TextStyle(fontFamily: font)),
+                                child: Text(
+                                  font,
+                                  style: TextStyle(fontFamily: font),
+                                ),
                               );
                             }).toList(),
                             onChanged: (value) {
@@ -171,17 +182,24 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                             },
                           ),
                           const SizedBox(height: 16),
-                          Text('الحجم: ${_fontSize.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Text(
+                            'الحجم: ${_fontSize.toInt()}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           Slider(
                             value: _fontSize,
                             min: 12,
                             max: 120,
                             divisions: 108,
                             label: _fontSize.toInt().toString(),
-                            onChanged: (value) => setState(() => _fontSize = value),
+                            onChanged: (value) =>
+                                setState(() => _fontSize = value),
                           ),
                           const SizedBox(height: 16),
-                          const Text('الألوان', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'الألوان',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 8),
                           Row(
                             children: [
@@ -193,7 +211,8 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                                     context,
                                     'لون النص',
                                     _colorValue,
-                                    (value) => setState(() => _colorValue = value),
+                                    (value) =>
+                                        setState(() => _colorValue = value),
                                   ),
                                 ),
                               ),
@@ -201,12 +220,16 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                               Expanded(
                                 child: _ColorButton(
                                   label: 'لون الخلفية',
-                                  color: _backgroundColorValue != null ? _intToColor(_backgroundColorValue!) : null,
+                                  color: _backgroundColorValue != null
+                                      ? _intToColor(_backgroundColorValue!)
+                                      : null,
                                   onPressed: () => _pickColor(
                                     context,
                                     'لون الخلفية',
                                     _backgroundColorValue ?? 0x80000000,
-                                    (value) => setState(() => _backgroundColorValue = value),
+                                    (value) => setState(
+                                      () => _backgroundColorValue = value,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -218,12 +241,16 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                               Expanded(
                                 child: _ColorButton(
                                   label: 'لون الحد',
-                                  color: _strokeColorValue != null ? _intToColor(_strokeColorValue!) : null,
+                                  color: _strokeColorValue != null
+                                      ? _intToColor(_strokeColorValue!)
+                                      : null,
                                   onPressed: () => _pickColor(
                                     context,
                                     'لون الحد',
                                     _strokeColorValue ?? 0xFF000000,
-                                    (value) => setState(() => _strokeColorValue = value),
+                                    (value) => setState(
+                                      () => _strokeColorValue = value,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -232,14 +259,17 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('عرض الحد: ${_strokeWidth.toStringAsFixed(1)}'),
+                                    Text(
+                                      'عرض الحد: ${_strokeWidth.toStringAsFixed(1)}',
+                                    ),
                                     Slider(
                                       value: _strokeWidth,
                                       min: 0,
                                       max: 10,
                                       divisions: 20,
                                       label: _strokeWidth.toStringAsFixed(1),
-                                      onChanged: (value) => setState(() => _strokeWidth = value),
+                                      onChanged: (value) =>
+                                          setState(() => _strokeWidth = value),
                                     ),
                                   ],
                                 ),
@@ -247,52 +277,73 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          const Text('المحاذاة', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'المحاذاة',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 8),
                           Row(
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.format_align_left),
-                                color: _alignment == 'left' ? Colors.blue : null,
-                                onPressed: () => setState(() => _alignment = 'left'),
+                                color: _alignment == 'left'
+                                    ? Colors.blue
+                                    : null,
+                                onPressed: () =>
+                                    setState(() => _alignment = 'left'),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.format_align_center),
-                                color: _alignment == 'center' ? Colors.blue : null,
-                                onPressed: () => setState(() => _alignment = 'center'),
+                                color: _alignment == 'center'
+                                    ? Colors.blue
+                                    : null,
+                                onPressed: () =>
+                                    setState(() => _alignment = 'center'),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.format_align_right),
-                                color: _alignment == 'right' ? Colors.blue : null,
-                                onPressed: () => setState(() => _alignment = 'right'),
+                                color: _alignment == 'right'
+                                    ? Colors.blue
+                                    : null,
+                                onPressed: () =>
+                                    setState(() => _alignment = 'right'),
                               ),
                               const SizedBox(width: 16),
                               IconButton(
                                 icon: const Icon(Icons.format_bold),
                                 color: _isBold ? Colors.blue : null,
-                                onPressed: () => setState(() => _isBold = !_isBold),
+                                onPressed: () =>
+                                    setState(() => _isBold = !_isBold),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.format_italic),
                                 color: _isItalic ? Colors.blue : null,
-                                onPressed: () => setState(() => _isItalic = !_isItalic),
+                                onPressed: () =>
+                                    setState(() => _isItalic = !_isItalic),
                               ),
                             ],
                           ),
                           const SizedBox(height: 16),
-                          const Text('الظل', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'الظل',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 8),
                           Row(
                             children: [
                               Expanded(
                                 child: _ColorButton(
                                   label: 'لون الظل',
-                                  color: _shadowColorValue != null ? _intToColor(_shadowColorValue!) : null,
+                                  color: _shadowColorValue != null
+                                      ? _intToColor(_shadowColorValue!)
+                                      : null,
                                   onPressed: () => _pickColor(
                                     context,
                                     'لون الظل',
                                     _shadowColorValue ?? 0x80000000,
-                                    (value) => setState(() => _shadowColorValue = value),
+                                    (value) => setState(
+                                      () => _shadowColorValue = value,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -301,14 +352,17 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('ضبابية: ${_shadowBlur.toStringAsFixed(1)}'),
+                                    Text(
+                                      'ضبابية: ${_shadowBlur.toStringAsFixed(1)}',
+                                    ),
                                     Slider(
                                       value: _shadowBlur,
                                       min: 0,
                                       max: 20,
                                       divisions: 40,
                                       label: _shadowBlur.toStringAsFixed(1),
-                                      onChanged: (value) => setState(() => _shadowBlur = value),
+                                      onChanged: (value) =>
+                                          setState(() => _shadowBlur = value),
                                     ),
                                   ],
                                 ),
@@ -321,14 +375,18 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('إزاحة X: ${_shadowOffsetX.toStringAsFixed(1)}'),
+                                    Text(
+                                      'إزاحة X: ${_shadowOffsetX.toStringAsFixed(1)}',
+                                    ),
                                     Slider(
                                       value: _shadowOffsetX,
                                       min: -20,
                                       max: 20,
                                       divisions: 40,
                                       label: _shadowOffsetX.toStringAsFixed(1),
-                                      onChanged: (value) => setState(() => _shadowOffsetX = value),
+                                      onChanged: (value) => setState(
+                                        () => _shadowOffsetX = value,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -338,14 +396,18 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('إزاحة Y: ${_shadowOffsetY.toStringAsFixed(1)}'),
+                                    Text(
+                                      'إزاحة Y: ${_shadowOffsetY.toStringAsFixed(1)}',
+                                    ),
                                     Slider(
                                       value: _shadowOffsetY,
                                       min: -20,
                                       max: 20,
                                       divisions: 40,
                                       label: _shadowOffsetY.toStringAsFixed(1),
-                                      onChanged: (value) => setState(() => _shadowOffsetY = value),
+                                      onChanged: (value) => setState(
+                                        () => _shadowOffsetY = value,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -353,7 +415,10 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          const Text('الحركة', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text(
+                            'الحركة',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 8),
                           DropdownButtonFormField<String>(
                             initialValue: _animationType ?? 'none',
@@ -368,18 +433,25 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                               );
                             }).toList(),
                             onChanged: (value) {
-                              setState(() => _animationType = value == 'none' ? null : value);
+                              setState(
+                                () => _animationType = value == 'none'
+                                    ? null
+                                    : value,
+                              );
                             },
                           ),
                           const SizedBox(height: 8),
-                          Text('مدة الحركة: ${_animationDuration.toStringAsFixed(1)} ثانية'),
+                          Text(
+                            'مدة الحركة: ${_animationDuration.toStringAsFixed(1)} ثانية',
+                          ),
                           Slider(
                             value: _animationDuration,
                             min: 0.1,
                             max: 3.0,
                             divisions: 29,
                             label: _animationDuration.toStringAsFixed(1),
-                            onChanged: (value) => setState(() => _animationDuration = value),
+                            onChanged: (value) =>
+                                setState(() => _animationDuration = value),
                           ),
                         ],
                       ),
@@ -391,7 +463,10 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('معاينة', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const Text(
+                          'معاينة',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                         const SizedBox(height: 8),
                         Expanded(
                           child: Container(
@@ -399,9 +474,7 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                               color: Colors.grey[900],
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Center(
-                              child: _buildPreview(),
-                            ),
+                            child: Center(child: _buildPreview()),
                           ),
                         ),
                       ],
@@ -424,7 +497,10 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
                       ? null
                       : () {
                           final clip = TextClip(
-                            id: widget.existingClip?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                            id:
+                                widget.existingClip?.id ??
+                                DateTime.now().millisecondsSinceEpoch
+                                    .toString(),
                             text: _textController.text,
                             startTime: widget.existingClip?.startTime ?? 0,
                             endTime: widget.existingClip?.endTime ?? 5,
@@ -480,8 +556,8 @@ class _TextEditorDialogState extends State<TextEditorDialog> {
         textAlign: _alignment == 'left'
             ? TextAlign.left
             : _alignment == 'right'
-                ? TextAlign.right
-                : TextAlign.center,
+            ? TextAlign.right
+            : TextAlign.center,
       ),
     );
   }
@@ -565,10 +641,7 @@ class _ColorPickerDialog extends StatefulWidget {
   final String title;
   final Color initialColor;
 
-  const _ColorPickerDialog({
-    required this.title,
-    required this.initialColor,
-  });
+  const _ColorPickerDialog({required this.title, required this.initialColor});
 
   @override
   State<_ColorPickerDialog> createState() => _ColorPickerDialogState();
@@ -583,7 +656,8 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     super.initState();
     _selectedColor = widget.initialColor;
     _hexController = TextEditingController(
-      text: '#${_selectedColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+      text:
+          '#${_selectedColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
     );
   }
 
@@ -618,7 +692,10 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            Text(
+              widget.title,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 16),
             Container(
               width: double.infinity,
@@ -640,43 +717,48 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
               onChanged: _updateColorFromHex,
             ),
             const SizedBox(height: 16),
-            const Text('ألوان سريعة', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'ألوان سريعة',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: [
-                Colors.white,
-                Colors.black,
-                Colors.red,
-                Colors.green,
-                Colors.blue,
-                Colors.yellow,
-                Colors.orange,
-                Colors.purple,
-                Colors.pink,
-                Colors.cyan,
-                Colors.brown,
-                Colors.grey,
-              ].map((color) {
-                return InkWell(
-                  onTap: () {
-                    setState(() {
-                      _selectedColor = color;
-                      _hexController.text = '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
-                    });
-                  },
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: color,
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                );
-              }).toList(),
+              children:
+                  [
+                    Colors.white,
+                    Colors.black,
+                    Colors.red,
+                    Colors.green,
+                    Colors.blue,
+                    Colors.yellow,
+                    Colors.orange,
+                    Colors.purple,
+                    Colors.pink,
+                    Colors.cyan,
+                    Colors.brown,
+                    Colors.grey,
+                  ].map((color) {
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedColor = color;
+                          _hexController.text =
+                              '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+                        });
+                      },
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: color,
+                          border: Border.all(color: Colors.grey),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    );
+                  }).toList(),
             ),
             const SizedBox(height: 24),
             Row(

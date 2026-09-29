@@ -7,30 +7,18 @@ class InspectorSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // iOS Settings style: small uppercase footnote section label.
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Container(
-            width: 3,
-            height: 16,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-              fontFamily: 'Outfit',
-              fontFamilyFallback: ['Segoe UI', 'Arial', 'Tahoma'],
-            ),
-          ),
-        ],
+      child: Text(
+        title.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.6,
+          color: AppColors.textMuted,
+          fontFamilyFallback: AppTypography.fallbacks,
+        ),
       ),
     );
   }

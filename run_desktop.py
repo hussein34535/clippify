@@ -19,8 +19,15 @@ def main():
     root_dir = os.path.dirname(os.path.abspath(__file__))
     flutter_dir = os.path.join(root_dir, "flutter_client")
 
+    # Keep in sync with api.py's launcher (CLIPPIFY_HOST/CLIPPIFY_PORT env).
+    try:
+        port = int(os.getenv("CLIPPIFY_PORT", "8000"))
+    except ValueError:
+        print(f"Invalid CLIPPIFY_PORT={os.getenv('CLIPPIFY_PORT')!r} — falling back to 8000")
+        port = 8000
+
     # 1. Start Python backend
-    print("Starting FastAPI backend on port 8000...")
+    print(f"Starting FastAPI backend on port {port}...")
     api_path = os.path.join(root_dir, "api.py")
     backend_proc = subprocess.Popen(
         [sys.executable, api_path],
@@ -30,7 +37,7 @@ def main():
     )
 
     # Wait for backend to be ready
-    if wait_for_backend("http://localhost:8000/docs"):
+    if wait_for_backend(f"http://localhost:{port}/docs"):
         print("Backend ready!")
     else:
         print("Warning: Backend may not be fully up yet.")

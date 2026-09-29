@@ -6,53 +6,55 @@ import 'package:shared_preferences/shared_preferences.dart';
 //     Apple + DaVinci Resolve Dark
 // -------------------------------------------
 class EdgeTheme {
-  static const Color canvas        = Color(0xFF000000);
+  // Values mirror the central iOS design system in
+  // core/theme/app_theme.dart (AppColors/AppRadius).
+  static const Color canvas        = Color(0xFF0A0A0C);
   static const Color panelBg       = Color(0xFF1C1C1E);
-  static const Color toolbar       = Color(0xFF2C2C2E);
+  static const Color toolbar       = Color(0xFF242427);
   static const Color accent        = Color(0xFF0A84FF);
   static const Color textPrimary   = Color(0xFFFFFFFF);
-  static const Color textSecondary = Color(0x8EFFFFFF);
-  static const Color divider       = Color(0x1FFFFFFF);
+  static const Color textSecondary = Color(0x99EBEBF5);
+  static const Color divider       = Color(0x14FFFFFF);
 
-  static const Color timelineBg    = Color(0xFF121214);
-  static const Color trackBg       = Color(0xFF1C1C1E);
-  static const Color clipVideo     = Color(0xFF4B7BFF);
-  static const Color clipAudio     = Color(0xFF32D74B);
+  static const Color timelineBg    = Color(0xFF0E0E10);
+  static const Color trackBg       = Color(0xFF141416);
+  static const Color clipVideo     = Color(0xFF0A84FF);
+  static const Color clipAudio     = Color(0xFF30D158);
   static const Color clipOverlay   = Color(0xFFFF9F0A);
   static const Color clipText      = Color(0xFFFF375F);
   static const Color playhead      = Color(0xFFFFFFFF);
-  static const Color snapLine      = Color(0xFFFF9500);
+  static const Color snapLine      = Color(0xFFFF9F0A);
 
-  static const Color success       = Color(0xFF32D74B);
+  static const Color success       = Color(0xFF30D158);
   static const Color warning       = Color(0xFFFF9F0A);
   static const Color error         = Color(0xFFFF453A);
   static const Color info          = Color(0xFF0A84FF);
 
   static const Color surfaceElevated  = Color(0xFF2C2C2E);
-  static const Color surfaceOverlay   = Color(0xFF38383A);
-  static const Color border           = Color(0x4DFFFFFF);
+  static const Color surfaceOverlay   = Color(0xFF3A3A3C);
+  static const Color border           = Color(0x14FFFFFF);
   static const Color menuBar      = Color(0xFF1C1C1E);
   static const Color menuBarText  = Color(0xFFE5E5EA);
-  static const Color statusBar    = Color(0xFF1C1C1E);
+  static const Color statusBar    = Color(0xFF161618);
 
-  static const Color workAreaBar   = Color(0x40FF9500);
-  static const Color workAreaBorder = Color(0xFFFF9500);
+  static const Color workAreaBar   = Color(0x40FF9F0A);
+  static const Color workAreaBorder = Color(0xFFFF9F0A);
 
-  static const double radiusXs  = 2.0;
-  static const double radiusSm  = 4.0;
-  static const double radiusMd  = 6.0;
-  static const double radiusLg  = 8.0;
-  static const double radiusXl  = 12.0;
+  static const double radiusXs  = 6.0;
+  static const double radiusSm  = 8.0;
+  static const double radiusMd  = 12.0;
+  static const double radiusLg  = 16.0;
+  static const double radiusXl  = 20.0;
 
   static BoxDecoration panelDecoration({Color? color, double? radius, Color? borderColor}) => BoxDecoration(
     color: color ?? panelBg,
     borderRadius: BorderRadius.circular(radius ?? radiusLg),
-    border: Border.all(color: borderColor ?? divider),
+    border: Border.all(color: borderColor ?? border, width: 0.5),
   );
 
   static BoxDecoration get toolbarDecoration => BoxDecoration(
     color: toolbar,
-    border: Border.all(color: divider),
+    border: Border.all(color: border, width: 0.5),
     borderRadius: BorderRadius.circular(radiusXs),
   );
 }
@@ -747,7 +749,7 @@ class _TimelineRulerPainter extends CustomPainter {
     final m = ((sec % 3600) ~/ 60);
     final s = (sec % 60).toInt();
     final frame = ((sec - sec.floorToDouble()) * fps).round();
-    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')};${frame.toString().padLeft(2, '0')}';
+    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}:${frame.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -1046,8 +1048,8 @@ class EdgeStatusBar extends StatelessWidget {
       height: 24,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: const BoxDecoration(
-        color: EdgeTheme.statusBar,
-        border: Border(top: BorderSide(color: EdgeTheme.divider)),
+        color: Color(0xD9161618),
+        border: Border(top: BorderSide(color: EdgeTheme.border, width: 0.5)),
       ),
       child: Row(
         children: [
@@ -1113,7 +1115,8 @@ class EdgeStatusBar extends StatelessWidget {
           Text('${fps.toInt()} fps', style: EdgeTypography.small.copyWith(fontSize: 10)),
           const SizedBox(width: 8),
           // Zoom
-          Text('${zoomLevel.toInt()}x', style: EdgeTypography.small.copyWith(fontSize: 10)),
+          // Zoom shown as multiplier of the 30px/s default (matches toolbar ×)
+          Text('×${(zoomLevel / 30.0).toStringAsFixed(1)}', style: EdgeTypography.small.copyWith(fontSize: 10)),
           if (proxyCount > 0) ...[
             const SizedBox(width: 8),
             Container(
@@ -1143,6 +1146,6 @@ class EdgeStatusBar extends StatelessWidget {
     final m = ((sec % 3600) ~/ 60);
     final s = (sec % 60).toInt();
     final frame = ((sec - sec.floorToDouble()) * fps).round();
-    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')};${frame.toString().padLeft(2, '0')}';
+    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}:${frame.toString().padLeft(2, '0')}';
   }
 }

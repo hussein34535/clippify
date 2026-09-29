@@ -5,11 +5,16 @@ Compatible with moviepy 2.x
 """
 
 import os
+import re
 import struct
 import wave
 import numpy as np
 
 _NVENC_AVAILABLE = None
+
+# P0: teaser→main transition window (seconds). Kept <= 0.2s so the teaser
+# neither drags black frames into the middle of the clip nor stretches it.
+_TEASER_TRANS_D = 0.2
 
 def _has_nvenc():
     global _NVENC_AVAILABLE
@@ -135,11 +140,19 @@ import subprocess
 import imageio_ffmpeg
 
 def _get_video_dimensions(video_path: str):
-    """Return (width, height) of video using ffprobe."""
+    """Return (width, height) of video.
+
+    P0 fix: imageio_ffmpeg ships no ffprobe and it may be missing from PATH —
+    the old code silently fell back to (1920, 1080) landscape, which made
+    compile_clips letterbox vertical 1080x1920 clips into a horizontal canvas.
+    Now: ffprobe → parse `ffmpeg -i` stderr → vertical-first default (the
+    product's target platforms are TikTok/Reels/Shorts = 9:16).
+    """
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     ffprobe = ffmpeg.replace("ffmpeg", "ffprobe")
     if not os.path.isfile(ffprobe):
         ffprobe = "ffprobe"
+    # 1) Preferred: ffprobe (accurate, ignores pattern false-positives)
     try:
         result = subprocess.run(
             [ffprobe, "-v", "error", "-select_streams", "v:0",
@@ -148,11 +161,25 @@ def _get_video_dimensions(video_path: str):
             capture_output=True, text=True, timeout=10
         )
         parts = result.stdout.strip().split(",")
-        if len(parts) >= 2:
+        if result.returncode == 0 and len(parts) >= 2:
             return int(parts[0]), int(parts[1])
     except Exception:
         pass
-    return 1920, 1080  # fallback assumption
+    # 2) Fallback: parse dimensions from `ffmpeg -i` stderr (always shipped)
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-i", video_path],
+            capture_output=True, text=True, timeout=10
+        )
+        # Match the "Stream #0:0 ... , 1080x1920, ..." token only
+        for m in re.finditer(r"(\d{2,5})x(\d{2,5})", result.stderr):
+            w, h = int(m.group(1)), int(m.group(2))
+            if w >= 64 and h >= 64:
+                return w, h
+    except Exception:
+        pass
+    # 3) Last resort: vertical canvas (platform default), NOT landscape
+    return 1080, 1920
 
 def export(video_path: str, start_sec: float, end_sec: float,
            output_path: str, clip_index: int = 1, ass_path: str = None,
@@ -227,7 +254,18 @@ def export(video_path: str, start_sec: float, end_sec: float,
     if narrative_acts:
         print(f"  [NARRATIVE STITCH] Rendering 3-act narrative: {len(narrative_acts)} acts.")
         for act in narrative_acts:
-            segments.append((act["start_sec"], act["end_sec"]))
+            try:
+                a_s = float(act.get("start_sec", 0.0))
+                a_e = float(act.get("end_sec", 0.0))
+            except (TypeError, ValueError):
+                continue
+            # P0: an inverted act (end <= start) makes FFmpeg abort with
+            # "-to value smaller than -ss" — skip invalid acts defensively.
+            if a_e > a_s:
+                segments.append((a_s, a_e))
+            else:
+                print(f"  [NARRATIVE STITCH] Skipped inverted act '{act.get('name', '?')}' "
+                      f"({a_s:.2f}s → {a_e:.2f}s)")
     elif trim_silence and words:
         from silence_trimmer import compute_active_segments
         segments = compute_active_segments(
@@ -489,16 +527,22 @@ def export(video_path: str, start_sec: float, end_sec: float,
     teaser_input_idx = None
     if teaser_duration_sped > 0:
         teaser_input_idx = len(segments)
-        # Teaser video filter: starts from the separate teaser input stream
         teaser_crop_expr = "null" if smart_crop_filter == "no_crop" else (_crop_expr if _crop_expr else "crop=ih*9/16:ih:(iw-ih*9/16)/2:0")
+        # Teaser video filter: starts from the separate teaser input stream.
+        # P0 NOTE (isolation): hue=s=0/eq/vignette below are applied ONLY to
+        # [teaser_input_idx:v] — the main stream keeps its own filter chain
+        # (video_filter → v_main_final) and can never receive this grayscale.
+        # P0 NOTE (duration): the teaser stream is padded only by the short
+        # transition window (0.2s) instead of 1.2s, so the frozen-frame tail
+        # no longer stretches the timeline.
         teaser_v_filter = (
             f"[{teaser_input_idx}:v]{teaser_crop_expr},scale={TARGET_W}:{TARGET_H}:flags=bicubic,setsar=1,"
-            f"hue=s=0,eq=brightness=-0.05:contrast=1.1,vignette,tpad=stop_mode=clone:stop_duration=1.2[v_teaser_final]"
+            f"hue=s=0,eq=brightness=-0.05:contrast=1.1,vignette,tpad=stop_mode=clone:stop_duration={_TEASER_TRANS_D}[v_teaser_final]"
         )
         filter_complex.append(teaser_v_filter)
-        
+
         filter_complex.append(
-            f"[{teaser_input_idx}:a]aresample=44100,asetpts=PTS-STARTPTS,apad=pad_dur=1.2[a_teaser_final]"
+            f"[{teaser_input_idx}:a]aresample=44100,asetpts=PTS-STARTPTS,apad=pad_dur={_TEASER_TRANS_D}[a_teaser_final]"
         )
         
         # Apply main video filters and output to [v_main_final]
@@ -550,19 +594,19 @@ def export(video_path: str, start_sec: float, end_sec: float,
         filter_complex.append(f"[a_voice]volume=1.0{a_final_label}")
 
     if teaser_duration_sped > 0:
-        # Concatenate teaser and main with a smooth fadeblack (black screen) transition
-        # We pad the hook with 1.2s of frozen frame and silence, and start the transition perfectly
-        # at the end of the spoken words. This ensures the sentence fully finishes before the black screen.
+        # P0 fix: the old 1.2s `fadeblack` xfade put ~1.2s of near-black frames
+        # in the MIDDLE of the clip. Use a short direct dissolve instead (<=0.2s)
+        # so the teaser blends without any black pass-through.
         trans_offset = teaser_duration_sped
         if trans_offset < 0: trans_offset = 0
-        
+
         # xfade requires constant frame rate, so we apply fps=30 to both inputs before fading
         out_lbl = "[v_before_logo]" if has_logo else "[v_final]"
         filter_complex.append(
-            f"[v_teaser_final]fps=30[vt_fps];{v_final_label}fps=30[vm_fps];[vt_fps][vm_fps]xfade=transition=fadeblack:duration=1.2:offset={trans_offset:.3f}{out_lbl}"
+            f"[v_teaser_final]fps=30[vt_fps];{v_final_label}fps=30[vm_fps];[vt_fps][vm_fps]xfade=transition=dissolve:duration={_TEASER_TRANS_D}:offset={trans_offset:.3f}{out_lbl}"
         )
         filter_complex.append(
-            f"[a_teaser_final][a_main_final]acrossfade=d=1.2[a_final]"
+            f"[a_teaser_final][a_main_final]acrossfade=d={_TEASER_TRANS_D}[a_final]"
         )
         
     # Apply logo overlay if enabled
@@ -751,12 +795,14 @@ def export(video_path: str, start_sec: float, end_sec: float,
 
 
 _TRANSITION_MAP = {
-    "crossfade": "fade",
+    # P0 fix: ffmpeg xfade "fade" passes through BLACK — replaced with the
+    # direct-blend "dissolve" so compiled clips never show mid-clip black dips.
+    "crossfade": "dissolve",
     "slide_left": "slideleft",
     "slide_up": "slideup",
     "zoom_in": "zoomin",
     "flash": "fadewhite",
-    "fade": "fade",
+    "fade": "dissolve",
     "slideleft": "slideleft",
     "slideup": "slideup",
     "zoomin": "zoomin",
@@ -767,7 +813,7 @@ _TRANSITION_MAP = {
 
 
 def _get_duration(path: str) -> float:
-    """Return video duration in seconds using ffprobe."""
+    """Return video duration in seconds using ffprobe (falls back to `ffmpeg -i` parsing)."""
     import subprocess
     # Check local bin/ first
     local_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
@@ -778,20 +824,33 @@ def _get_duration(path: str) -> float:
             ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
         except ImportError:
             ffmpeg = "ffmpeg"
-            
+
     ffprobe = ffmpeg.replace("ffmpeg", "ffprobe")
     if not os.path.isfile(ffprobe):
         ffprobe = "ffprobe"
-        
+
     try:
         result = subprocess.run(
             [ffprobe, "-v", "error", "-show_entries", "format=duration",
              "-of", "default=noprint_wrappers=1:nokey=1", path],
             capture_output=True, text=True, timeout=10
         )
-        return float(result.stdout.strip())
+        if result.returncode == 0 and result.stdout.strip():
+            return float(result.stdout.strip())
     except Exception:
-        return 0.0
+        pass
+    # Fallback: parse "Duration: 00:00:15.37" from `ffmpeg -i` stderr
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-i", path],
+            capture_output=True, text=True, timeout=10
+        )
+        m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", result.stderr)
+        if m:
+            return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    except Exception:
+        pass
+    return 0.0
 
 
 def compile_clips(clip_paths: list, output_path: str,
@@ -991,7 +1050,26 @@ def render_timeline_to_video(timeline: dict, output_path: str, export_quality: s
             b = grade.get("brightness", 0.0)
             c = grade.get("contrast", 1.0)
             s = grade.get("saturation", 1.0)
-            filter_complex.append(f"{lbl_trimmed}eq=brightness={b}:contrast={c}:saturation={s}{lbl_graded}")
+
+            # P0 clamp: unclamped plan values produced near-black / washed-out
+            # renders. Bound each channel and log when a value gets corrected.
+            _BRIGHT_RANGE, _CONTRAST_RANGE, _SAT_RANGE = (-0.15, 0.15), (0.9, 1.4), (0.5, 1.6)
+
+            def _clamp(val, lo, hi, name):
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    return {"brightness": 0.0, "contrast": 1.0, "saturation": 1.0}[name]
+                if val < lo or val > hi:
+                    fixed = max(lo, min(hi, val))
+                    print(f"  [COLOR CLAMP] {name}={val:.3f} out of [{lo}, {hi}] → clamped to {fixed:.3f}")
+                    return fixed
+                return val
+
+            b = _clamp(b, *_BRIGHT_RANGE, "brightness")
+            c = _clamp(c, *_CONTRAST_RANGE, "contrast")
+            s = _clamp(s, *_SAT_RANGE, "saturation")
+            filter_complex.append(f"{lbl_trimmed}eq=brightness={b:.3f}:contrast={c:.3f}:saturation={s:.3f}{lbl_graded}")
             
             # Transform: Scale, position, rotation
             transform = clip.get("transform", {})

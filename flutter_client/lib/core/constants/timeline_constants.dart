@@ -34,13 +34,13 @@ abstract final class TimelineConstants {
   // Border
   static const double borderWidth = 0.5;
 
-  // Track colors (with alpha)
-  static const Color videoTrackColor = Color(0xFF7c6af7);
-  static const Color audioTrackColor = Color(0xFF0d9488);
-  static const Color overlayTrackColor = Color(0xFFc2410c);
-  static const Color subtitleTrackColor = Color(0xFF059669);
-  static const Color textTrackColor = Color(0xFFEC4899);
-  static const Color nestedTrackColor = Color(0xFF7C3AED);
+  // Track colors (iOS system palette, muted washes via alpha)
+  static const Color videoTrackColor = Color(0xFF0A84FF);
+  static const Color audioTrackColor = Color(0xFF30D158);
+  static const Color overlayTrackColor = Color(0xFFFF9F0A);
+  static const Color subtitleTrackColor = Color(0xFF64D2FF);
+  static const Color textTrackColor = Color(0xFFFF375F);
+  static const Color nestedTrackColor = Color(0xFF5E5CE6);
 
   // Toolbar
   static const double toolbarHeight = 48;

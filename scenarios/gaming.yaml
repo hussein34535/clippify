@@ -1,0 +1,19 @@
+# gaming.yaml — Scenario profile: جيمنج / أكشن سريع
+name_ar: "جيمنج"
+name_en: "gaming"
+
+hook_strategy: >-
+  Find the single most fast-paced, hype, high-adrenaline moment from this gaming
+  transcript. Prefer kill streaks, clutch plays, hype reactions, explosive commentary.
+
+caption_theme: "Cyberpunk Neon"
+zoom_style: "dynamic"
+color_grade: "vibrant"
+sfx_mood: "hype_epic"           # risers, impacts, stadium cheers
+
+pacing: 12                      # cuts_per_minute — maximum adrenaline
+min_clip_sec: 10.0
+max_clip_sec: 35.0
+
+broll_density: 0.10             # gameplay itself is the visual; minimal inserts
+emphasis_words_boost: 1.8       # scream-worthy words get max boost

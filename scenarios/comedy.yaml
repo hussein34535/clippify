@@ -1,0 +1,19 @@
+# comedy.yaml — Scenario profile: كوميدي / ردود أفعال
+name_ar: "كوميدي"
+name_en: "comedy"
+
+hook_strategy: >-
+  Find the single funniest or most absurd sentence from this comedy transcript.
+  Prefer punchlines, unexpected twists, or the peak comedic moment.
+
+caption_theme: "TikTok Yellow"
+zoom_style: "punch"
+color_grade: "vibrant"
+sfx_mood: "playful_boings"      # vine booms, slide whistles, cartoon hits
+
+pacing: 10                      # cuts_per_minute — snappy meme-style rhythm
+min_clip_sec: 10.0
+max_clip_sec: 30.0
+
+broll_density: 0.30             # reaction shots and meme inserts
+emphasis_words_boost: 1.6       # heavy emphasis — every punchline pops

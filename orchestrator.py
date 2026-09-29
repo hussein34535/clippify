@@ -31,8 +31,9 @@ from editor import export
 from content_types import get_type_profile, get_hook_prompt, get_emphasis_sfx
 from broll_manager import DEFAULT_PEXELS_KEY
 
+from llm_config import MODEL_CHAIN, llm_url
+
 _API_KEY = os.getenv("GEMMA_API_KEY", "")
-_LLM_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemma-2-27b-it:generateContent?key="
 
 progress_callback = None
 
@@ -43,18 +44,24 @@ progress_callback = None
 
 def _llm_ask(prompt: str, temperature: float = 0.5, max_retries: int = 2) -> str:
     import time
-    models = ["gemma-2-27b-it", "gemini-1.5-flash", "gemini-2.5-flash"]
     headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
+    model_errors = []
+    for model in MODEL_CHAIN:
+        gen_cfg = {
             "temperature": temperature,
-            "maxOutputTokens": 2000,
-        },
-    }
-    last_err = ""
-    for model in models:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={_API_KEY}"
+            "maxOutputTokens": 8192,
+        }
+        # P0 fix: gemini-2.5.* spend the output budget on internal thinking,
+        # which truncated JSON answers mid-string ("Unterminated string").
+        # Disable thinking for those models so the full answer fits.
+        # (gemini-3.x REJECTS thinkingConfig with 400 — do not extend this.)
+        if model.startswith("gemini-2.5"):
+            gen_cfg["thinkingConfig"] = {"thinkingBudget": 0}
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": gen_cfg,
+        }
+        url = llm_url(model)
         for attempt in range(1, max_retries + 1):
             try:
                 resp = requests.post(url, json=payload, headers=headers, timeout=120)
@@ -67,7 +74,14 @@ def _llm_ask(prompt: str, temperature: float = 0.5, max_retries: int = 2) -> str
                     text_parts = [p.get("text", "") for p in parts if not p.get("thought")]
                     return "".join(text_parts).strip()
                 if resp.status_code == 404 or resp.status_code == 400:
-                    last_err = f"Model {model} not found or unsupported ({resp.status_code})."
+                    model_errors.append(f"{model}: not found or unsupported ({resp.status_code})")
+                    break
+                if resp.status_code == 429:
+                    # P0: quota/rate-limit must fall through to the NEXT model
+                    # instead of aborting the whole chain.
+                    model_errors.append(f"{model}: rate-limited (429)")
+                    print(f"  [LLM] {model} rate-limited (429), falling through to next model...")
+                    time.sleep(1.0)
                     break
                 if resp.status_code >= 500:
                     last_err = f"LLM API Error ({resp.status_code}): {resp.text[:200]}"
@@ -76,17 +90,22 @@ def _llm_ask(prompt: str, temperature: float = 0.5, max_retries: int = 2) -> str
                         print(f"  [LLM] Server error for {model}, retrying in {wait}s...")
                         time.sleep(wait)
                         continue
-                raise Exception(f"LLM API Error ({resp.status_code}): {resp.text[:300]}")
+                    model_errors.append(last_err)
+                    break
+                model_errors.append(f"{model}: HTTP {resp.status_code}: {resp.text[:200]}")
+                break
             except requests.Timeout:
-                last_err = "LLM request timeout"
                 if attempt < max_retries:
                     wait = 2 ** attempt
                     print(f"  [LLM] Timeout for {model}, retrying in {wait}s...")
                     time.sleep(wait)
-            except Exception as e:
-                last_err = str(e)
+                    continue
+                model_errors.append(f"{model}: request timeout")
                 break
-    raise Exception(f"All LLM models failed. Last error: {last_err}")
+            except Exception as e:
+                model_errors.append(f"{model}: {e}")
+                break
+    raise Exception("All LLM models failed. " + " | ".join(model_errors))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -603,6 +622,25 @@ No markdown, no backticks, no explanation."""
                                     break
                     c['end_sec'] = best_end
 
+            # ── P0 Duration Clamp ─────────────────────────────────────
+            # Sentence-boundary snapping above can expand a clip well past
+            # the requested duration (observed 6.0s → 10.19s output). Hard-
+            # guarantee the deviation stays within ±0.5s of duration_sec.
+            for c in chosen:
+                start = max(0.0, float(c.get("start_sec", 0.0)))
+                end = float(c.get("end_sec", start + duration_sec))
+                dur = end - start
+                if abs(dur - duration_sec) > 0.5:
+                    print(f"  [DURATION CLAMP] clip {c.get('index')}: {dur:.2f}s → {duration_sec:.2f}s "
+                          f"(sentence-snap drift > 0.5s)")
+                    end = start + duration_sec
+                # Keep the clip inside the source video bounds
+                if total_duration > 0 and end > total_duration:
+                    end = max(start + 0.5, total_duration)
+                    start = max(0.0, end - duration_sec)
+                c["start_sec"] = round(start, 3)
+                c["end_sec"] = round(end, 3)
+
             return chosen
     except Exception as e:
         print(f"  [AI SELECT] LLM fallback ({e}), using semantic top {n_clips}")
@@ -818,8 +856,8 @@ No markdown, no backticks."""
             for i, eff in enumerate(effects):
                 clip_idx = eff.get("index", i+1)
 
-                # Enforce SFX budget: max 2
-                sfx = eff.get("sfx_queries", [])
+                # Enforce SFX budget: max 2 (null-safe: models may return null)
+                sfx = eff.get("sfx_queries") or []
                 if len(sfx) > 2:
                     print(f"  [تحقق] كليب {clip_idx}: تم تقليص المؤثرات الصوتية من {len(sfx)} إلى 2 | سبب: الحد الأقصى المسموح به")
                     eff["sfx_queries"] = sfx[:2]
@@ -833,8 +871,8 @@ No markdown, no backticks."""
                 else:
                     print(f"  [سلوموشن] كليب {clip_idx}: لا يوجد | سبب: لم يجد الذكاء لحظة درامية كافية")
 
-                # Enforce B-roll budget: max 2
-                brolls = eff.get("brolls", [])
+                # Enforce B-roll budget: max 2 (null-safe)
+                brolls = eff.get("brolls") or []
                 removed_early = [br for br in brolls if br.get("start_offset", 0) < 5.0]
                 if removed_early:
                     print(f"  [بي-رول] كليب {clip_idx}: تم حذف {len(removed_early)} بي-رول في أول 5ث | سبب: منطقة الهوك محمية")
@@ -860,7 +898,9 @@ No markdown, no backticks."""
                     eff["brolls"] = valid_brolls
         
         return effects
-    except Exception:
+    except Exception as e:
+        # P0: never swallow silently — visibility for AI-stage debugging.
+        print(f"  [EFFECTS] AI planning failed ({e}); falling back to defaults")
         return []
 
 
@@ -922,36 +962,63 @@ def validate_post_render(output_path, expected_duration):
     if os.path.getsize(output_path) < 100 * 1024:
         warnings.append(f"Rendered video size is very small ({os.path.getsize(output_path)/1024:.1f} KB). Might be corrupted.")
         
-    # 2. Check actual video duration using ffprobe
+    # 2. Check actual video duration (P0: uses editor._get_duration which
+    # falls back to `ffmpeg -i` parsing when ffprobe is unavailable, so this
+    # gate no longer silently skips the duration check on Windows PATHs
+    # without ffprobe)
     try:
-        from video_analyzer import _get_ffmpeg
-        ffmpeg = _get_ffmpeg()
-        ffprobe = ffmpeg.replace("ffmpeg", "ffprobe")
-        if not os.path.isfile(ffprobe):
-            ffprobe = "ffprobe"
-            
-        import subprocess
-        result = subprocess.run(
-            [ffprobe, "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=noprint_wrappers=1:nokey=1", output_path],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            actual_dur = float(result.stdout.strip())
+        from editor import _get_duration
+        actual_dur = _get_duration(output_path)
+        if actual_dur > 0:
             if abs(actual_dur - expected_duration) > 2.0:
                 warnings.append(f"Actual video duration ({actual_dur:.1f}s) differs from expected duration ({expected_duration:.1f}s) by >2s.")
         else:
-            print(f"  [Validation Warning] ffprobe failed with code {result.returncode}. Skipping duration check.")
+            print("  [Validation Warning] Could not determine video duration. Skipping duration check.")
     except Exception as e:
         # Convert this into a soft/silent console warning instead of failing the validation gate
-        print(f"  [Validation Warning] Could not verify video duration with ffprobe (ffprobe not in PATH): {e}")
-        
+        print(f"  [Validation Warning] Could not verify video duration: {e}")
+
     return len(warnings) == 0, warnings
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Main Pipeline
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _campaign_enabled() -> bool:
+    return os.getenv("CLIPPIFY_CAMPAIGN", "").strip().lower() in ("1", "true")
+
+
+def _apply_campaign(plan: EditingPlan) -> None:
+    from campaign import load_campaign
+    campaign = load_campaign()
+    if campaign:
+        import sys
+        # Simple logging setup for campaign activation
+        sys.stdout.write(f"\n  📢 [Campaign Active] Applying strict automated rules for: '{campaign.name}'\n")
+
+        # 1. Disable background music if forbidden by campaign
+        if not getattr(campaign, "allow_bg_music", True):
+            setattr(plan, "global_music", False)
+            setattr(plan, "music_path", "")
+            sys.stdout.write("    -> [Campaign Constraint] Background music is strictly forbidden. Disabled global music.\n")
+
+        # 2. Disable B-rolls if forbidden by campaign
+        if not getattr(campaign, "allow_broll", True):
+            setattr(plan, "auto_broll", False)
+            sys.stdout.write("    -> [Campaign Constraint] Stock B-rolls are strictly forbidden. Disabled auto B-roll.\n")
+
+        # 3. Disable translation to Arabic if English/specific language required
+        if not getattr(campaign, "translate_to_arabic", False):
+            setattr(plan, "translate_to_arabic", False)
+            sys.stdout.write("    -> [Campaign Constraint] Translation disabled (English content required).\n")
+
+        # 4. Enforce minimum duration compliance (ONLY if slider wasn't explicitly changed)
+        slider_duration = getattr(plan, "duration_sec", 60.0)
+        if slider_duration < campaign.min_duration and slider_duration == 60.0:
+            setattr(plan, "duration_sec", float(campaign.min_duration))
+            sys.stdout.write(f"    -> [Campaign Constraint] Adjusted target duration to campaign minimum: {campaign.min_duration}s\n")
+
 
 def run_editing_plan(plan: EditingPlan, status_callback=None, sound_fx: bool = False) -> list:
     global progress_callback
@@ -961,39 +1028,13 @@ def run_editing_plan(plan: EditingPlan, status_callback=None, sound_fx: bool = F
     hook_mode = getattr(plan, "hook_mode", True)
     custom_instructions = getattr(plan, "custom_instructions", "")
 
-    # ── UGC Campaign Automation Integration (Zero-Touch Mode) ────────────────
-    try:
-        from campaign import load_campaign
-        campaign = load_campaign()
-        if campaign:
+    # ── UGC Campaign Automation Integration (Zero-Touch Mode, opt-in) ────────
+    if _campaign_enabled():
+        try:
+            _apply_campaign(plan)
+        except Exception as ex:
             import sys
-            # Simple logging setup for campaign activation
-            sys.stdout.write(f"\n  📢 [Campaign Active] Applying strict automated rules for: '{campaign.name}'\n")
-            
-            # 1. Disable background music if forbidden by campaign
-            if not getattr(campaign, "allow_bg_music", True):
-                setattr(plan, "global_music", False)
-                setattr(plan, "music_path", "")
-                sys.stdout.write("    -> [Campaign Constraint] Background music is strictly forbidden. Disabled global music.\n")
-                
-            # 2. Disable B-rolls if forbidden by campaign
-            if not getattr(campaign, "allow_broll", True):
-                setattr(plan, "auto_broll", False)
-                sys.stdout.write("    -> [Campaign Constraint] Stock B-rolls are strictly forbidden. Disabled auto B-roll.\n")
-                
-            # 3. Disable translation to Arabic if English/specific language required
-            if not getattr(campaign, "translate_to_arabic", False):
-                setattr(plan, "translate_to_arabic", False)
-                sys.stdout.write("    -> [Campaign Constraint] Translation disabled (English content required).\n")
-                
-            # 4. Enforce minimum duration compliance (ONLY if slider wasn't explicitly changed)
-            slider_duration = getattr(plan, "duration_sec", 60.0)
-            if slider_duration < campaign.min_duration and slider_duration == 60.0:
-                setattr(plan, "duration_sec", float(campaign.min_duration))
-                sys.stdout.write(f"    -> [Campaign Constraint] Adjusted target duration to campaign minimum: {campaign.min_duration}s\n")
-    except Exception as ex:
-        import sys
-        sys.stdout.write(f"  ⚠️ [Campaign Integration Warning] Failed to apply automated constraints: {ex}\n")
+            sys.stdout.write(f"  ⚠️ [Campaign Integration Warning] Failed to apply automated constraints: {ex}\n")
 
     # Load content type profile
     from content_types import get_type_profile
@@ -1237,8 +1278,32 @@ Return ONLY one word from the list above (lowercase, no punctuation, no explanat
         )
         # Store planned B-rolls inside clip if returned by Gemma Multimodal
         clip.planned_brolls = c.get("brolls", [])
-        clip.narrative_acts = c.get("narrative_acts", [])
-        
+
+        # P0 duration guard: 3-act narrative stitching is honored ONLY when the
+        # acts respect the requested clip duration. The LLM routinely returns
+        # acts that span outside the clip bounds (observed acts 0→11.7s for a
+        # 0→6.0s clip), which inflates the render AND can crash FFmpeg with
+        # inverted -ss/-to inputs.
+        raw_acts = c.get("narrative_acts") or []
+        valid_acts = []
+        for act in raw_acts:
+            try:
+                a_s = float(act.get("start_sec"))
+                a_e = float(act.get("end_sec"))
+            except (TypeError, ValueError):
+                continue
+            if a_e > a_s + 0.05:
+                valid_acts.append({"name": act.get("name", ""), "start_sec": a_s, "end_sec": a_e})
+        acts_total = sum(a["end_sec"] - a["start_sec"] for a in valid_acts)
+        clip_target = float(c.get("end_sec", 0.0)) - float(c.get("start_sec", 0.0))
+        if valid_acts and abs(acts_total - clip_target) <= 0.5:
+            clip.narrative_acts = valid_acts
+        else:
+            if valid_acts:
+                log(f"  ⚠️ [DURATION GUARD] تم تجاهل narrative_acts للكليب {c.get('index')}: "
+                    f"مجموعها {acts_total:.2f}ث ≠ مدة الكليب {clip_target:.2f}ث (انحراف > 0.5ث)")
+            clip.narrative_acts = []
+
         plan.clips.append(clip)
 
     # ── Phase 2: Scenario Selection Interactive Step ──────────────────────────
@@ -1319,6 +1384,19 @@ Return ONLY one word from the list above (lowercase, no punctuation, no explanat
                     clip.slow_motion_start = float(eff.get("slow_motion_start", 0.0))
                     clip.slow_motion_end = float(eff.get("slow_motion_end", 0.0))
                     clip.slow_motion_speed = float(eff.get("slow_motion_speed", 1.0))
+                    # P0 duration guard: slow-mo stretches the rendered clip —
+                    # reject any plan whose extra time would push the output
+                    # beyond duration_sec + 0.5s.
+                    if clip.slow_motion_speed < 1.0:
+                        _win = max(0.0, clip.slow_motion_end - clip.slow_motion_start)
+                        _extra = _win * (1.0 / clip.slow_motion_speed - 1.0)
+                        _projected = (clip.end_sec - clip.start_sec) + _extra
+                        if _projected > plan.duration_sec + 0.5:
+                            log(f"  ⚠️ [DURATION GUARD] تم إلغاء السلو مو للكليب {idx}: "
+                                f"كان سيرفع المدة إلى {_projected:.2f}ث (> {plan.duration_sec + 0.5:.2f}ث)")
+                            clip.slow_motion_start = 0.0
+                            clip.slow_motion_end = 0.0
+                            clip.slow_motion_speed = 1.0
                     log(f"  ├─ كليب {idx}: ثيم={clip.caption_theme}({prev_theme}→) | زوم={clip.zoom_style}({prev_zoom}→) | لون={clip.color_grade}({prev_grade}→) | انتقال={clip.transition} | سلومو={clip.slow_motion_speed}x | تأكيد={clip.emphasis_words}")
     else:
         log("  ⚠️ AI effects unavailable, using content-type smart defaults...")
@@ -1535,8 +1613,18 @@ Return ONLY one word from the list above (lowercase, no punctuation, no explanat
             clip_index=clip.index,
             ass_path=ass_path,
             words=words,
-            trim_silence=True,  # Activated to use new advanced silence_trimmer!
+            # P0 duration fix: silence trimming removes in-clip pauses and
+            # shrinks the render well below clip_duration_sec (observed
+            # 6.0s → 4.61s), which also desyncs captions (ASS times keep the
+            # pauses the renderer skipped). Disabled here so the rendered
+            # duration matches the clamped selection bounds.
+            trim_silence=False,
             scale_punches=False,
+            # P0 duration/color fix: the hook teaser replays the opening sentence
+            # as a grayscale stream and ADDS its length to the clip (observed
+            # 6.0s → 10.19s). It is disabled here so the rendered clip matches
+            # clip_duration_sec and stays full-color end to end.
+            add_hook_teaser=False,
             auto_director=_auto_director,
             emphasis_timestamps=emphasis,
             theme=clip.caption_theme,
@@ -1765,14 +1853,26 @@ Generate EXACTLY 3 extremely engaging, creative, and viral hook titles/sentences
 Return ONLY a valid JSON list of EXACTLY 3 strings, with no markdown wrapping, no backticks, and no explanation. Example:
 ["Hook Option 1", "Hook Option 2", "Hook Option 3"]"""
 
-            response = client.models.generate_content(
-                model="gemma-2-27b-it",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.85,
-                    response_mime_type="application/json"
-                )
-            )
+            MODELS = __import__('llm_config').MODEL_CHAIN
+            models_to_try = list(MODELS)  # full live chain from llm_config (P0: gemini-1.5 retired)
+            response = None
+            last_err = None
+            for model in models_to_try:
+                try:
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.85,
+                            response_mime_type="application/json"
+                        )
+                    )
+                    break
+                except Exception as e:
+                    last_err = e
+                    print(f"  [Orchestrator] Model {model} failed: {e}")
+            if response is None:
+                raise Exception(f"All models failed for hook alternatives. Last error: {last_err}")
             import json
             res = json.loads(response.text.strip())
             if isinstance(res, list) and len(res) >= 3:

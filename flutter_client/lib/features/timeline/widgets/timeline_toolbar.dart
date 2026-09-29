@@ -156,7 +156,7 @@ class TimelineToolbar extends ConsumerWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${timelineState.zoomLevel.toStringAsFixed(0)}%',
+                  '${(timelineState.zoomLevel / TimelineConstants.defaultZoom).toStringAsFixed(1)}×',
                   style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
                 ),
               ],

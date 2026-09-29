@@ -172,7 +172,8 @@ Return ONLY a valid JSON list of objects in this exact format with NO markdown w
     # ── Query Multimodal Model ─────────────────────────────────────────────
     chosen_clips = []
     try:
-        models_to_try = ["gemma-2-27b-it", "gemini-1.5-flash", "gemini-2.5-flash"]
+        MODELS = __import__('llm_config').MODEL_CHAIN
+        models_to_try = list(MODELS)  # full live chain from llm_config (P0: gemini-1.5 retired)
         response = None
         last_err = None
         for model in models_to_try:

@@ -28,7 +28,9 @@ class CollaborationManager {
 
   void disconnect() {
     _pingTimer?.cancel();
+    _pingTimer = null;
     _ws?.close();
+    _ws = null;
     _connected = false;
   }
 

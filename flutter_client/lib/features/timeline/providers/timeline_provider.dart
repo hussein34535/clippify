@@ -132,8 +132,12 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
 
   /// تحديث موضع مؤشر القراءة (Playhead) بدون حفظ للتراجع
   void setPlayhead(double timeSec) {
+    // Sanitize: playhead must stay within sane project bounds. This makes the
+    // "20:00:00:18" class of bugs impossible even if a caller misconverts
+    // pixels/frames/milliseconds into seconds.
+    final double ceiling = totalDuration > 0 ? totalDuration + 3600 : 3600.0;
     state = state.copyWith(
-      timeline: state.timeline.copyWith(playheadSec: timeSec.clamp(0.0, double.infinity)),
+      timeline: state.timeline.copyWith(playheadSec: timeSec.clamp(0.0, ceiling)),
     );
   }
 

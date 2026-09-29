@@ -1,0 +1,19 @@
+# educational.yaml — Scenario profile: تعليمي / شرح
+name_ar: "تعليمي"
+name_en: "educational"
+
+hook_strategy: >-
+  Find the single most surprising or valuable piece of information from this
+  educational transcript. Prefer 'Did you know' facts or counterintuitive insights.
+
+caption_theme: "Minimalist Clean"
+zoom_style: "gentle"
+color_grade: "none"
+sfx_mood: "clean_pings"         # subtle notifications, bells, sparkles
+
+pacing: 5                       # cuts_per_minute — steady lecture-friendly pace
+min_clip_sec: 20.0
+max_clip_sec: 50.0
+
+broll_density: 0.25             # diagrams and illustrative inserts
+emphasis_words_boost: 1.3       # highlight key terms and numbers

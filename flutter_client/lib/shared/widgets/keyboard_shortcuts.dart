@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/theme/app_theme.dart';
+import '../../features/command_palette/registry.dart';
 
 class ShortcutAction {
   final String name;
@@ -58,7 +61,18 @@ class ShortcutAction {
   }
 }
 
-class KeyboardShortcutsWidget extends StatelessWidget {
+/// يلفّ الشاشة باختصارات لوحة المفاتيح.
+///
+/// Ctrl+K مُسجَّل داخلياً ويفتح لوحة الأوامر (command palette) بالأوامر
+/// الافتراضية تلقائياً — لا حاجة لأي ربط إضافي من المستهلك. لتخصيصها،
+/// مرّر سطراً واحداً:
+/// ```dart
+/// KeyboardShortcutsWidget(
+///   onCommandPalette: () => showCommandPalette(context, myCommands),
+///   ...
+/// )
+/// ```
+class KeyboardShortcutsWidget extends ConsumerWidget {
   final Widget child;
   final VoidCallback? onPlayPause;
   final VoidCallback? onForward;
@@ -74,6 +88,9 @@ class KeyboardShortcutsWidget extends StatelessWidget {
   final VoidCallback? onZoomOut;
   final VoidCallback? onZoomReset;
   final VoidCallback? onFullscreen;
+
+  /// اختياري: يتجاوز السلوك الافتراضي لـ Ctrl+K.
+  final VoidCallback? onCommandPalette;
 
   const KeyboardShortcutsWidget({
     super.key,
@@ -92,12 +109,23 @@ class KeyboardShortcutsWidget extends StatelessWidget {
     this.onZoomOut,
     this.onZoomReset,
     this.onFullscreen,
+    this.onCommandPalette,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    void openPalette() {
+      if (onCommandPalette != null) {
+        onCommandPalette!();
+      } else {
+        showCommandPalette(context, defaultCommands(ref, context));
+      }
+    }
+
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+            openPalette,
         if (onPlayPause != null)
           SingleActivator(LogicalKeyboardKey.space): onPlayPause!,
         if (onForward != null)
@@ -148,6 +176,7 @@ class ShortcutsDialog extends StatelessWidget {
     ShortcutAction(name: 'go_end', description: 'النهاية', key: LogicalKeyboardKey.end),
     ShortcutAction(name: 'undo', description: 'تراجع', key: LogicalKeyboardKey.keyZ, ctrl: true),
     ShortcutAction(name: 'redo', description: 'إعادة', key: LogicalKeyboardKey.keyY, ctrl: true),
+    ShortcutAction(name: 'command_palette', description: 'لوحة الأوامر', key: LogicalKeyboardKey.keyK, ctrl: true),
     ShortcutAction(name: 'delete', description: 'حذف', key: LogicalKeyboardKey.delete),
     ShortcutAction(name: 'split', description: 'قص عند المؤشر', key: LogicalKeyboardKey.keyS, ctrl: true),
     ShortcutAction(name: 'zoom_in', description: 'تكبير', key: LogicalKeyboardKey.equal, ctrl: true),

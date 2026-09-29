@@ -25,6 +25,7 @@ HOOK_SFX = {
     "interview":   ["cinematic whoosh", "news sting", "soft swoosh"],
     "motivation":  ["epic rise impact", "crowd cheer stadium", "power hit impact"],
     "educational": ["soft notification ping", "magical sparkle", "level up sound"],
+    "gaming":      ["epic rise impact", "crowd cheer stadium", "power hit impact"],
 }
 
 # Transition sounds (between speaker cuts)
@@ -35,6 +36,7 @@ TRANSITION_SFX = {
     "interview":   ["news swoosh", "camera shutter", "clean whoosh"],
     "motivation":  ["power swoosh", "epic whoosh", "fast swoosh"],
     "educational": ["page turn", "soft whoosh", "notification sound"],
+    "gaming":      ["power swoosh", "epic whoosh", "fast swoosh"],
 }
 
 # Emphasis sounds (on key words)
@@ -48,6 +50,7 @@ EMPHASIS_SFX = {
     "interview":   ["news sting", "subtle boom", "deep thud"],
     "motivation":  ["epic boom", "power rise", "cinematic hit"],
     "educational": ["soft chime", "bell ding", "soft bell"],
+    "gaming":      ["cinematic boom", "dramatic sting", "bass thud"],
 }
 
 # Trending generic SFX — only for comedy content
@@ -76,6 +79,7 @@ COLOR_GRADE_PROFILE = {
     "interview":   "cinematic_warm", # warm, professional
     "motivation":  "cinematic_warm", # golden, epic
     "educational": "none",          # clean, natural
+    "gaming":      "vibrant",       # saturated, high-energy
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -89,6 +93,7 @@ CAPTION_THEME_PROFILE = {
     "interview":   "Minimalist Clean",
     "motivation":  "TikTok Yellow",
     "educational": "Minimalist Clean",
+    "gaming":      "Cyberpunk Neon",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -141,6 +146,13 @@ HOOK_STRATEGY = {
             "transcript. Prefer 'Did you know' style facts or counterintuitive insights. Return only the sentence."
         ),
     },
+    "gaming": {
+        "description": "أقوى لحظة حماسية سريعة الإيقاع — قتلة، أهداف، أو رد فعل صادم",
+        "llm_prompt_hint": (
+            "Find the single most fast-paced, hype, high-adrenaline moment from this gaming transcript. "
+            "Prefer kill streaks, clutch plays, hype reactions, or explosive commentary. Return only the sentence."
+        ),
+    },
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -154,6 +166,7 @@ OUTRO_STYLE = {
     "interview":   "circle_fade",    # دائرة على الوجه
     "motivation":  "epic_fade",      # fade مع نص شعاري
     "educational": "slide_out",      # slide out text
+    "gaming":      "freeze_zoom",    # freeze frame + zoom on the kill/highlight
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -167,6 +180,7 @@ ZOOM_STYLE_PROFILE = {
     "interview":   "gentle",
     "motivation":  "dynamic",
     "educational": "gentle",
+    "gaming":      "dynamic",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -263,6 +277,21 @@ ALL_TYPES = {
         "outro_style": OUTRO_STYLE["educational"],
         "default_n_clips": 4,
         "default_duration": 50,
+    },
+    "gaming": {
+        "label": "🎮 جيمنج",
+        "description": "جيمنج ولعب وأكشن سريع الإيقاع",
+        "color": "#22D3EE",   # cyan
+        "hook_strategy": HOOK_STRATEGY["gaming"],
+        "hook_sfx": HOOK_SFX["gaming"],
+        "transition_sfx": TRANSITION_SFX["gaming"],
+        "emphasis_sfx": EMPHASIS_SFX["gaming"],
+        "color_grade": COLOR_GRADE_PROFILE["gaming"],
+        "caption_theme": CAPTION_THEME_PROFILE["gaming"],
+        "zoom_style": ZOOM_STYLE_PROFILE["gaming"],
+        "outro_style": OUTRO_STYLE["gaming"],
+        "default_n_clips": 6,
+        "default_duration": 45,
     },
     # ── New Podcast Sub-types ──────────────────────────────────────────
     "podcast_car": {

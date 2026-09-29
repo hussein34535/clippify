@@ -1,0 +1,26 @@
+{
+  "timestamp_iso": "2026-08-24T04:20:31.442305+00:00",
+  "mode": "full",
+  "machine": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.2",
+    "cpu_count": 12,
+    "processor": "Intel64 Family 6 Model 165 Stepping 2, GenuineIntel",
+    "gpu": "Quadro T1000"
+  },
+  "results": {
+    "transcribe": {
+      "tiny_load": 1.687,
+      "tiny_run": 0.782,
+      "base_load": 0.883,
+      "base_run": 1.242
+    },
+    "render": {
+      "x264_s": 5.431,
+      "nvenc_s": 3.642,
+      "qsv_s": 4.967
+    },
+    "api_import_s": 2.003
+  },
+  "notes": []
+}

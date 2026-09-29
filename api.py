@@ -2,6 +2,7 @@ import os
 import sys
 import uuid
 import json
+import asyncio
 import threading
 import concurrent.futures
 from typing import List, Dict, Any, Optional
@@ -9,13 +10,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, BackgroundTasks, Header, HTTPException, Query, Body, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, BackgroundTasks, Depends, Header, HTTPException, Query, Body, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
 # Add current folder to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Central path-safety validation for every user-supplied file path (SECURITY):
+# blocks browser-profile/.env/key reads, '..' traversal and out-of-dir writes.
+from path_guard import (
+    PROJECT_ROOT,
+    validate_media_read_path,
+    validate_project_read_path,
+    validate_write_path,
+)
 
 PREFS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui_prefs.json")
 
@@ -49,11 +59,191 @@ from models import EditingPlan, ClipSpec
 from campaign import load_campaign
 from audio_intelligence import separate_audio_tracks, apply_auto_ducking
 
+# ── Guarded imports (see docs/CONTRACTS.md) — modules may not exist yet ──
+try:
+    from auth.middleware import AUTH_ENABLED, require_user
+except ImportError:
+    AUTH_ENABLED = False
+    require_user = None
+
+try:
+    from billing.quotas import consume_credit
+except ImportError:
+    consume_credit = None
+
+# Fair-queue admission (يفرض الحصص فقط عند FAIRQUEUE_ENABLED=true — W5 cloud flip)
+try:
+    from fair_queue import admit as fq_admit
+    from fair_queue import identity_key as fq_identity_key
+    from fair_queue import start_job as fq_start_job
+except ImportError:
+    fq_admit = None
+    fq_identity_key = None
+    fq_start_job = None
+
+
+try:
+    from storage import public_url
+except ImportError:
+    public_url = None
+
+
+def _auth_deps() -> list:
+    """Dependency list for expensive endpoints (no-op while REQUIRE_AUTH is false)."""
+    return [Depends(require_user)] if AUTH_ENABLED and require_user else []
+
+
+def _user_dep():
+    """Dependency returning the authenticated user dict, or None when auth is off.
+
+    استخدمها في الـ endpoints التي تحتاج هوية المستخدم (للحصص/التدقيق).
+    """
+    if AUTH_ENABLED and require_user:
+        return require_user
+    return lambda: None
+
+
+# B-roll download host allowlist (SSRF protection — docs/SECURITY.md)
+_BROLL_ALLOWED_HOSTS = (
+    "pexels.com", "videos.pexels.com", "images.pexels.com", "www.pexels.com",
+    "pixabay.com", "cdn.pixabay.com", "www.pixabay.com",
+)
+
+
+def _is_allowed_broll_host(netloc: str) -> bool:
+    host = (netloc or "").split(":")[0].lower().strip(".")
+    return any(host == d or host.endswith("." + d) for d in _BROLL_ALLOWED_HOSTS)
+
 app = FastAPI(title="Clippify Local API Server", version="1.0.0")
+
+# Auth + Billing routers (no-op when REQUIRE_AUTH=false; see docs/CONTRACTS.md)
+try:
+    from auth.router import router as auth_router
+    from billing.router import router as billing_router
+    app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+    app.include_router(billing_router, prefix="/api/billing", tags=["billing"])
+except ImportError as _auth_imp:
+    print(f"[init] auth/billing routers skipped: {_auth_imp}")
+
+# Providers (LLM cascade status + BYOK keys) — docs/CONTRACTS.md
+try:
+    from providers.router import router as providers_router
+    app.include_router(providers_router, prefix="/api/providers", tags=["providers"])
+except ImportError as _prov_imp:
+    print(f"[init] providers router skipped: {_prov_imp}")
+
+# ── Filmstrip thumbnails for timeline clips ─────────────────────────────────
+try:
+    from system_probe.pathing import resolve_ffmpeg
+except ImportError:
+    def resolve_ffmpeg():
+        import shutil
+        return shutil.which("ffmpeg")
+
+
+@app.get("/api/thumbnails")
+def api_thumbnails(video_path: str, count: int = 8):
+    """Extract `count` evenly-spaced JPEG frames; cached on disk by file hash."""
+    import hashlib
+    import json as _json
+    video_path = validate_media_read_path(video_path)
+    if not os.path.exists(video_path):
+        raise HTTPException(status_code=404, detail="video not found")
+    ffmpeg = resolve_ffmpeg()
+    if not ffmpeg:
+        raise HTTPException(status_code=500, detail="ffmpeg not available")
+    count = max(2, min(12, count))
+    h = hashlib.md5(f"{video_path}|{count}".encode()).hexdigest()[:12]
+    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "thumbs", h)
+    manifest = os.path.join(out_dir, "manifest.json")
+    if os.path.exists(manifest):
+        try:
+            cached = _json.loads(open(manifest, encoding="utf-8").read())
+            if cached.get("thumbs"):
+                return cached
+        except Exception:
+            pass
+    os.makedirs(out_dir, exist_ok=True)
+    import subprocess as _sp
+    import re as _re
+    # duration via ffmpeg stderr (no ffprobe on stock setups)
+    dur = 0.0
+    try:
+        dur_out = _sp.run(
+            [ffmpeg, "-hide_banner", "-i", video_path, "-f", "null", "-"],
+            capture_output=True, text=True, timeout=60, encoding="utf-8", errors="ignore",
+        )
+        blob = (dur_out.stderr or "") + (dur_out.stdout or "")
+        m = _re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", blob)
+        if m:
+            dur = sum(float(x) * mul for x, mul in zip(m.groups(), (3600, 60, 1)))
+        else:
+            for tm in _re.finditer(r"time=(\d+):(\d+):(\d+\.?\d*)", blob):
+                dur = max(dur, sum(float(x) * mul for x, mul in zip(tm.groups(), (3600, 60, 1))))
+    except Exception:
+        dur = 0.0
+    if dur <= 0:
+        dur = 10.0
+    dur = max(dur, 0.5)
+    paths = []
+    for i in range(count):
+        ts = min(dur - 0.1, dur * (i + 0.5) / count)
+        ts = max(0.0, ts)
+        out = os.path.join(out_dir, f"{i}.jpg")
+        try:
+            _sp.run(
+                [ffmpeg, "-y", "-ss", f"{ts:.2f}", "-i", video_path,
+                 "-frames:v", "1", "-vf", "scale=160:-2", "-q:v", "5", out],
+                capture_output=True, timeout=30,
+            )
+            if os.path.exists(out) and os.path.getsize(out) > 500:
+                paths.append(os.path.abspath(out))
+        except Exception:
+            continue
+    payload = {"status": "success", "thumbs": paths, "duration": dur}
+    if paths:
+        try:
+            open(manifest, "w", encoding="utf-8").write(_json.dumps(payload))
+        except Exception:
+            pass
+    return payload
+
+# System probe (hardware tier + ffmpeg resolver for the desktop client)
+try:
+    from system_probe.router import router as system_router
+    app.include_router(system_router, prefix="/api/system", tags=["system"])
+except ImportError as _sys_imp:
+    print(f"[init] system router skipped: {_sys_imp}")
+
+# Local storage backend mount (cloud mode uses S3/R2; see storage.py)
+try:
+    from fastapi.staticfiles import StaticFiles
+    _storage_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage")
+    os.makedirs(_storage_dir, exist_ok=True)
+    app.mount("/files", StaticFiles(directory=_storage_dir), name="files")
+except Exception as _mount_err:
+    print(f"[init] /files static mount skipped: {_mount_err}")
+
+# CORS: explicit localhost-only allowlist. The desktop app talks to
+# 127.0.0.1:8000 directly (desktop apps are not subject to CORS), so no
+# wildcard is needed. Extend via comma-separated CLIPPIFY_CORS_ORIGINS.
+_DEFAULT_CORS_ORIGINS = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+_extra_cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CLIPPIFY_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=list(dict.fromkeys(_DEFAULT_CORS_ORIGINS + _extra_cors_origins)),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -206,6 +396,11 @@ class RenderPlanRequest(BaseModel):
     watermark_path: Optional[str] = None
     watermark_position: Optional[str] = None
     preset: Optional[str] = None  # Optional watermark/logo overlay path
+    # ── Contract fields (docs/CONTRACTS.md) ──
+    custom_instructions: str = ""
+    music_path: str = ""
+    global_music: bool = False
+    global_ending_cta: str = ""
 
 
 @app.get("/api/health")
@@ -290,6 +485,7 @@ class MediaInfoRequest(BaseModel):
 
 @app.post("/api/media-info")
 def get_media_info(req: MediaInfoRequest):
+    req.path = validate_media_read_path(req.path)
     if not os.path.exists(req.path):
         raise HTTPException(status_code=404, detail=f"File not found: {req.path}")
         
@@ -328,6 +524,7 @@ def get_media_info(req: MediaInfoRequest):
 
 @app.get("/api/video-stream")
 def stream_video_endpoint(path: str, range: Optional[str] = Header(None)):
+    path = validate_media_read_path(path)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
     
@@ -353,7 +550,7 @@ def stream_video_endpoint(path: str, range: Optional[str] = Header(None)):
         "Accept-Ranges": "bytes",
         "Content-Length": str(end - start + 1),
         "Content-Type": "video/mp4",
-        "Access-Control-Allow-Origin": "*",
+        # CORS is handled centrally by CORSMiddleware — no per-response header.
     }
     
     def file_iterator():
@@ -405,6 +602,7 @@ def download_yt(url: str = Body(..., embed=True)):
 
 @app.post("/api/transcribe")
 def transcribe_endpoint(video_path: str = Body(..., embed=True)):
+    video_path = validate_media_read_path(video_path)
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail=f"File not found: {video_path}")
     try:
@@ -536,7 +734,7 @@ User Command:
 """
         
         response = None
-        models_to_try = ["gemma-2-27b-it", "gemini-1.5-flash"]
+        from llm_config import MODEL_CHAIN as models_to_try
         last_error = None
         
         for model in models_to_try:
@@ -603,10 +801,21 @@ def analyze_video(req: AnalyzeRequest):
             
             from content_dna import extract_content_dna
             # Mock or minimal LLM helper for offline usage
-            def local_llm_dummy(prompt):
+            def local_llm_dummy(prompt, temperature=0.4):
                 return '{"tone": "conversational", "speakers_type": "single-speaker", "target_pacing": "normal"}'
-                
-            content_dna = extract_content_dna(words, llm_fn=local_llm_dummy)
+
+            def real_llm_fn(prompt, temperature=0.4):
+                import llm_config
+                return llm_config.ask_llm(prompt, temperature=temperature)
+
+            try:
+                import llm_config as _llm_cfg
+                if not _llm_cfg.GEMMA_API_KEY:
+                    raise RuntimeError("GEMMA_API_KEY is not set")
+                content_dna = extract_content_dna(words, llm_fn=real_llm_fn)
+            except Exception as dna_err:
+                print(f"  [AnalyzeVideo] Real Content DNA unavailable ({dna_err}); using offline fallback.")
+                content_dna = extract_content_dna(words, llm_fn=local_llm_dummy)
             
             # 3. Viral Scorer Timeline
             set_session(session_id, 0.8, "Computing viral engagement score...")
@@ -622,7 +831,8 @@ def analyze_video(req: AnalyzeRequest):
                 "words": words,
                 "content_dna": content_dna,
                 "viral_timeline": viral_timeline,
-                "video_path": video_path
+                "video_path": video_path,
+                "content_type": req.content_type,
             })
         except Exception as e:
             set_session(session_id, 0.0, "Failed", errors=[str(e)])
@@ -716,12 +926,12 @@ def render_plan(req: RenderPlanRequest):
                 video_path=req.video_path,
                 n_clips=len(req.clips),
                 duration_sec=req.clips[0].end_sec - req.clips[0].start_sec if req.clips else 60.0,
-                music_path="",
+                music_path=req.music_path,
                 compile_clips=req.compile_clips,
-                global_music=False,
-                global_ending_cta="",
+                global_music=req.global_music,
+                global_ending_cta=req.global_ending_cta,
                 content_type=req.content_type,
-                custom_instructions="",
+                custom_instructions=req.custom_instructions,
                 hook_mode=True,
                 outro_enabled=True,
                 framing_strategy="speaker_tracking",
@@ -776,6 +986,453 @@ def get_status(session_id: str):
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
     return sess
+
+
+# ════════════════════════════════════════════════════════════════════════
+# ⭐ AUTO-EDIT PIPELINE — docs/CONTRACTS.md "Auto-Edit (الميزة الجوهرية)"
+# ════════════════════════════════════════════════════════════════════════
+
+class AutoEditAnswer(BaseModel):
+    content_type: str = "auto"       # auto|podcast|comedy|educational|motivation|interview|awareness|gaming
+    platform: str = "tiktok"         # tiktok|shorts|reels|square
+    n_clips: int = 5
+    clip_duration_sec: float = 60.0
+    caption_theme: Optional[str] = None   # None = حسب نوع المحتوى
+    music: bool = False
+    broll: bool = True
+    translate_arabic: bool = False
+    custom_instructions: str = ""
+
+class AutoEditRequest(BaseModel):
+    video_path: str                  # أو upload_id لاحقاً
+    answers: AutoEditAnswer = AutoEditAnswer()
+
+
+# Per-session progress subscribers: {sid: list of {"queue": asyncio.Queue, "loop": loop}}
+_progress_subs: Dict[str, list] = {}
+# Cooperative cancellation flags checked between pipeline stages
+_cancel_flags: Dict[str, bool] = {}
+
+
+def _broadcast_progress(session_id: str, payload_json_str: str) -> None:
+    """Push a progress payload to every WS subscriber of this session.
+
+    Safe to call from the sync worker thread: schedules put_nowait on each
+    subscriber's asyncio.Queue via loop.call_soon_threadsafe.
+    """
+    for sub in list(_progress_subs.get(session_id, set())):
+        try:
+            sub["loop"].call_soon_threadsafe(sub["queue"].put_nowait, payload_json_str)
+        except Exception:
+            # Loop closed or subscriber gone — drop silently; sqlite remains the fallback
+            pass
+
+
+@app.websocket("/ws/progress/{session_id}")
+async def ws_progress_endpoint(websocket: WebSocket, session_id: str):
+    await websocket.accept()
+    queue: asyncio.Queue = asyncio.Queue()
+    sub = {"queue": queue, "loop": asyncio.get_running_loop()}
+    _progress_subs.setdefault(session_id, []).append(sub)
+
+    async def _drain():
+        while True:
+            msg = await queue.get()
+            await websocket.send_text(msg)
+
+    drain_task = asyncio.create_task(_drain())
+    try:
+        while True:
+            # Ignore client messages — server pushes only
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        drain_task.cancel()
+        subs = _progress_subs.get(session_id)
+        if subs is not None:
+            if sub in subs:
+                subs.remove(sub)
+            if not subs:
+                _progress_subs.pop(session_id, None)
+
+
+def _auto_edit_stage_payload(stage: str, progress: float,
+                             message_ar: str, message_en: str) -> dict:
+    return {
+        "type": "progress",
+        "stage": stage,
+        "progress": round(float(progress), 1),
+        "message_ar": message_ar,
+        "message_en": message_en,
+    }
+
+
+def _auto_edit_store(sid: str, payload: dict, status: Optional[str] = None,
+                     errors: Optional[list] = None) -> None:
+    """Persist the last known payload to sqlite (polling fallback)."""
+    set_session(
+        sid,
+        float(payload.get("progress", 0.0)),
+        status or payload.get("stage", ""),
+        results=payload,
+        errors=errors,
+    )
+
+
+class _AutoEditCancelled(Exception):
+    pass
+
+
+def _resolve_auto_content_type(dna: dict) -> str:
+    """Map answers.content_type='auto' to a concrete type from Content DNA."""
+    tone = str((dna or {}).get("tone", "")).lower()
+    mapping = {
+        "humor": "comedy",
+        "funny": "comedy",
+        "educat": "educational",
+        "inspir": "motivation",
+        "serious": "awareness",
+    }
+    for key, resolved in mapping.items():
+        if key in tone:
+            return resolved
+    return "podcast"
+
+
+def _avg_viral_score(viral_timeline: dict, start_sec: float, end_sec: float) -> float:
+    scores = [v for t, v in viral_timeline.items() if start_sec <= float(t) <= end_sec]
+    if not scores:
+        return 0.0
+    return round(sum(scores) / len(scores), 3)
+
+
+def _to_file_url(path: str) -> str:
+    """Guarded storage.public_url per CONTRACTS.md (local fallback = abs path)."""
+    if public_url is not None:
+        try:
+            return public_url(path)
+        except Exception:
+            pass
+    return os.path.abspath(path)
+
+
+def _run_auto_edit(session_id: str, req: AutoEditRequest):
+    """Background worker: full auto-edit pipeline with stage progress reporting.
+
+    Stages (docs/CONTRACTS.md): queued → transcribing → understanding → selecting
+    → hooks/effects → rendering → compiling → done
+    """
+    video_path = req.video_path
+    answers = req.answers
+
+    def update(stage: str, progress: float, message_ar: str, message_en: str) -> None:
+        payload = _auto_edit_stage_payload(stage, progress, message_ar, message_en)
+        _auto_edit_store(session_id, payload)
+        _broadcast_progress(session_id, json.dumps(payload, ensure_ascii=False))
+
+    try:
+        update("queued", 0.0, "في قائمة الانتظار...", "Queued...")
+
+        if _cancel_flags.get(session_id):
+            raise _AutoEditCancelled()
+
+        # ── Stage 1: transcribing (5-20) ────────────────────────────────
+        update("transcribing", 5.0, "جاري تفريغ الصوت...", "Transcribing audio...")
+        words = generate_subtitles(video_path)
+        if not words:
+            raise Exception("Could not extract speech from this video.")
+        update("transcribing", 20.0, "تم التفريغ بنجاح.", "Transcription complete.")
+
+        if _cancel_flags.get(session_id):
+            raise _AutoEditCancelled()
+
+        # ── Stage 2: understanding (20-40) ──────────────────────────────
+        update("understanding", 20.0, "جاري فهم المحتوى...", "Understanding content...")
+        from content_dna import extract_content_dna
+        # P0 fix: content_dna calls llm_fn(prompt, temperature=...) — the old
+        # lambda only accepted `_t` positionally, so every call raised
+        # TypeError and ContentDNA silently fell back to heuristics.
+        real_llm_fn = lambda p, temperature=0.5: __import__('llm_config').ask_llm(p, temperature=temperature)  # noqa: E731
+        content_dna = extract_content_dna(words, llm_fn=real_llm_fn)
+
+        effective_content_type = answers.content_type
+        if effective_content_type == "auto":
+            effective_content_type = _resolve_auto_content_type(content_dna)
+
+        viral_context = ""
+        viral_timeline: Dict[float, float] = {}
+        try:
+            from viral_scorer import get_viral_timeline
+            viral_timeline = get_viral_timeline(video_path, words) or {}
+        except Exception as v_err:
+            print(f"[auto-edit] Viral Scorer skipped: {v_err}")
+
+        update("understanding", 40.0, "تم تحليل المحتوى.", "Content analysis complete.")
+
+        if _cancel_flags.get(session_id):
+            raise _AutoEditCancelled()
+
+        # ── Stage 3: selecting (40-55) ──────────────────────────────────
+        update("selecting", 40.0, "جاري اختيار أفضل اللحظات...", "Selecting best moments...")
+        semantic_clips = _select_clips_with_ai(
+            words, answers.n_clips, answers.clip_duration_sec,
+            effective_content_type,
+            viral_context=viral_context,
+            custom_instructions=answers.custom_instructions,
+        )
+        if not semantic_clips:
+            raise Exception("AI could not find any interesting clips in this video.")
+        update("selecting", 55.0, f"تم اختيار {len(semantic_clips)} كليب.",
+               f"Selected {len(semantic_clips)} clips.")
+
+        if _cancel_flags.get(session_id):
+            raise _AutoEditCancelled()
+
+        # ── Stage 4: hooks/effects (55-65) ──────────────────────────────
+        update("hooks", 55.0, "جاري تخطيط الخطافات والمؤثرات...",
+               "Planning hooks and effects...")
+        clip_texts = []
+        clip_words_list = []
+        for c in semantic_clips:
+            cw = [w for w in words if c['start_sec'] <= w['start'] <= c['end_sec']]
+            clip_texts.append(" ".join(w['text'] for w in cw)[:200])
+            clip_words_list.append(cw)
+
+        effects = _plan_effects_with_ai(
+            clip_texts, effective_content_type,
+            auto_broll=answers.broll, clip_words_list=clip_words_list
+        )
+
+        clips_final = []
+        for idx, c in enumerate(semantic_clips):
+            eff = next((e for e in effects if e.get("index") == c.get("index")), {})
+            caption_theme = answers.caption_theme or eff.get("caption_theme", "TikTok Yellow")
+            clips_final.append({
+                "index": c.get("index"),
+                "start_sec": c.get("start_sec"),
+                "end_sec": c.get("end_sec"),
+                "hook": c.get("hook_options", [""])[0],
+                "reason": c.get("reason", ""),
+                "caption_theme": caption_theme,
+                "zoom_style": eff.get("zoom_style", "none"),
+                "color_grade": eff.get("color_grade", "original"),
+                "emphasis_words": eff.get("emphasis_words", []),
+                "sfx_queries": eff.get("sfx_queries", []),
+                "planned_brolls": eff.get("brolls", []),
+                "hook_options": c.get("hook_options", []),
+                "slow_motion_start": eff.get("slow_motion_start", 0.0),
+                "slow_motion_end": eff.get("slow_motion_end", 0.0),
+                "slow_motion_speed": eff.get("slow_motion_speed", 1.0),
+            })
+        update("effects", 65.0, "تم تخطيط المؤثرات.", "Effects planned.")
+
+        if _cancel_flags.get(session_id):
+            raise _AutoEditCancelled()
+
+        # ── Stage 5: rendering (65-95) — mirrors render_plan endpoint ──
+        update("rendering", 65.0, "بدء المعالجة والتصدير...", "Rendering started...")
+
+        specs = []
+        for c in clips_final:
+            spec = ClipSpec(
+                index=c["index"],
+                start_sec=c["start_sec"],
+                end_sec=c["end_sec"],
+                hook=c["hook"],
+                reason=c["reason"],
+                caption_theme=c["caption_theme"],
+                zoom_style=c["zoom_style"],
+                color_grade=c["color_grade"],
+                emphasis_words=c["emphasis_words"],
+                sfx_queries=c["sfx_queries"],
+                hook_options=c["hook_options"],
+            )
+            spec.planned_brolls = c["planned_brolls"]
+            spec.slow_motion_start = c["slow_motion_start"]
+            spec.slow_motion_end = c["slow_motion_end"]
+            spec.slow_motion_speed = c["slow_motion_speed"]
+            specs.append(spec)
+
+        plan = EditingPlan(
+            video_path=video_path,
+            n_clips=len(specs),
+            duration_sec=answers.clip_duration_sec,
+            music_path="",
+            compile_clips=True,
+            global_music=answers.music,
+            global_ending_cta="",
+            content_type=effective_content_type,
+            custom_instructions=answers.custom_instructions,
+            hook_mode=True,
+            outro_enabled=True,
+            framing_strategy="speaker_tracking",
+            font_name="Impact",
+            export_quality="High",
+            logo_path="",
+            translate_to_arabic=answers.translate_arabic,
+            caption_animation_mode="auto",
+            gemma_multimodal=False,
+            auto_broll=answers.broll,
+            pexels_api_key="",
+            pixabay_api_key="",
+            api_key="",
+            sfx_mode="normal",
+            use_scene_captioning=False,
+            use_local_captioning=True,
+            export_mode="ffmpeg",
+            plan_review_callback=None,
+        )
+        plan.clips = specs
+
+        def rendering_status(msg):
+            import re
+            m = re.search(r'\((\d+)%\)', msg)
+            pct = int(m.group(1)) if m else None
+            stage_progress = 65.0 + min(max(pct, 0), 100) * 0.30 if pct is not None else 75.0
+            update("rendering", stage_progress, str(msg), str(msg))
+
+        clip_paths = run_editing_plan(plan, status_callback=rendering_status, sound_fx=True)
+
+        # ── Stage 6: compiling/done (100) ───────────────────────────────
+        update("compiling", 95.0, "جاري تجميع الملفات النهائية...",
+               "Compiling final files...")
+
+        import shutil
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+        os.makedirs(output_dir, exist_ok=True)
+        final_files = []
+        for cp in clip_paths:
+            dest = os.path.join(output_dir, os.path.basename(cp))
+            shutil.copy2(cp, dest)
+            final_files.append(os.path.abspath(dest))
+
+        result_clips = []
+        for i, c in enumerate(clips_final):
+            file_path = final_files[i] if i < len(final_files) else None
+            result_clips.append({
+                "index": c["index"],
+                "file_url": _to_file_url(file_path) if file_path else None,
+                "viral_score": _avg_viral_score(
+                    viral_timeline, float(c["start_sec"]), float(c["end_sec"])
+                ),
+                "hook": c["hook"],
+                "duration_sec": round(float(c["end_sec"]) - float(c["start_sec"]), 2),
+                "caption_theme": c["caption_theme"],
+            })
+
+        # P0 fix: the compiled file (when plan.compile_clips merged several clips)
+        # is part of clip_paths too — detect it by name instead of only mapping
+        # single-clip runs, otherwise compiled_file_url stays null for n_clips > 1.
+        compiled_url = None
+        for fp in final_files:
+            if os.path.basename(fp).startswith("compiled"):
+                compiled_url = _to_file_url(fp)
+                break
+        if compiled_url is None and len(final_files) == 1:
+            compiled_url = _to_file_url(final_files[0])
+        done_payload = {
+            "type": "done",
+            "result": {
+                "clips": result_clips,
+                "compiled_file_url": compiled_url,
+            },
+        }
+        _auto_edit_store(session_id, done_payload, status="done")
+        _broadcast_progress(session_id, json.dumps(done_payload, ensure_ascii=False))
+
+    except _AutoEditCancelled:
+        cancel_payload = {"type": "cancelled", "detail": "تم الإلغاء بواسطة المستخدم"}
+        _auto_edit_store(session_id, cancel_payload, status="cancelled")
+        _broadcast_progress(session_id, json.dumps(cancel_payload, ensure_ascii=False))
+    except Exception as e:
+        err_payload = {"type": "error", "detail": str(e)}
+        _auto_edit_store(session_id, err_payload, status="error", errors=[str(e)])
+        _broadcast_progress(session_id, json.dumps(err_payload, ensure_ascii=False))
+    finally:
+        _cancel_flags.pop(session_id, None)
+        try:
+            from fair_queue import finish_job
+
+            finish_job(session_id)
+        except Exception:
+            pass
+
+
+@app.post("/api/auto-edit", status_code=202)
+def auto_edit(req: AutoEditRequest, request: Request = None, _user=Depends(_user_dep())):
+    if not os.path.exists(req.video_path):
+        raise HTTPException(status_code=404, detail=f"Video file not found: {req.video_path}")
+
+    # Fair-queue admission — يحمي المجموعة المشتركة المجانية (no-op حتى FAIRQUEUE_ENABLED=true).
+    fq_key = fq_identity_key(_user, request) if fq_identity_key else "anon"
+    if fq_admit is not None:
+        _plan = _user.get("plan", "free") if isinstance(_user, dict) else "free"
+        _decision = fq_admit(fq_key, plan=_plan)
+        if not _decision.ok:
+            raise HTTPException(
+                status_code=402,
+                detail="quota_exceeded",
+                headers={"Retry-After": str(_decision.retry_after_sec)},
+            )
+
+    # Quota check — يخصم من المستخدم الفعلي عند تفعيل المصادقة،
+    # ويتجاوز الحصة عندما REQUIRE_AUTH=false (وضع التطوير المحلي).
+    if consume_credit is not None:
+        ok, _msg = consume_credit(_user)
+        if not ok:
+            raise HTTPException(status_code=402, detail="quota_exceeded")
+
+    session_id = str(uuid.uuid4())
+    _cancel_flags.pop(session_id, None)
+    queued = _auto_edit_stage_payload("queued", 0.0, "في قائمة الانتظار...", "Queued...")
+    _auto_edit_store(session_id, queued, status="queued")
+
+    if fq_start_job is not None:
+        fq_start_job(session_id, fq_key)
+    _render_pool.submit(_run_auto_edit, session_id, req)
+    return {"session_id": session_id}
+
+
+@app.get("/api/auto-edit/status/{session_id}")
+def auto_edit_status(session_id: str):
+    """Polling fallback — returns the last known progress/done/error payload."""
+    sess = get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    results = sess.get("results")
+    if isinstance(results, dict) and "type" in results:
+        return results
+
+    # Fallback mapping from raw columns (legacy sessions)
+    status = (sess.get("status") or "").lower()
+    progress = sess.get("progress") or 0.0
+    errors = sess.get("errors") or []
+    if status == "done":
+        return {"type": "done", "result": {"clips": [], "compiled_file_url": None}}
+    if status in ("error", "failed"):
+        return {"type": "error", "detail": errors[0] if errors else "Unknown error"}
+    if status == "cancelled":
+        return {"type": "cancelled", "detail": "تم الإلغاء بواسطة المستخدم"}
+    return {
+        "type": "progress",
+        "stage": status or "queued",
+        "progress": round(float(progress), 1),
+        "message_ar": "",
+        "message_en": "",
+    }
+
+
+@app.post("/api/auto-edit/cancel/{session_id}")
+def auto_edit_cancel(session_id: str):
+    sess = get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _cancel_flags[session_id] = True
+    return {"status": "success", "message": "Cancellation requested"}
 
 # ── Reference Video Style Mimicry Endpoints ───────────────────────────────
 
@@ -988,23 +1645,32 @@ class DuckingRequest(BaseModel):
 
 @app.post("/api/audio/separate")
 def api_separate_audio(req: SeparateAudioRequest):
+    video_path = validate_media_read_path(req.video_path)
     try:
-        res = separate_audio_tracks(req.video_path)
+        res = separate_audio_tracks(video_path)
         return {"status": "success", "vocals": res["vocals"], "background": res["background"]}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/audio/ducking")
 def api_audio_ducking(req: DuckingRequest):
+    # Path-safety before the engine call so 400/403 are not masked as 500.
+    vocals_path = validate_media_read_path(req.vocals_path)
+    background_path = validate_media_read_path(req.background_path)
+    output_path = str(validate_write_path(req.output_path))
     try:
         res_path = apply_auto_ducking(
-            req.vocals_path,
-            req.background_path,
-            req.output_path,
+            vocals_path,
+            background_path,
+            output_path,
             req.duck_factor,
             req.words
         )
         return {"status": "success", "output_path": res_path}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1031,12 +1697,16 @@ class NleRenderRequest(BaseModel):
 
 @app.post("/api/project/render/timeline")
 def api_render_timeline(req: NleRenderRequest):
+    # Path-safety: the filename is joined under exports/ — an absolute or
+    # traversing filename would escape it, so route it through path_guard.
     try:
         from nle_renderer import render_timeline
-        output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exports", req.output_filename)
+        output_path = str(validate_write_path(str(PROJECT_ROOT / "exports" / req.output_filename)))
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         render_timeline(req.timeline, output_path)
         return {"status": "success", "output_path": output_path}
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         print(traceback.format_exc())
@@ -1049,13 +1719,18 @@ class XmlExportRequest(BaseModel):
 
 @app.post("/api/project/export/xml")
 def api_export_xml(req: XmlExportRequest):
+    # Path-safety: user-supplied destinations are confined to the project's
+    # data directories (path_guard). Empty value keeps the exports/ default.
+    output_override = str(validate_write_path(req.output_path)) if req.output_path else None
     try:
         from resolve_exporter import export_timeline_to_fcp_xml
         exports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exports")
         os.makedirs(exports_dir, exist_ok=True)
-        out = req.output_path or os.path.join(exports_dir, f"project_{int(__import__('time').time())}.xml")
+        out = output_override or os.path.join(exports_dir, f"project_{int(__import__('time').time())}.xml")
         result_path = export_timeline_to_fcp_xml(req.timeline, out)
         return {"status": "success", "output_path": result_path}
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         print(traceback.format_exc())
@@ -1140,25 +1815,32 @@ async def browse_file():
         print(f"[browse-file] Failed: {e}")
     return {"file_paths": []}
 
-@app.get("/api/health")
-def health_check():
-    return {"status": "ok", "app_dir": os.path.dirname(os.path.abspath(__file__))}
-
 class SaveProjectRequest(BaseModel):
     timeline: Dict[str, Any]
     output_path: Optional[str] = None
 
 @app.post("/api/project/save")
 def api_save_project(req: SaveProjectRequest):
+    # Path-safety: explicit destinations must stay inside the project's data
+    # directories and keep the project-file extension (path_guard).
+    output_override: Optional[str] = None
+    if req.output_path:
+        dest = validate_write_path(req.output_path)
+        if dest.suffix.lower() not in (".clippify", ".json"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Project files must be .clippify or .json, got: '{dest.suffix or '(none)'}'",
+            )
+        output_override = str(dest)
     try:
         timeline = req.timeline
         project_id = timeline.get("project_id", f"proj_{int(__import__('time').time())}")
         project_name = timeline.get("project_name", "Untitled Project")
-        
+
         projects_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "projects")
         os.makedirs(projects_dir, exist_ok=True)
-        
-        file_path = req.output_path or os.path.join(projects_dir, f"{project_id}.clippify")
+
+        file_path = output_override or os.path.join(projects_dir, f"{project_id}.clippify")
         
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(timeline, f, ensure_ascii=False, indent=2)
@@ -1186,11 +1868,16 @@ def api_save_project(req: SaveProjectRequest):
             json.dump(recents, f, ensure_ascii=False, indent=2)
             
         return {"status": "success", "file_path": file_path}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/project/load")
 def api_load_project(path: str):
+    # Path-safety: only .json/.clippify project files, never browser
+    # profiles or credential files (path_guard).
+    path = validate_project_read_path(path)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"Project file not found: {path}")
     try:
@@ -1249,6 +1936,8 @@ def api_broll_download(req: BrollDownloadRequest):
             raise HTTPException(status_code=400, detail="Invalid URL: must be http/https")
         if parsed.scheme != "https":
             raise HTTPException(status_code=400, detail="Only HTTPS URLs allowed for security")
+        if not _is_allowed_broll_host(parsed.netloc):
+            raise HTTPException(status_code=400, detail="Host not in B-roll CDN allowlist")
         
         temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp")
         os.makedirs(temp_dir, exist_ok=True)
@@ -1266,6 +1955,8 @@ def api_broll_download(req: BrollDownloadRequest):
             return {"status": "success", "video_path": os.path.abspath(dest_path)}
         else:
             raise HTTPException(status_code=resp.status_code, detail="Failed to download B-roll file.")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1420,4 +2111,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Bind to loopback by default — the Flutter desktop client talks to
+    # 127.0.0.1 and exposing the API on all interfaces is unnecessary risk.
+    # Override with CLIPPIFY_HOST / CLIPPIFY_PORT when needed.
+    _host = os.getenv("CLIPPIFY_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    try:
+        _port = int(os.getenv("CLIPPIFY_PORT", "8000"))
+    except ValueError:
+        print(f"[init] Invalid CLIPPIFY_PORT={os.getenv('CLIPPIFY_PORT')!r} — falling back to 8000")
+        _port = 8000
+    uvicorn.run(app, host=_host, port=_port)

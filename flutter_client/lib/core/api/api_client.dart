@@ -49,7 +49,7 @@ class ApiClient {
   Future<ApiResult<bool>> postSettings(Map<String, dynamic> settings) async {
     try {
       final response = await _dio.post('/api/settings', data: settings);
-      return Success(response.data['status'] == 'success');
+      return Success(response.data['status'] == 'success' || response.data['status'] == 'ok');
     } catch (e) {
 
       return Failure(_parseError(e), endpoint: '/api/settings');
@@ -261,8 +261,10 @@ class ApiClient {
       });
       return Success(response.data as Map<String, dynamic>);
     } catch (e) {
-
-      return Failure(_parseError(e), endpoint: '/api/project/save');
+      // Surface the HTTP status (e.g. 403 when the path is outside the
+      // allowed project folders) so callers can show a precise message.
+      final statusCode = e is DioException ? e.response?.statusCode : null;
+      return Failure(_parseError(e), statusCode: statusCode, endpoint: '/api/project/save');
     }
   }
 
@@ -324,6 +326,21 @@ class ApiClient {
     } catch (e) {
 
       return Failure(_parseError(e), endpoint: '/api/media-info');
+    }
+  }
+
+  /// Filmstrip frames for timeline clips (disk-cached backend-side).
+  Future<ApiResult<List<String>>> getThumbnails(String videoPath, {int count = 8}) async {
+    try {
+      final response = await _dio.get('/api/thumbnails', queryParameters: {
+        'video_path': videoPath,
+        'count': count,
+      });
+      final thumbs = (response.data['thumbs'] as List?) ?? const [];
+      return Success(thumbs.cast<String>());
+    } catch (e) {
+
+      return Failure(_parseError(e), endpoint: '/api/thumbnails');
     }
   }
 

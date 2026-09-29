@@ -1,10 +1,15 @@
 import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
+import '../../../core/native/ffmpeg_service.dart';
 import '../../library/widgets/media_library_widget.dart';
+import '../../wizard/auto_edit_wizard_dialog.dart' show showAutoEditWizardDialog;
 import '../../player/widgets/video_player_widget.dart';
 import '../../timeline/widgets/timeline_widget.dart';
 import '../../inspector/widgets/inspector_widget.dart';
@@ -14,25 +19,23 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/models/timeline_models.dart';
 import '../../../core/storage/local_storage.dart';
 import '../../../core/plugins/plugin_system.dart';
-import '../../cloud/collaboration.dart';
 import '../../layout/widgets/header.dart';
 import '../../../shared/providers/toast_provider.dart';
 import '../../../shared/widgets/keyboard_shortcuts.dart';
+import '../../../shared/widgets/ios_kit.dart';
+import '../../../shared/widgets/ui_polish.dart';
 import '../../layout/widgets/export_modal.dart';
 import '../../layout/widgets/settings_modal.dart';
-import '../../../shared/providers/theme_provider.dart';
 import 'package:flutter/services.dart';
 import '../../../shared/providers/playback_provider.dart';
 import '../../text/widgets/text_editor_dialog.dart';
 import '../../ui/edge_ui.dart';
-import '../../../shared/widgets/ui_polish.dart';
 import '../../export/data/export_presets.dart';
 import '../../../core/services/services.dart';
 import '../../../shared/providers/layout_prefs_provider.dart';
-import '../../capture/capture_suite.dart';
 import '../../ui/professional_ui.dart';
-
-
+import '../../onboarding/onboarding_overlay.dart';
+import '../widgets/welcome_hero.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -46,11 +49,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _selectedClipType = 'video';
   String? _currentPreviewVideo;
   final List<MediaFile> _importedFiles = [];
-  final List<String> _recordedFiles = [];
-
-  double _leftFraction = 0.2;
-  double _rightFraction = 0.25;
-  double _bottomFraction = 0.45;
 
   bool _isExporting = false;
   double _exportProgress = 0.0;
@@ -58,14 +56,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Timer? _autosaveTimer;
 
-  CollaborationManager? _collabManager;
-  bool _collaborationConnected = false;
-
   bool _backendLoading = true;
-  final WorkspaceManager _workspaceManager = WorkspaceManager();
-  // Removed second screen state
+  bool? _backendConnected;
+  List<RecentProject> _recentProjects = const [];
 
-  bool _snapEnabled = true;
+  final WorkspaceManager _workspaceManager = WorkspaceManager();
 
   @override
   void initState() {
@@ -76,10 +71,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ..register<ExportService>(ExportService());
     _loadAutosave();
     _startAutosaveTimer();
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) setState(() => _backendLoading = false);
-    });
+    Future.delayed(const Duration(milliseconds: 1500), _checkBackendHealth);
     HardwareKeyboard.instance.addHandler(_onKeyEvent);
+  }
+
+  Future<void> _checkBackendHealth() async {
+    if (!mounted) return;
+    setState(() => _backendLoading = false);
+    final result = await ApiClient().getSettings();
+    if (!mounted) return;
+    setState(() {
+      _backendConnected = result is Success;
+    });
+    if (result is Success) _loadRecentProjects();
+  }
+
+  Future<void> _loadRecentProjects() async {
+    final result = await ApiClient().getRecentProjects();
+    if (!mounted) return;
+    switch (result) {
+      case Success(data: final entries):
+        final projects = <RecentProject>[];
+        for (final entry in entries) {
+          if (entry is Map<String, dynamic>) {
+            final path = entry['path'] as String?;
+            if (path == null || path.isEmpty) continue;
+            final name = (entry['project_name'] ?? entry['name'] ?? path.split(Platform.pathSeparator).last) as String;
+            projects.add(RecentProject(name: name, path: path));
+          }
+        }
+        setState(() => _recentProjects = projects);
+      case Failure():
+        break;
+    }
   }
 
   Future<void> _loadAutosave() async {
@@ -193,11 +217,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  /// The backend only accepts project saves inside the project
+  /// folders — start the save dialog in Documents/Clippify/projects.
+  Future<String?> _defaultSaveDir() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'Clippify', 'projects'));
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      return dir.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _handleSave() async {
     final timelineState = ref.read(timelineProvider).timeline;
     String? outputFile = await FilePicker.platform.saveFile(
-      dialogTitle: 'Save Project', fileName: '${timelineState.projectName}.clippify',
-      type: FileType.custom, allowedExtensions: ['clippify'],
+      dialogTitle: 'Save Project',
+      fileName: '${timelineState.projectName}.clippify',
+      initialDirectory: await _defaultSaveDir(),
+      type: FileType.custom,
+      allowedExtensions: ['clippify'],
     );
     if (outputFile == null) return;
     if (!outputFile.endsWith('.clippify')) outputFile += '.clippify';
@@ -205,12 +247,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     switch (res) {
       case Success(data: final data):
         if (data['status'] == 'success') {
-          ref.read(toastProvider.notifier).success('Project saved!');
+          ref.read(toastProvider.notifier).success('تم حفظ المشروع!');
         } else {
-          ref.read(toastProvider.notifier).error('Failed to save project.');
+          ref.read(toastProvider.notifier).error('فشل حفظ المشروع.');
         }
-      case Failure():
-        ref.read(toastProvider.notifier).error('Failed to save project.');
+      case Failure(:final statusCode):
+        if (statusCode == 403) {
+          ref.read(toastProvider.notifier).error('الحفظ مسموح فقط داخل مجلد المشروع');
+        } else {
+          ref.read(toastProvider.notifier).error('فشل حفظ المشروع.');
+        }
     }
   }
 
@@ -219,56 +265,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       dialogTitle: 'Open Project', type: FileType.custom, allowedExtensions: ['clippify'],
     );
     if (result == null || result.files.single.path == null) return;
-    final String path = result.files.single.path!;
+    await _loadProjectFrom(result.files.single.path!);
+  }
+
+  Future<void> _loadProjectFrom(String path) async {
     final loadResult = await ApiClient().loadProject(path);
     switch (loadResult) {
       case Success(data: final data):
         if (data['status'] == 'success' && data['timeline'] != null) {
           final newProject = TimelineState.fromJson(data['timeline'] as Map<String, dynamic>);
           ref.read(timelineProvider.notifier).loadProject(newProject);
-          ref.read(toastProvider.notifier).success('Project loaded!');
+          ref.read(toastProvider.notifier).success('تم تحميل المشروع!');
           final videoClips = newProject.tracks.video.isNotEmpty ? newProject.tracks.video[0].clips : [];
           if (videoClips.isNotEmpty && videoClips[0].sourcePath.isNotEmpty) {
             _onSelectVideo(videoClips[0].sourcePath);
           }
         } else {
-          ref.read(toastProvider.notifier).error('Failed to load project.');
+          ref.read(toastProvider.notifier).error('فشل تحميل المشروع.');
         }
       case Failure():
-        ref.read(toastProvider.notifier).error('Failed to load project.');
+        ref.read(toastProvider.notifier).error('فشل تحميل المشروع.');
     }
   }
 
-  void _handleReset() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Reset Timeline?', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
-        content: const Text('All clips will be deleted.', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () {
-              ref.read(timelineProvider.notifier).loadProject(TimelineState.empty());
-              _onSelectClip(null, 'video');
-              Navigator.pop(context);
-              ref.read(toastProvider.notifier).success('Timeline reset!');
-            },
-            child: const Text('Reset', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+  Future<void> _importVideo() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.video, allowMultiple: false);
+      if (result == null || result.files.single.path == null) return;
+      final path = result.files.single.path!;
+      final name = result.files.single.name;
+
+      double duration = 0.0;
+      String? thumbPath;
+      final mediaInfo = await ApiClient().getMediaInfo(path);
+      switch (mediaInfo) {
+        case Success(data: final data):
+          if (data['status'] == 'success') {
+            duration = (data['duration'] as num?)?.toDouble() ?? 0.0;
+            thumbPath = data['thumbnail_path'] as String?;
+          }
+        case Failure():
+          break;
+      }
+      _onFileAdded(MediaFile(path: path, name: name, thumbnailPath: thumbPath, duration: duration));
+      _onSelectVideo(path);
+    } catch (e) {
+      debugPrint('[HomeScreen] Import error: $e');
+    }
   }
 
-  void _handleNewProject() async {
+  Future<void> _handleNewProject() async {
     final template = await showDialog<ProjectTemplate>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text('New Project', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
+        title: const Text('مشروع جديد', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
         content: SizedBox(
           width: 320,
           child: Column(
@@ -280,13 +331,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: () => Navigator.pop(ctx, t),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   child: Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.divider)),
+                    decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(AppRadius.md), border: Border.all(color: AppColors.border, width: 0.5)),
                     child: Row(
                       children: [
-                        Container(width: 40, height: 40, decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+                        Container(width: 40, height: 40, decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(AppRadius.sm)),
                           child: Icon(t.aspectRatio == '9:16' ? Icons.phone_android_rounded : t.aspectRatio == '1:1' ? Icons.crop_square_rounded : Icons.tv_rounded, color: AppColors.primary, size: 20),
                         ),
                         const SizedBox(width: 12),
@@ -310,7 +361,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء', style: TextStyle(color: AppColors.textSecondary))),
         ],
       ),
     );
@@ -319,7 +370,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final newProject = TimelineState.fromJson(data);
       ref.read(timelineProvider.notifier).loadProject(newProject);
       _onSelectClip(null, 'video');
-      ref.read(toastProvider.notifier).success('Project ${template.aspectRatio} created');
+      ref.read(toastProvider.notifier).success('تم إنشاء مشروع ${template.aspectRatio}');
     }
   }
 
@@ -339,7 +390,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         animationType: result.animationType, animationDuration: result.animationDuration,
       );
       ref.read(timelineProvider.notifier).addTextClip(textClip);
-      ref.read(toastProvider.notifier).success('Text added!');
+      ref.read(toastProvider.notifier).success('تمت إضافة النص!');
     }
   }
 
@@ -354,9 +405,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(timelineProvider.notifier).setPlayhead(target);
   }
 
-  void _onFileAdded(MediaFile file) { setState(() { _importedFiles.add(file); }); }
+  void _onFileAdded(MediaFile file) {
+    setState(() {
+      _importedFiles.add(file);
+      _currentPreviewVideo = file.path;
+    });
+  }
   void _onFileRemoved(int index) { setState(() { _importedFiles.removeAt(index); }); }
   void _onSelectVideo(String path) {
+    setState(() => _currentPreviewVideo = path);
     final state = ref.read(timelineProvider);
     final tracks = state.timeline.tracks;
     for (final track in tracks.video) {
@@ -377,9 +434,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() { _selectedClipId = clipId; _selectedClipType = clipType; });
   }
 
+  /// Offline AutoCut via bundled ffmpeg silencedetect. Returns true when the
+  /// cut was produced locally (success OR definitive failure with feedback).
+  Future<bool> _autoCutLocal() async {
+    try {
+      final video = _currentPreviewVideo!;
+      final duration = await FfmpegService.probeDuration(video) ?? 0.0;
+      if (duration <= 0) return false; // fall back to backend
+      final silences = await FfmpegService.detectSilences(video);
+      if (silences.isEmpty && duration < 1.0) return false;
+      final speech = FfmpegService.speechSegments(silences, duration);
+      if (speech.isEmpty) {
+        setState(() { _isExporting = false; _exportStatus = ''; });
+        ref.read(toastProvider.notifier).error('لا يوجد كلام واضح في الفيديو.');
+        return true;
+      }
+      final List<VideoClip> newClips = [];
+      for (var i = 0; i < speech.length; i++) {
+        final seg = speech[i];
+        newClips.add(VideoClip(
+          id: 'clip_autocut_$i',
+          sourcePath: video,
+          startTimeInTimeline: seg['start']!,
+          endTimeInTimeline: seg['end']!,
+          sourceTrimStart: seg['start']!,
+          sourceTrimEnd: seg['end']!,
+          transform: TransformState.defaultState(),
+          colorGrading: ColorGradingState(),
+          filters: [],
+          aiFeatures: AIFeatures(),
+        ));
+      }
+      ref.read(timelineProvider.notifier).setClips(newClips);
+      setState(() { _isExporting = false; _exportStatus = ''; });
+      ref.read(toastProvider.notifier).success('✂️ ${newClips.length} مقاطع (أوفلاين)!');
+      return true;
+    } catch (_) {
+      return false; // any local failure → backend fallback
+    }
+  }
+
   Future<void> _handleAutoCut() async {
     if (_currentPreviewVideo == null) return;
     setState(() { _isExporting = true; _exportProgress = 0.1; _exportStatus = 'Running AutoCut...'; });
+
+    // ── STANDALONE FIRST: ffmpeg silencedetect, fully offline ──
+    final localCut = await _autoCutLocal();
+    if (localCut) return;
+
+    // ── Fallback: legacy backend path (transcribe + VAD) ──
     final apiClient = ApiClient();
     final response = await apiClient.transcribe(_currentPreviewVideo!);
     late bool transcribeOk;
@@ -399,17 +502,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             double lastStart = 0.0;
             int index = 0;
             for (var sil in silences) {
-              final startSilence = (sil['start'] as num).toDouble();
-              final endSilence = (sil['end'] as num).toDouble();
-              if (startSilence > lastStart) {
-                newClips.add(VideoClip(id: 'clip_autocut_$index', sourcePath: _currentPreviewVideo!,
-                  startTimeInTimeline: lastStart, endTimeInTimeline: startSilence,
-                  sourceTrimStart: lastStart, sourceTrimEnd: startSilence,
-                  transform: TransformState.defaultState(), colorGrading: ColorGradingState(),
-                  filters: [], aiFeatures: AIFeatures()));
-                index++;
-              }
-              lastStart = endSilence;
+              try {
+                final startSilence = ((sil['start'] as num?) ?? 0.0).toDouble();
+                final endSilence = ((sil['end'] as num?) ?? 0.0).toDouble();
+                if (startSilence > lastStart) {
+                  newClips.add(VideoClip(id: 'clip_autocut_$index', sourcePath: _currentPreviewVideo!,
+                    startTimeInTimeline: lastStart, endTimeInTimeline: startSilence,
+                    sourceTrimStart: lastStart, sourceTrimEnd: startSilence,
+                    transform: TransformState.defaultState(), colorGrading: ColorGradingState(),
+                    filters: [], aiFeatures: AIFeatures()));
+                  index++;
+                }
+                lastStart = endSilence;
+              } catch (_) {}
             }
             ref.read(timelineProvider.notifier).setClips(newClips);
             setState(() { _isExporting = false; _exportStatus = ''; });
@@ -431,7 +536,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _handleExport() async {
     final timelineState = ref.read(timelineProvider).timeline;
     final clips = timelineState.tracks.video.isNotEmpty ? timelineState.tracks.video[0].clips : [];
-    if (clips.isEmpty) { ref.read(toastProvider.notifier).error('No clips on timeline.'); return; }
+    if (clips.isEmpty) { ref.read(toastProvider.notifier).error('لا توجد مقاطع على التايملاين.'); return; }
 
     final settings = await showDialog<ExportSettings>(context: context, builder: (context) => const ExportModal());
     if (settings == null) return;
@@ -447,16 +552,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       switch (res) {
         case Success(data: final data):
           if (data['status'] == 'success') {
-            showDialog(context: context, builder: (context) => AlertDialog(
-              backgroundColor: AppColors.surface,
-              title: const Text('XML Exported!', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
-              content: SelectableText('XML saved in:\n${data['output_path']}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-            ));
-            ref.read(toastProvider.notifier).success('XML exported!');
-          } else { ref.read(toastProvider.notifier).error('XML export failed.'); }
+            await showIOSDialog(
+              context: context,
+              title: 'تم تصدير XML!',
+              contentWidget: SelectableText('تم الحفظ في:\n${data['output_path']}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+              actions: const [IOSDialogAction('حسناً', isDefault: true)],
+            );
+            ref.read(toastProvider.notifier).success('تم تصدير XML!');
+          } else { ref.read(toastProvider.notifier).error('فشل تصدير XML.'); }
         case Failure():
-          ref.read(toastProvider.notifier).error('XML export failed.');
+          ref.read(toastProvider.notifier).error('فشل تصدير XML.');
       }
       return;
     }
@@ -486,7 +591,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
       if (result.sessionId != null) { _pollExportStatus(result.sessionId!); }
       else {
-        ref.read(toastProvider.notifier).success('Export complete!');
+        ref.read(toastProvider.notifier).success('اكتمل التصدير!');
         setState(() { _isExporting = false; _exportStatus = ''; });
       }
       return;
@@ -502,7 +607,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _pollExportStatus(sessionId);
       case Failure():
         setState(() { _isExporting = false; _exportStatus = 'Export failed.'; });
-        ref.read(toastProvider.notifier).error('Failed to start export.');
+        ref.read(toastProvider.notifier).error('فشل بدء التصدير.');
     }
   }
 
@@ -524,21 +629,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           if (status.toLowerCase().startsWith('done') && results.isNotEmpty) {
             setState(() { _isExporting = false; _exportStatus = ''; });
             if (!mounted) return;
-            showDialog(context: context, builder: (context) => AlertDialog(
-              title: const Text('Export Complete!', style: TextStyle(fontFamily: 'Outfit')),
-              content: SelectableText('Video saved in:\n${results.first}'),
-              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-            ));
+            await showIOSDialog(
+              context: context,
+              title: 'اكتمل التصدير!',
+              contentWidget: SelectableText('تم حفظ الفيديو في:\n${results.first}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              actions: const [IOSDialogAction('حسناً', isDefault: true)],
+            );
             return;
           }
           if (status.toLowerCase() == 'failed' || errors.isNotEmpty) {
             setState(() { _isExporting = false; _exportStatus = ''; });
             if (!mounted) return;
-            showDialog(context: context, builder: (context) => AlertDialog(
-              title: const Text('Export Error', style: TextStyle(fontFamily: 'Outfit')),
-              content: Text(errors.isNotEmpty ? errors.join('\n') : 'FFmpeg processing error.'),
-              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-            ));
+            await showIOSDialog(
+              context: context,
+              title: 'خطأ في التصدير',
+              content: errors.isNotEmpty ? errors.join('\n') : 'خطأ في معالجة FFmpeg.',
+              actions: const [IOSDialogAction('حسناً', isDefault: true)],
+            );
             return;
           }
         case Failure():
@@ -560,149 +667,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _handleWorkspacePreset(String id) {
     if (!mounted) return;
     _workspaceManager.switchTo(id);
-    final fractions = _workspaceManager.fractions;
-    setState(() { _leftFraction = fractions['left'] ?? 0.2; _rightFraction = fractions['right'] ?? 0.25; _bottomFraction = fractions['bottom'] ?? 0.45; });
-    ref.read(toastProvider.notifier).info('Workspace: ${_workspaceManager.current.name}');
+    ref.read(toastProvider.notifier).info('مساحة العمل: ${_workspaceManager.current.name}');
   }
-
-  // Removed _handleThemePreset and _handleSecondScreen
-
-  Future<void> _showPluginMarketplace() async {
-    await showDialog(context: context, builder: (context) => AlertDialog(
-      backgroundColor: AppColors.surface,
-      title: Row(children: [
-        const Icon(Icons.extension_rounded, size: 20, color: AppColors.primary),
-        const SizedBox(width: 8),
-        const Text('Plugin Marketplace', style: TextStyle(color: Colors.white, fontFamily: 'Outfit', fontSize: 16)),
-      ]),
-      content: SizedBox(width: 400, height: 500,
-        child: ListView.builder(
-          itemCount: PluginMarketplace.availablePlugins.length,
-          itemBuilder: (context, index) {
-            final p = PluginMarketplace.availablePlugins[index];
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: AppColors.surfaceVariant, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.divider)),
-              child: Row(children: [
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(p['name'] as String, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text(p['description'] as String? ?? '', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    Text(p['author'] as String, style: const TextStyle(color: AppColors.textMuted, fontSize: 10)),
-                    const SizedBox(width: 12),
-                    const Icon(Icons.star_rounded, size: 12, color: Colors.amber),
-                    Text(' ${p['rating']}', style: const TextStyle(color: AppColors.textMuted, fontSize: 10)),
-                    const SizedBox(width: 12),
-                    Text('${p['downloads']} downloads', style: const TextStyle(color: AppColors.textMuted, fontSize: 10)),
-                  ]),
-                ])),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
-                  child: Text(p['price'] as String, style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w700)),
-                ),
-              ]),
-            );
-          },
-        ),
-      ),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close', style: TextStyle(color: AppColors.textSecondary)))],
-    ));
-  }
-
-  Future<void> _toggleCollaboration() async {
-    final state = ref.read(timelineProvider.notifier);
-    final current = ref.read(timelineProvider).timeline;
-    if (!current.collaborationEnabled) {
-      _collabManager = CollaborationManager(userId: 'user_${DateTime.now().millisecondsSinceEpoch}', userName: 'User');
-      final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000';
-      final wsUrl = baseUrl.replaceFirst('http://', 'ws://').replaceFirst('https://', 'wss://');
-      await _collabManager!.connect('$wsUrl/ws');
-      setState(() => _collaborationConnected = _collabManager!.connected);
-      state.updateTimelineState(current.copyWith(collaborationEnabled: _collabManager!.connected));
-      if (_collabManager!.connected) {
-        ref.read(toastProvider.notifier).success('Collaboration enabled');
-      } else {
-        ref.read(toastProvider.notifier).error('Failed to connect collaboration server');
-      }
-    } else {
-      _collabManager?.dispose();
-      _collabManager = null;
-      setState(() => _collaborationConnected = false);
-      state.updateTimelineState(current.copyWith(collaborationEnabled: false));
-      ref.read(toastProvider.notifier).info('Collaboration disabled');
-    }
-  }
-
-  void _showCollaborationPanel() {
-    final enabled = ref.read(timelineProvider).timeline.collaborationEnabled;
-    showDialog(context: context, builder: (context) => AlertDialog(
-      backgroundColor: AppColors.surface,
-      title: Row(children: [
-        Icon(Icons.groups_rounded, size: 20, color: enabled ? const Color(0xFF22C55E) : AppColors.textSecondary),
-        const SizedBox(width: 8),
-        const Text('Collaboration', style: TextStyle(color: Colors.white, fontFamily: 'Outfit', fontSize: 16)),
-      ]),
-      content: SizedBox(width: 320, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: _collaborationConnected ? const Color(0xFF22C55E) : AppColors.textMuted)),
-          const SizedBox(width: 8),
-          Text(_collaborationConnected ? 'Connected' : 'Disconnected', style: TextStyle(color: _collaborationConnected ? const Color(0xFF22C55E) : AppColors.textSecondary, fontSize: 13)),
-          const Spacer(),
-          Switch(value: enabled, onChanged: (_) { Navigator.pop(context); _toggleCollaboration(); }, activeColor: AppColors.primary),
-        ]),
-        const SizedBox(height: 16),
-        const Text('Connected Users', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        if (!enabled)
-          const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('Enable collaboration to join session', style: TextStyle(color: AppColors.textMuted, fontSize: 11)))
-        else
-          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.surfaceVariant, borderRadius: BorderRadius.circular(8)),
-            child: Row(children: [
-              CircleAvatar(radius: 14, backgroundColor: AppColors.primary.withValues(alpha: 0.3), child: const Icon(Icons.person, size: 14, color: AppColors.primary)),
-              const SizedBox(width: 8), const Text('You', style: TextStyle(color: Colors.white, fontSize: 12)),
-              const Spacer(), const Icon(Icons.circle, size: 8, color: Color(0xFF22C55E)),
-            ])),
-        const SizedBox(height: 16),
-        const Text('Recent Changes', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.surfaceVariant, borderRadius: BorderRadius.circular(8)),
-          child: Row(children: [
-            const Icon(Icons.edit_note, size: 14, color: AppColors.textMuted),
-            const SizedBox(width: 6),
-            const Expanded(child: Text('No changes yet', style: TextStyle(color: AppColors.textMuted, fontSize: 11))),
-          ])),
-      ])),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close', style: TextStyle(color: AppColors.textSecondary)))],
-    ));
-  }
-
-  void _handleCapture() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        insetPadding: const EdgeInsets.all(24),
-        child: CapturePanel(
-          onCaptureComplete: _onCaptureComplete,
-        ),
-      ),
-    );
-  }
-
-  void _onCaptureComplete(String filePath) {
-    setState(() { _recordedFiles.add(filePath); });
-    final name = filePath.split('\\').last.split('/').last;
-    final media = MediaFile(path: filePath, name: name);
-    _onFileAdded(media);
-    ref.read(toastProvider.notifier).success('Imported: $name');
-  }
-
-  // Removed _getThemeIcon
 
   @override
   Widget build(BuildContext context) {
@@ -732,7 +698,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: Scaffold(
             body: Column(
               children: [
-                // Professional Menu Bar
+                // iOS navigation bar
                 HeaderWidget(
                   height: layoutPrefs.headerHeight,
                   onExport: _isExporting ? null : _handleExport,
@@ -754,6 +720,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onFullScreen: () async {
                     await windowManager.setFullScreen(!await windowManager.isFullScreen());
                   },
+                  statusBadge: _buildBackendBadge(),
                 ),
 
                 // Export progress bar
@@ -779,7 +746,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         }
                         return null;
                       }));
-                      final timelineData = ref.read(timelineProvider);
 
                       final double totalWidth = constraints.maxWidth;
                       final double totalHeight = constraints.maxHeight;
@@ -818,7 +784,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     decoration: BoxDecoration(
                                       color: EdgeTheme.panelBg,
                                       borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
-                                      border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
+                                      border: Border.all(color: EdgeTheme.border, width: layoutPrefs.panelBorderWidth),
                                     ),
                                     child: Column(
                                       children: [
@@ -827,23 +793,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           padding: const EdgeInsets.symmetric(horizontal: 12),
                                           decoration: const BoxDecoration(
                                             color: EdgeTheme.toolbar,
-                                            border: Border(bottom: BorderSide(color: EdgeTheme.divider)),
+                                            border: Border(bottom: BorderSide(color: EdgeTheme.border, width: 0.5)),
                                           ),
                                           child: Row(
                                             children: [
                                               const Icon(Icons.folder_rounded, size: 14, color: EdgeTheme.textSecondary),
                                               const SizedBox(width: 8),
-                                              Text('Media Browser', style: EdgeTypography.titleSmall),
+                                              Text('مكتبة الوسائط', style: EdgeTypography.titleSmall),
                                             ],
                                           ),
                                         ),
                                         Expanded(
-                                          child: MediaLibraryWidget(
-                                            importedFiles: _importedFiles,
-                                            onFileAdded: _onFileAdded,
-                                            onFileRemoved: _onFileRemoved,
-                                            onSelectVideo: _onSelectVideo,
-                                          ),
+                                           child: MediaLibraryWidget(
+                                             importedFiles: _importedFiles,
+                                             onFileAdded: _onFileAdded,
+                                             onFileRemoved: _onFileRemoved,
+                                             onSelectVideo: _onSelectVideo,
+                                             onAutoEdit: (path) => showAutoEditWizardDialog(context, videoPath: path),
+                                           ),
                                         ),
                                       ],
                                     ),
@@ -855,37 +822,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     child: Container(
                                       clipBehavior: Clip.antiAlias,
                                       decoration: BoxDecoration(
-                                        color: EdgeTheme.panelBg,
+                                        color: Colors.black,
                                         borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
-                                        border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
+                                        border: Border.all(color: EdgeTheme.border, width: layoutPrefs.panelBorderWidth),
                                       ),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
-                                        child: Container(
-                                          color: Colors.black,
-                                          child: Stack(
-                                            children: [
-                                              VideoPlayerWidget(videoPath: activeVideoPath),
-                                              Positioned(
-                                                bottom: 0, left: 0, right: 0,
-                                                child: Container(
-                                                  height: 40,
-                                                  color: Colors.black.withValues(alpha: 0.7),
-                                                  child: Row(
-                                                    mainAxisAlignment: MainAxisAlignment.center,
-                                                    children: [
-                                                      _TransportBtn(icon: Icons.first_page_rounded, onTap: () => ref.read(timelineProvider.notifier).setPlayhead(0)),
-                                                      _TransportBtn(icon: Icons.skip_previous_rounded, onTap: () => _handlePlayheadDelta(-5)),
-                                                      _TransportBtn(icon: Icons.play_arrow_rounded, size: 22, onTap: _handlePlayPause),
-                                                      _TransportBtn(icon: Icons.skip_next_rounded, onTap: () => _handlePlayheadDelta(5)),
-                                                      _TransportBtn(icon: Icons.last_page_rounded, onTap: () { final dur = ref.read(timelineProvider.notifier).totalDuration; ref.read(timelineProvider.notifier).setPlayhead(dur); }),
-                                                    ],
+                                        child: _importedFiles.isEmpty && activeVideoPath == null
+                                            ? WelcomeHero(
+                                                onImportVideo: _importVideo,
+                                                onOpenProject: _handleLoad,
+                                                recentProjects: _recentProjects,
+                                                onOpenRecent: _loadProjectFrom,
+                                              )
+                                            : Stack(
+                                                children: [
+                                                  VideoPlayerWidget(videoPath: activeVideoPath),
+                                                  Positioned(
+                                                    bottom: 0, left: 0, right: 0,
+                                                    child: Row(
+                                                      mainAxisAlignment: MainAxisAlignment.center,
+                                                      children: [
+                                                        _TransportBtn(icon: Icons.first_page_rounded, onTap: () => ref.read(timelineProvider.notifier).setPlayhead(0)),
+                                                        _TransportBtn(icon: Icons.skip_previous_rounded, onTap: () => _handlePlayheadDelta(-5)),
+                                                        _TransportBtn(icon: Icons.play_arrow_rounded, size: 22, onTap: _handlePlayPause),
+                                                        _TransportBtn(icon: Icons.skip_next_rounded, onTap: () => _handlePlayheadDelta(5)),
+                                                        _TransportBtn(icon: Icons.last_page_rounded, onTap: () { final dur = ref.read(timelineProvider.notifier).totalDuration; ref.read(timelineProvider.notifier).setPlayhead(dur); }),
+                                                      ],
+                                                    ),
                                                   ),
-                                                ),
+                                                ],
                                               ),
-                                            ],
-                                          ),
-                                        ),
                                       ),
                                     ),
                                   ),
@@ -898,7 +865,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     decoration: BoxDecoration(
                                       color: EdgeTheme.panelBg,
                                       borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
-                                      border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
+                                      border: Border.all(color: EdgeTheme.border, width: layoutPrefs.panelBorderWidth),
                                     ),
                                     child: Column(
                                       children: [
@@ -907,13 +874,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           padding: const EdgeInsets.symmetric(horizontal: 12),
                                           decoration: const BoxDecoration(
                                             color: EdgeTheme.toolbar,
-                                            border: Border(bottom: BorderSide(color: EdgeTheme.divider)),
+                                            border: Border(bottom: BorderSide(color: EdgeTheme.border, width: 0.5)),
                                           ),
                                           child: Row(
                                             children: [
                                               const Icon(Icons.info_outline_rounded, size: 14, color: EdgeTheme.textSecondary),
                                               const SizedBox(width: 8),
-                                              Text('Inspector', style: EdgeTypography.titleSmall),
+                                              Text('المفتش', style: EdgeTypography.titleSmall),
                                             ],
                                           ),
                                         ),
@@ -940,7 +907,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 decoration: BoxDecoration(
                                   color: EdgeTheme.panelBg,
                                   borderRadius: BorderRadius.circular(layoutPrefs.panelRadius),
-                                  border: Border.all(color: EdgeTheme.divider, width: layoutPrefs.panelBorderWidth),
+                                  border: Border.all(color: EdgeTheme.border, width: layoutPrefs.panelBorderWidth),
                                 ),
                                 child: TimelineWidget(
                                   selectedClipId: _selectedClipId,
@@ -964,7 +931,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     currentTimecode: timelineData.timeline.playheadSec,
                     zoomLevel: timelineData.timeline.zoomLevel,
                     fps: 30,
-                    isBackendConnected: !_backendLoading,
+                    isBackendConnected: _backendConnected == true,
                     isExporting: _isExporting,
                     exportProgress: _exportProgress,
                     exportStatus: _exportStatus,
@@ -976,9 +943,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
         if (_backendLoading)
-          const LoadingOverlay(message: 'Starting backend...'),
+          const LoadingOverlay(message: 'جاري تشغيل الباك إند...'),
+        // ONBOARDING-GATE — self-gated via FirstRunGate + replay provider
+        const OnboardingOverlay(),
       ],
     );
+  }
+
+  Widget _buildBackendBadge() {
+    if (_backendLoading) {
+      return const IOSBadge(label: 'جاري التشغيل', color: AppColors.warning);
+    }
+    return _backendConnected == true
+        ? const IOSBadge(label: 'متصل', color: AppColors.secondary)
+        : const IOSBadge(label: 'غير متصل', color: AppColors.destructive);
   }
 }
 
@@ -990,12 +968,12 @@ class _TransportBtn extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4),
       child: IconButton(
-        icon: Icon(icon, size: size, color: Colors.white70),
+        icon: Icon(icon, size: size, color: Colors.white),
         onPressed: onTap,
         style: IconButton.styleFrom(
-          backgroundColor: Colors.white.withValues(alpha: 0.1),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-          minimumSize: const Size(28, 28),
+          backgroundColor: Colors.white.withValues(alpha: 0.14),
+          shape: const CircleBorder(),
+          minimumSize: const Size(30, 30),
           padding: EdgeInsets.zero,
         ),
       ),
