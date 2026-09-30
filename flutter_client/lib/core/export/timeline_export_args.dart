@@ -187,6 +187,10 @@ List<String> buildExportArgs({
   final audioLabels = <String>[];
   final filters = <String>[];
 
+  // GIF بلا صوت أصلًا — أي خريطة صوتية تفشل التصدير حتمًا، وحتى مخرج
+  // concat الصوتي غير المستهلَك يرفضه ffmpeg. تُبنى الرسوم بلا صوت تمامًا.
+  final mapsAudio = pass != 1 && ffmpegFormat != 'gif';
+
   int inputIndex = 0;
   final segVideoIdx = <int>[];
   final segAudioIdx = <int>[];
@@ -236,8 +240,7 @@ List<String> buildExportArgs({
     final speed = seg.speed;
     final setpts =
         speed == 1 ? 'setpts=PTS-STARTPTS' : 'setpts=(PTS-STARTPTS)/${numStr(speed)}';
-    final vChain = [
-      '[${segVideoIdx[i]}:v]',
+    final vFilters = [
       'scale=$width:$height:force_original_aspect_ratio=decrease',
       'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black',
       'fps=$fps',
@@ -246,31 +249,40 @@ List<String> buildExportArgs({
       'trim=duration=$d',
       'setpts=PTS-STARTPTS',
       'format=yuv420p',
-    ].join(',');
+    ];
+    final vChain = '[${segVideoIdx[i]}:v]${vFilters.join(',')}';
     final vLabel = 'v$i';
     filters.add('$vChain[$vLabel]');
     videoLabels.add(vLabel);
 
-    // صوت: حجم + سرعة + توحيد 48k ستيريو + تطديل/قصّ بالطول الدقيق
-    final atempo = speed == 1 ? '' : '${atempoChain(speed)},';
-    final aChain = [
-      '[${segAudioIdx[i]}:a]',
-      'volume=${numStr(seg.volume)}',
-      '${atempo}aresample=48000',
-      'aformat=sample_fmts=fltp:channel_layouts=stereo',
-      'apad',
-      'atrim=duration=$d',
-      'asetpts=PTS-STARTPTS',
-    ].join(',');
-    final aLabel = 'a$i';
-    filters.add('$aChain[$aLabel]');
-    audioLabels.add(aLabel);
+    // صوت: حجم + سرعة + توحيد 48k ستيريو + تطويل/قصّ بالطول الدقيق
+    if (mapsAudio) {
+      final atempo = speed == 1 ? '' : '${atempoChain(speed)},';
+      final aFilters = [
+        'volume=${numStr(seg.volume)}',
+        '${atempo}aresample=48000',
+        'aformat=sample_fmts=fltp:channel_layouts=stereo',
+        'apad',
+        'atrim=duration=$d',
+        'asetpts=PTS-STARTPTS',
+      ];
+      final aChain = '[${segAudioIdx[i]}:a]${aFilters.join(',')}';
+      final aLabel = 'a$i';
+      filters.add('$aChain[$aLabel]');
+      audioLabels.add(aLabel);
+    }
   }
 
-  final concatIn =
-      [...videoLabels, ...audioLabels].map((l) => '[$l]').join();
+  // concat يستهلك المدخلات أزواجًا متداخلة (v,a,v,a…) — ترتيب فيديوهات-ثم-
+  // أصوات يربط دبابيس بنوع خاطئ ويفشل الرسم (mismatch/invalid argument).
+  final concatIn = StringBuffer();
+  for (var i = 0; i < segments.length; i++) {
+    concatIn.write('[${videoLabels[i]}]');
+    if (mapsAudio) concatIn.write('[${audioLabels[i]}]');
+  }
+  final concatTail = mapsAudio ? '[vc][ac]' : '[vc]';
   filters.add(
-      '${concatIn}concat=n=${segments.length}:v=1:a=1[vc][ac]');
+      '${concatIn}concat=n=${segments.length}:v=1:a=${mapsAudio ? 1 : 0}$concatTail');
 
   String outVideo = 'vc';
   if (watermarkIdx != null) {
@@ -281,7 +293,7 @@ List<String> buildExportArgs({
 
   args.addAll(['-filter_complex', filters.join(';')]);
   args.addAll(['-map', '[$outVideo]']);
-  if (pass != 1) args.addAll(['-map', '[ac]']);
+  if (mapsAudio) args.addAll(['-map', '[ac]']);
 
   args.addAll([
     '-c:v', encoder,
@@ -302,7 +314,9 @@ List<String> buildExportArgs({
     return args;
   }
 
-  args.addAll(['-c:a', 'aac', '-b:a', '192k']);
+  if (mapsAudio) {
+    args.addAll(['-c:a', 'aac', '-b:a', '192k']);
+  }
   if (ffmpegFormat == 'mp4') args.addAll(['-movflags', '+faststart']);
   args.addAll(['-f', ffmpegFormat, outputPath]);
   return args;

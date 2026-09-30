@@ -18,6 +18,9 @@ class ExportSettings {
   final String? watermarkPath;
   final String? watermarkPosition;
 
+  /// بت-ريت صريح من سلايدر اللوحة (Mbps) — يغلب خريطة الجودة عند وجوده.
+  final int? bitrateMbps;
+
   ExportSettings({
     required this.type,
     required this.outputFilename,
@@ -33,5 +36,6 @@ class ExportSettings {
     this.includeMetadata = true,
     this.watermarkPath,
     this.watermarkPosition,
+    this.bitrateMbps,
   });
 }

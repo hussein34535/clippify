@@ -24,12 +24,12 @@ import '../../../core/export/fcp_xml_exporter.dart';
 import '../../../core/plugins/plugin_system.dart';
 import '../../layout/widgets/header.dart';
 import '../../../shared/providers/toast_provider.dart';
+import '../../../shared/providers/comments_provider.dart';
 import '../../../shared/widgets/keyboard_shortcuts.dart';
 import '../../../shared/widgets/ios_kit.dart';
 import '../../../shared/widgets/ui_polish.dart';
 import '../../layout/widgets/export_modal.dart';
 import '../../layout/widgets/settings_modal.dart';
-import 'package:flutter/services.dart';
 import '../../../shared/providers/playback_provider.dart';
 import '../../text/widgets/text_editor_dialog.dart';
 import '../../ui/edge_ui.dart';
@@ -71,7 +71,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _loadAutosave();
     _startAutosaveTimer();
     Future.delayed(const Duration(milliseconds: 1500), _checkBackendHealth);
-    HardwareKeyboard.instance.addHandler(_onKeyEvent);
   }
 
   Future<void> _checkBackendHealth() async {
@@ -112,6 +111,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             }
           });
         }
+        final commentList = data['comments'] as List<dynamic>?;
+        if (commentList != null) {
+          ref.read(commentsProvider.notifier).replaceAll(commentList
+              .whereType<Map<String, dynamic>>()
+              .map(TimelineComment.fromJson)
+              .toList());
+        }
       }
     } catch (e) {
       debugPrint('[HomeScreen] Load autosave error: $e');
@@ -120,78 +126,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
-    HardwareKeyboard.instance.removeHandler(_onKeyEvent);
     if (ServiceLocator().has<AutosaveService>()) {
       ServiceLocator().get<AutosaveService>().stop();
     }
     super.dispose();
-  }
-
-  bool _onKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent) return false;
-    final focusNode = FocusManager.instance.primaryFocus;
-    final bool isEditing = focusNode != null &&
-        (focusNode.context?.findAncestorWidgetOfExactType<EditableText>() != null ||
-         focusNode.context?.widget is EditableText);
-    if (isEditing) return false;
-
-    final isCtrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
-    final isShift = HardwareKeyboard.instance.isShiftPressed;
-    final key = event.logicalKey;
-    final timelineNotifier = ref.read(timelineProvider.notifier);
-    final timelineState = ref.read(timelineProvider).timeline;
-    final playhead = timelineState.playheadSec;
-
-    if (key == LogicalKeyboardKey.space) {
-      final isPlaying = ref.read(isPlayingProvider);
-      ref.read(isPlayingProvider.notifier).state = !isPlaying;
-      return true;
-    }
-    if (isCtrl && key == LogicalKeyboardKey.keyZ) {
-      if (isShift) { if (timelineNotifier.canRedo) { timelineNotifier.redo(); ref.read(toastProvider.notifier).success('Redo'); } }
-      else { if (timelineNotifier.canUndo) { timelineNotifier.undo(); ref.read(toastProvider.notifier).success('Undo'); } }
-      return true;
-    }
-    if (isCtrl && key == LogicalKeyboardKey.keyY) {
-      if (timelineNotifier.canRedo) { timelineNotifier.redo(); ref.read(toastProvider.notifier).success('Redo'); }
-      return true;
-    }
-    if (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.backspace) {
-      if (_selectedClipId != null) {
-        timelineNotifier.removeClip(_selectedClipId!, _selectedClipType);
-        _onSelectClip(null, 'video');
-        ref.read(toastProvider.notifier).success('Clip deleted');
-        return true;
-      }
-    }
-    if (key == LogicalKeyboardKey.keyS || key == LogicalKeyboardKey.keyC) {
-      final splitDone = timelineNotifier.splitClipAtPlayhead(playhead);
-      if (splitDone) {
-        ref.read(toastProvider.notifier).success('Split at playhead');
-      } else {
-        ref.read(toastProvider.notifier).info('لا يوجد مقطع تحت المؤشر');
-      }
-      return true;
-    }
-    if (isCtrl && (key == LogicalKeyboardKey.equal || key == LogicalKeyboardKey.numpadAdd)) {
-      timelineNotifier.setZoom(timelineState.zoomLevel + 5.0);
-      return true;
-    }
-    if (isCtrl && (key == LogicalKeyboardKey.minus || key == LogicalKeyboardKey.numpadSubtract)) {
-      timelineNotifier.setZoom(timelineState.zoomLevel - 5.0);
-      return true;
-    }
-    if (key == LogicalKeyboardKey.arrowLeft) {
-      timelineNotifier.setPlayhead(playhead - (isShift ? 1.0 : 0.1));
-      return true;
-    }
-    if (key == LogicalKeyboardKey.arrowRight) {
-      timelineNotifier.setPlayhead(playhead + (isShift ? 1.0 : 0.1));
-      return true;
-    }
-    if (key == LogicalKeyboardKey.home) { timelineNotifier.setPlayhead(0.0); return true; }
-    if (key == LogicalKeyboardKey.end) { timelineNotifier.setPlayhead(timelineNotifier.totalDuration); return true; }
-    return false;
   }
 
   void _startAutosaveTimer() {
@@ -202,16 +140,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ServiceLocator().get<AutosaveService>().start(
           () => ref.read(timelineProvider).timeline,
           getMediaFiles: () => _importedFiles.map((f) => f.toJson()).toList(),
+          getComments: () =>
+              ref.read(commentsProvider).map((c) => c.toJson()).toList(),
           interval: const Duration(minutes: 5),
         );
   }
 
-  /// حفظ فوري لقائمة المكتبة عند الإضافة/الإزالة — لا ننتظر النبضة الدورية.
+  /// حفظ فوري لقائمة المكتبة والتعليقات عند الإضافة/الإزالة.
   void _persistMediaFiles() {
     if (!ServiceLocator().has<AutosaveService>()) return;
     ServiceLocator().get<AutosaveService>().saveNow(
           ref.read(timelineProvider).timeline,
           mediaFiles: _importedFiles.map((f) => f.toJson()).toList(),
+          comments: ref.read(commentsProvider).map((c) => c.toJson()).toList(),
         );
   }
 
@@ -242,7 +183,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (outputFile == null) return;
     if (!outputFile.endsWith('.clippify')) outputFile += '.clippify';
     try {
-      await ProjectFileService().saveProject(timelineState, outputFile);
+      final comments =
+          ref.read(commentsProvider).map((c) => c.toJson()).toList();
+      await ProjectFileService()
+          .saveProject(timelineState, outputFile, comments: comments);
       ref.read(timelineProvider.notifier).markSaved();
       ref.read(toastProvider.notifier).success('تم حفظ المشروع!');
       _loadRecentProjects();
@@ -252,7 +196,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _handleLoad() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
       dialogTitle: 'Open Project', type: FileType.custom, allowedExtensions: ['clippify'],
     );
     if (result == null || result.files.single.path == null) return;
@@ -263,6 +207,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final newProject = await ProjectFileService().loadProject(path);
       ref.read(timelineProvider.notifier).loadProject(newProject);
+      final savedComments =
+          await ProjectFileService().loadProjectComments(path);
+      ref.read(commentsProvider.notifier).replaceAll(
+          savedComments.map(TimelineComment.fromJson).toList());
       ref.read(toastProvider.notifier).success('تم تحميل المشروع!');
       final videoClips = newProject.tracks.video.isNotEmpty ? newProject.tracks.video[0].clips : [];
       if (videoClips.isNotEmpty && videoClips[0].sourcePath.isNotEmpty) {
@@ -354,6 +302,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final data = template.generateTimeline();
       final newProject = TimelineState.fromJson(data);
       ref.read(timelineProvider.notifier).loadProject(newProject);
+      ref.read(commentsProvider.notifier).clearComments();
       _onSelectClip(null, 'video');
       ref.read(toastProvider.notifier).success('تم إنشاء مشروع ${template.aspectRatio}');
     }
@@ -516,7 +465,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             }
             ref.read(timelineProvider.notifier).setClips(newClips);
             setState(() { _isExporting = false; _exportStatus = ''; });
-            ref.read(toastProvider.notifier).success('${newClips.length} clips created!');
+            if (newClips.isEmpty) {
+              // ملف بلا كلام واضح — لا نمسح التايملاين بنجاح وهمي.
+              ref.read(toastProvider.notifier).error('لا يوجد كلام واضح في الفيديو.');
+            } else {
+              ref.read(toastProvider.notifier).success('${newClips.length} clips created!');
+            }
           } else {
             setState(() { _isExporting = false; _exportStatus = ''; });
             ref.read(toastProvider.notifier).error('AutoCut failed.');
@@ -567,6 +521,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() { _isExporting = true; _exportProgress = 0.0; _exportStatus = 'Starting export...'; });
     final ext = settings.presetPro?.container.extension ?? '.mp4';
     final outPath = await _resolveExportPath(settings.outputFilename, ext);
+    if (outPath.isEmpty) {
+      setState(() { _isExporting = false; _exportStatus = ''; });
+      ref.read(toastProvider.notifier).error('اسم ملف الإخراج فارغ.');
+      return;
+    }
     final result = await const TimelineExporter().render(
       timeline: timelineState,
       settings: settings,
@@ -580,6 +539,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!mounted) return;
     setState(() { _isExporting = false; _exportStatus = ''; });
     if (result.success) {
+      if (result.notes.isNotEmpty) {
+        ref.read(toastProvider.notifier).info(result.notes.join('\n'));
+      }
       await showIOSDialog(
         context: context,
         title: 'اكتمل التصدير!',
@@ -647,12 +609,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onUndo: () => ref.read(timelineProvider.notifier).undo(),
           onRedo: () => ref.read(timelineProvider.notifier).redo(),
           onDelete: () {
-            final state = ref.read(timelineProvider);
-            if (state.timeline.tracks.video.isNotEmpty && state.timeline.tracks.video[0].clips.isNotEmpty) {
-              ref.read(timelineProvider.notifier).removeVideoClip(state.timeline.tracks.video[0].clips.last.id);
+            if (_selectedClipId != null) {
+              ref.read(timelineProvider.notifier).removeClip(_selectedClipId!, _selectedClipType);
+              _onSelectClip(null, 'video');
+              ref.read(toastProvider.notifier).success('Clip deleted');
             }
           },
-          onSplit: () { final playhead = ref.read(timelineProvider).timeline.playheadSec; ref.read(timelineProvider.notifier).splitClipAtPlayhead(playhead); },
+          onSplit: () {
+            final playhead = ref.read(timelineProvider).timeline.playheadSec;
+            if (ref.read(timelineProvider.notifier).splitClipAtPlayhead(playhead)) {
+              ref.read(toastProvider.notifier).success('Split at playhead');
+            } else {
+              ref.read(toastProvider.notifier).info('لا يوجد مقطع تحت المؤشر');
+            }
+          },
+          onSave: _handleSave,
+          onSaveAs: _handleSave,
+          onSettings: _handleSettings,
+          onOpen: _handleLoad,
+          onNew: _handleNewProject,
+          onExport: (_isExporting || !hasVideoClips) ? null : _handleExport,
+          onCopy: () {
+            final id = _selectedClipId;
+            if (id == null) {
+              ref.read(toastProvider.notifier).info('اختر مقطعًا أولاً');
+              return;
+            }
+            ref.read(timelineProvider.notifier).copySelectedClips(selectedIds: {id});
+            ref.read(toastProvider.notifier).success('تم النسخ');
+          },
+          onCut: () {
+            final id = _selectedClipId;
+            if (id == null) {
+              ref.read(toastProvider.notifier).info('اختر مقطعًا أولاً');
+              return;
+            }
+            ref.read(timelineProvider.notifier).cutSelectedClips(selectedIds: {id});
+            _onSelectClip(null, 'video');
+            ref.read(toastProvider.notifier).success('تم القص');
+          },
+          onPaste: () {
+            final notifier = ref.read(timelineProvider.notifier);
+            if (!notifier.hasClipboard) {
+              ref.read(toastProvider.notifier).info('لا يوجد شيء للصق');
+              return;
+            }
+            notifier.pasteClips();
+            ref.read(toastProvider.notifier).success('تم اللصق');
+          },
+          onSelectAll: () => ref.read(timelineProvider.notifier).selectAllClips(),
+          onShowShortcuts: () => showDialog(
+              context: context,
+              builder: (_) => const ShortcutsDialog()),
           onAddText: _handleAddText,
           onZoomIn: () { final current = ref.read(timelineProvider).timeline.zoomLevel; ref.read(timelineProvider.notifier).setZoom((current * 1.3).clamp(1.0, 500.0)); },
           onZoomOut: () { final current = ref.read(timelineProvider).timeline.zoomLevel; ref.read(timelineProvider.notifier).setZoom((current / 1.3).clamp(1.0, 500.0)); },
@@ -682,6 +690,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onFullScreen: () async {
                     await windowManager.setFullScreen(!await windowManager.isFullScreen());
                   },
+                  onShowShortcuts: () => showDialog(
+                      context: context,
+                      builder: (_) => const ShortcutsDialog()),
                   statusBadge: _buildBackendBadge(),
                 ),
 

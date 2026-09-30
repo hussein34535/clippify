@@ -50,13 +50,34 @@ class TimelineExporter {
       final encoderPreset = pro?.encoder.preset ?? 'medium';
       final qualityBitrate = _qualityBitrate(settings.exportQuality);
       final cap = pro?.maxBitrateMbps ?? 60;
-      final bitrate = qualityBitrate < cap ? qualityBitrate : cap;
+      // الصريح من السلايدر يغلب خريطة الجودة.
+      final bitrate = settings.bitrateMbps ??
+          (qualityBitrate < cap ? qualityBitrate : cap);
       final maxBitrate =
           pro?.maxBitrateMbps != null && pro!.maxBitrateMbps > bitrate
               ? pro.maxBitrateMbps
               : bitrate + 4;
-      final twoPass = (settings.twoPass || pro?.twoPass == true) &&
-          supportsTwoPass(encoder);
+
+      final notes = <String>[];
+      final wantTwoPass = settings.twoPass || pro?.twoPass == true;
+      final twoPass = wantTwoPass && supportsTwoPass(encoder);
+      if (wantTwoPass && !twoPass) {
+        notes.add('المرور المزدوج يعمل مع الترميز البرمجي فقط — تم التصدير بمرور واحد.');
+      }
+      // أبعاد البريست ≠ أبعاد المشروع تعني letterbox لم يُعايَن.
+      if (pro != null &&
+          width * timeline.settings.height !=
+              height * timeline.settings.width) {
+        notes.add(
+            'أبعاد البريست ($width×$height) تختلف عن المشروع — ستظهر أشرطة حول الصورة.');
+      }
+      var watermarkPath = settings.watermarkPath;
+      if (watermarkPath != null && watermarkPath.isNotEmpty) {
+        if (!await File(watermarkPath).exists()) {
+          notes.add('ملف العلامة المائية مفقود — تم التصدير بدونها.');
+          watermarkPath = null;
+        }
+      }
 
       final dir = p.dirname(outputPath);
       if (dir.isNotEmpty) await Directory(dir).create(recursive: true);
@@ -79,7 +100,7 @@ class TimelineExporter {
             outputPath: outputPath,
             pass: pass,
             includeMetadata: settings.includeMetadata,
-            watermarkPath: settings.watermarkPath,
+            watermarkPath: watermarkPath,
             watermarkPosition: settings.watermarkPosition,
             nullSink: nullSink,
           );
@@ -147,7 +168,7 @@ class TimelineExporter {
             success: false, outputPath: outputPath, error: 'لم يتم إنشاء الملف.');
       }
       onProgress?.call(1.0, 'Done');
-      return ExportResult(success: true, outputPath: outputPath);
+      return ExportResult(success: true, outputPath: outputPath, notes: notes);
     } catch (e) {
       return ExportResult(success: false, error: e.toString());
     }

@@ -128,7 +128,9 @@ impl RenderPipeline {
         let status = tokio::process::Command::new(&self.media.ffmpeg_path)
             .args([
                 "-y", "-f", "concat", "-safe", "0", "-i",
-                list_file.to_str().unwrap(),
+                // مسارات ويندوز عربية/طويلة قد لا تكون UTF-8 صالحًا —
+                // unwrap هنا كان يوقّع مهمة الـ render كلها (panic → 500).
+                &list_file.to_string_lossy().into_owned(),
                 "-c", "copy", output_path,
             ])
             .output()

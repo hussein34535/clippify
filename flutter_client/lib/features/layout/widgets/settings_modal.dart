@@ -88,6 +88,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
       _loading = true;
     });
     final result = await ApiClient().getSettings();
+    if (!mounted) return;
     switch (result) {
       case Success(data: final settings):
         setState(() {
@@ -108,6 +109,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
           _loading = false;
         });
       case Failure(message: final msg):
+        if (!mounted) return;
         ref.read(toastProvider.notifier).error('فشل تحميل الإعدادات من السيرفر: $msg');
         setState(() {
           _loading = false;
@@ -385,6 +387,9 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                 label: '☀️ فاتح',
                 selected: prefs.themeMode == AppThemeMode.light,
                 accent: prefs.accentColor,
+                // الواجهات مبنية على أسطح داكنة ثابتة — الفاتح/التباين
+                // يبيّضان النصوص حاليًا. يُفتحان بعد توحيد الثيم (قريبًا).
+                enabled: false,
                 onTap: () => prefsNotifier.setTheme(AppThemeMode.light),
               ),
               const SizedBox(width: 8),
@@ -392,9 +397,15 @@ class _SettingsModalState extends ConsumerState<SettingsModal>
                 label: '⬜ تباين',
                 selected: prefs.themeMode == AppThemeMode.highContrast,
                 accent: prefs.accentColor,
+                enabled: false,
                 onTap: () => prefsNotifier.setTheme(AppThemeMode.highContrast),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'الوضع الداكن هو المدعوم حاليًا — الفاتح والتباين قيد التطوير.',
+            style: TextStyle(fontSize: 10, color: AppColors.textMuted),
           ),
 
           const SizedBox(height: 24),
@@ -924,19 +935,23 @@ class _ThemeModeChip extends StatelessWidget {
   final bool selected;
   final Color accent;
   final VoidCallback onTap;
+  final bool enabled;
 
   const _ThemeModeChip({
     required this.label,
     required this.selected,
     required this.accent,
     required this.onTap,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
+      onTap: enabled ? onTap : null,
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.45,
+        child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         decoration: BoxDecoration(
@@ -956,6 +971,7 @@ class _ThemeModeChip extends StatelessWidget {
             fontFamily: 'Inter',
             fontFamilyFallback: const ['Segoe UI', 'Arial', 'Tahoma'],
           ),
+        ),
         ),
       ),
     );

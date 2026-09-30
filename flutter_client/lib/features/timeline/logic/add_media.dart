@@ -30,10 +30,13 @@ Future<Map<String, dynamic>?> defaultMediaInfoResolver(String path) async {
   }
 }
 
-/// .mp3/.wav land on audio tracks, everything else defaults to video.
+/// ملفات الصوت الشائعة تهبط على مسارات الصوت، وغيرها فيديو افتراضيًا.
 bool isAudioFilePath(String path) {
   final lower = path.toLowerCase();
-  return lower.endsWith('.mp3') || lower.endsWith('.wav');
+  const audioExts = [
+    '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.oga', '.flac', '.opus', '.wma',
+  ];
+  return audioExts.any(lower.endsWith);
 }
 
 /// Fallback duration when the backend cannot tell us the real one.
@@ -114,6 +117,35 @@ Future<AddMediaResult?> addMediaFromPath(
   // trim; fall back to a sensible default only when unknown.
   final double dur =
       mediaDuration > 0.1 ? mediaDuration : kUnknownMediaDurationFallback;
+
+  // تحذير مبكر: الإضافة فوق مقطع موجود ستتداخل معه (التصدير يقصّ الرأس).
+  final endAt = startAt + dur;
+  bool overlaps = false;
+  final existingTracks = ref.read(timelineProvider).timeline.tracks;
+  if (resolvedTrackType == 'video') {
+    for (final t in existingTracks.video) {
+      for (final c in t.clips) {
+        if (startAt < c.endTimeInTimeline && endAt > c.startTimeInTimeline) {
+          overlaps = true;
+          break;
+        }
+      }
+    }
+  } else if (resolvedTrackType == 'audio') {
+    for (final t in existingTracks.audio) {
+      for (final c in t.clips) {
+        if (startAt < c.endTimeInTimeline && endAt > c.startTimeInTimeline) {
+          overlaps = true;
+          break;
+        }
+      }
+    }
+  }
+  if (overlaps) {
+    ref
+        .read(toastProvider.notifier)
+        .info('تنبيه: المقطع الجديد يتداخل مع مقطع موجود');
+  }
 
   final notifier = ref.read(timelineProvider.notifier);
   final String clipId;

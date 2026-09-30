@@ -66,6 +66,7 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
   String _downloadStatus = '';
+  bool _downloadCancelled = false;
   int? _hoveredIndex;
 
   Future<String?> _generateThumbnail(String videoPath) async {
@@ -152,6 +153,7 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
 
     setState(() {
       _isDownloading = true;
+      _downloadCancelled = false;
       _downloadProgress = 0.0;
       _downloadStatus = 'بدء معالجة رابط يوتيوب...';
     });
@@ -190,9 +192,16 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
     } else if (mounted) {
       setState(() {
         _isDownloading = false;
-        _downloadStatus = 'فشل التحميل. تأكد من تثبيت yt-dlp ومن اتصالك بالإنترنت.';
+        _downloadStatus = _downloadCancelled
+            ? 'أُلغي التحميل.'
+            : 'فشل التحميل. تأكد من تثبيت yt-dlp ومن اتصالك بالإنترنت.';
       });
     }
+  }
+
+  void _cancelDownload() {
+    _downloadCancelled = true;
+    YoutubeService.cancelDownload();
   }
 
   Future<void> _showYoutubeDialog() async {
@@ -224,7 +233,7 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء', style: TextStyle(color: AppColors.textSecondary))),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.destructive, foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
               child: const Text('تحميل'),
             ),
           ],
@@ -237,7 +246,7 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
   }
 
   Widget _buildMediaCard(MediaFile file, int index) {
-    final isAudio = file.path.toLowerCase().endsWith('.mp3') || file.path.toLowerCase().endsWith('.wav');
+    final isAudio = isAudioFilePath(file.path);
     final isHovered = _hoveredIndex == index;
 
     return MouseRegion(
@@ -431,24 +440,54 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
           ),
           const SizedBox(height: 6),
 
-          // ملفات التحميل من يوتيوب (تقدم)
-          if (_isDownloading)
+          // ملفات التحميل من يوتيوب (تقدم + إلغاء + رسالة قابلة للصرف)
+          if (_isDownloading || _downloadStatus.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Column(
                 children: [
-                  LinearProgressIndicator(
-                    value: _downloadProgress,
-                    backgroundColor: AppColors.surfaceVariant,
-                    minHeight: 2,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _downloadStatus,
-                    style: const TextStyle(fontSize: 10, color: AppColors.textMuted, fontFamilyFallback: AppTypography.fallbacks),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  if (_isDownloading) ...[
+                    LinearProgressIndicator(
+                      value: _downloadProgress,
+                      backgroundColor: AppColors.surfaceVariant,
+                      minHeight: 2,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _downloadStatus,
+                          style: const TextStyle(fontSize: 10, color: AppColors.textMuted, fontFamilyFallback: AppTypography.fallbacks),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (_isDownloading)
+                        GestureDetector(
+                          onTap: _cancelDownload,
+                          child: const Padding(
+                            padding: EdgeInsetsDirectional.only(start: 8),
+                            child: Text('إلغاء',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        )
+                      else
+                        GestureDetector(
+                          onTap: () =>
+                              setState(() => _downloadStatus = ''),
+                          child: const Padding(
+                            padding: EdgeInsetsDirectional.only(start: 8),
+                            child: Icon(Icons.close_rounded,
+                                size: 14, color: AppColors.textMuted),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
@@ -465,6 +504,14 @@ class _MediaLibraryWidgetState extends ConsumerState<MediaLibraryWidget> {
                         const Text(
                           'استورد فيديو لتبدأ المونتاج',
                           style: TextStyle(fontSize: 12, color: AppColors.textMuted, fontFamilyFallback: AppTypography.fallbacks),
+                        ),
+                        const SizedBox(height: 12),
+                        IOSButton(
+                          label: 'استيراد فيديو',
+                          icon: Icons.add_rounded,
+                          fontSize: 12,
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                          onPressed: _importLocalVideo,
                         ),
                       ],
                     ),

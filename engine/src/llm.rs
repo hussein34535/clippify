@@ -15,11 +15,17 @@ pub struct LlmBridge {
 
 impl LlmBridge {
     pub fn new() -> Self {
+        // بناء العميل قد يفشل نظريًا (تهيئة TLS) — السقوط هنا كان يوقّع
+        // السيرفر كله عند الإقلاع (يُستدعى في main). تراجع متدرج بدل panic.
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|e| {
+                eprintln!("[llm] http client build failed ({e}); using defaults");
+                reqwest::Client::new()
+            });
         LlmBridge {
-            http: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
-                .build()
-                .unwrap(),
+            http,
             gemini_key: std::env::var("GEMMA_API_KEY").unwrap_or_default(),
             groq_key: std::env::var("GROQ_API_KEY").unwrap_or_default(),
             ollama_url: std::env::var("OLLAMA_URL")

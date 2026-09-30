@@ -237,5 +237,78 @@ void main() {
       expect(clipById('v2').startTimeInTimeline, moreOrLessEquals(9.0));
       expect(clipById('v2').endTimeInTimeline, moreOrLessEquals(13.0));
     });
+
+    test('withSpeed: الطول المرئي = المادة ÷ السرعة', () {
+      final clip = VideoClip(
+        id: 'v1', sourcePath: '/a.mp4',
+        startTimeInTimeline: 10, endTimeInTimeline: 20,
+        sourceTrimStart: 0, sourceTrimEnd: 10,
+        transform: TransformState.defaultState(),
+        colorGrading: ColorGradingState(),
+        filters: [], aiFeatures: AIFeatures(),
+      );
+      final fast = clip.withSpeed(2.0);
+      expect(fast.speed, 2.0);
+      expect(fast.startTimeInTimeline, 10);
+      expect(fast.endTimeInTimeline, moreOrLessEquals(15.0));
+      final slow = clip.withSpeed(0.5);
+      expect(slow.endTimeInTimeline, moreOrLessEquals(30.0));
+    });
+
+    test('setSelectedClipsSpeed يغيّر الطول لا السرعة فقط', () {
+      notifier.addVideoClip(VideoClip(
+        id: 'v1', sourcePath: '/a.mp4',
+        startTimeInTimeline: 0, endTimeInTimeline: 10,
+        sourceTrimStart: 0, sourceTrimEnd: 10,
+        transform: TransformState.defaultState(),
+        colorGrading: ColorGradingState(),
+        filters: [], aiFeatures: AIFeatures(),
+      ));
+      notifier.setSelectedClipsSpeed(2.0, selectedIds: {'v1'});
+      final c = clipById('v1');
+      expect(c.speed, 2.0);
+      expect(c.endTimeInTimeline, moreOrLessEquals(5.0));
+    });
+
+    test('اللصق يحافظ على مدة المقطع (لا مطّ)', () {      notifier.addVideoClip(VideoClip(
+        id: 'v1', sourcePath: '/a.mp4',
+        startTimeInTimeline: 10, endTimeInTimeline: 20,
+        sourceTrimStart: 0, sourceTrimEnd: 10,
+        transform: TransformState.defaultState(),
+        colorGrading: ColorGradingState(),
+        filters: [], aiFeatures: AIFeatures(),
+      ));
+      notifier.copySelectedClips(selectedIds: {'v1'});
+      expect(notifier.hasClipboard, isTrue);
+      notifier.setPlayhead(0);
+      notifier.pasteClips();
+      final clips = notifier.state.timeline.tracks.video[0].clips;
+      expect(clips, hasLength(2));
+      final pasted = clips.last;
+      expect(pasted.id, isNot('v1'));
+      expect(pasted.startTimeInTimeline, moreOrLessEquals(0.0));
+      expect(pasted.endTimeInTimeline, moreOrLessEquals(10.0));
+    });
+
+    test('القص قريبًا من الحافة مرفوض (لا شظايا)', () {
+      notifier.addVideoClip(VideoClip(
+        id: 'v1', sourcePath: '/a.mp4',
+        startTimeInTimeline: 0, endTimeInTimeline: 10,
+        sourceTrimStart: 0, sourceTrimEnd: 10,
+        transform: TransformState.defaultState(),
+        colorGrading: ColorGradingState(),
+        filters: [], aiFeatures: AIFeatures(),
+      ));
+      expect(notifier.canSplitAtPlayhead(0.05), isFalse);
+      expect(notifier.canSplitAtPlayhead(9.95), isFalse);
+      expect(notifier.canSplitAtPlayhead(5.0), isTrue);
+      expect(notifier.splitClipAtPlayhead(0.05), isFalse);
+    });
+
+    test('التايملاين الفاضي طوله صفر لا 10 وهمية', () {
+      expect(notifier.totalDuration, 0.0);
+      notifier.addVideoClip(clipAt('v1', 0, 4));
+      expect(notifier.totalDuration, moreOrLessEquals(4.0));
+    });
   });
 }

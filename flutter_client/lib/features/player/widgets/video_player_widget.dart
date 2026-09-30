@@ -15,6 +15,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/models/timeline_models.dart';
 import '../../../core/models/pro_color_models.dart';
 import '../../../shared/providers/playback_provider.dart';
+import '../../../shared/providers/toast_provider.dart';
 import '../../../shared/utils/keyframe_interpolation.dart';
 import '../../audio/effects/audio_engine.dart';
 import '../../motion/particles/particle_system.dart';
@@ -246,15 +247,14 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
       _player.setRate(clip.speed);
     }
 
-    // الصوت = حجم الكليب × حجم المشغّل فقط. كان المتوسط (bass+mid+treble)/3
-    // يجعل خفض أي شريط EQ يخفض الصوت الكلي — منطق غير صحيح. EQ فعلية
-    // يحتاج فلاتر صوتية لا يوفّرها media_kit اليوم، والمنطق الصحيح أن لا
-    // تغيّر الأشرطة مستوى الصوت حتى تصل فلاتر حقيقية.
+    // الصوت = حجم الكليب × حجم المشغّل × 100 (مقياس media_kit ‏0–100).
+    // كان المتوسط (bass+mid+treble)/3 يجعل خفض أي شريط EQ يخفض الصوت
+    // الكلي — منطق غير صحيح. EQ فعلية يحتاج فلاتر صوتية لا يوفّرها
+    // media_kit اليوم، والمنطق الصحيح أن لا تغيّر الأشرطة مستوى الصوت
+    // حتى تصل فلاتر حقيقية.
     _player.setVolume(
-      (clip.volume * _volume * (_isMuted ? 0.0 : 1.0)).clamp(
-        0.0,
-        100.0,
-      ),
+      effectivePlayerVolume(
+          clipVolume: clip.volume, master: _volume, muted: _isMuted),
     );
 
     // Build AudioEffectChain from clip.audioEffects
@@ -582,6 +582,9 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         final mapped = _mediaToTimelineSec(pos.inMilliseconds / 1000.0);
         if (mapped != null) {
           ref.read(timelineProvider.notifier).setPlayhead(mapped);
+        } else {
+          // دخلنا فجوة بلا مادة: نوقف بدل ترك الصوت يكمل والمؤشر متجمد.
+          _player.pause();
         }
       }
     });
@@ -663,7 +666,11 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   void _loadVideo() {
     if (widget.videoPath != null && widget.videoPath!.isNotEmpty) {
       final file = File(widget.videoPath!);
-      if (file.existsSync()) {
+      if (!file.existsSync()) {
+        // المصدر حُذف/نُقل بعد الاستيراد — لا صمت ولا إطار قديم مضلل.
+        ref.read(toastProvider.notifier).error('ملف المقطع مفقود: ${widget.videoPath}');
+        return;
+      }
         // تبديل مصدر عند حدود كليب من ملف آخر: استمر بنفس حالة التشغيل بدل
         // open+pause الصريح الذي كان يجمّد الفيديو عند كل تبديل ملف،
         // واضبط موضع الملف على ما يقابل المؤشر في الملف الجديد بدل
@@ -679,7 +686,6 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
         } else {
           _player.pause();
         }
-      }
     }
   }
 
@@ -723,7 +729,10 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
   void _toggleMute() {
     setState(() {
       _isMuted = !_isMuted;
-      _player.setVolume(_isMuted ? 0.0 : _volume * 100.0);
+      _player.setVolume(effectivePlayerVolume(
+          clipVolume: _currentClip?.volume ?? 1.0,
+          master: _volume,
+          muted: _isMuted));
     });
   }
 
@@ -731,7 +740,11 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     setState(() {
       _volume = val;
       _isMuted = false;
-      _player.setVolume(_volume * 100.0);
+      // فعّال فورًا بنفس معادلة _applyClipSettings حتى لا يقفز الصوت عند أول seek.
+      _player.setVolume(effectivePlayerVolume(
+          clipVolume: _currentClip?.volume ?? 1.0,
+          master: _volume,
+          muted: false));
     });
   }
 

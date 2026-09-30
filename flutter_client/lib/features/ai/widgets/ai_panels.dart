@@ -89,7 +89,10 @@ class _SmartCutPanelState extends State<SmartCutPanel> {
             height: 60,
             child: CustomPaint(
               size: const Size(double.infinity, 60),
-              painter: _SilenceTimelinePainter(silences: _silences, duration: _silences.last['end'] ?? 30),
+              painter: _SilenceTimelinePainter(
+                silences: _silences,
+                duration: _painterDuration(_silences),
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -98,6 +101,12 @@ class _SmartCutPanelState extends State<SmartCutPanel> {
       ],
     );
   }
+}
+
+/// مدة آمنة للرسّام — صفر/Inf/NaN تعني قسمة مكسورة في الـ CustomPainter.
+double _painterDuration(List<Map<String, double>> silences) {
+  final raw = silences.isEmpty ? 30.0 : (silences.last['end'] ?? 30.0);
+  return (raw.isFinite && raw > 0) ? raw : 30.0;
 }
 
 class _SilenceTimelinePainter extends CustomPainter {

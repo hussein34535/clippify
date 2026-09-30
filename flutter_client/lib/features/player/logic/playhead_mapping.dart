@@ -72,3 +72,18 @@ double? mediaToTimelineSec({
   return nearest.startTimeInTimeline +
       (mediaSec - nearest.sourceTrimStart) / speed;
 }
+
+/// مستوى الصوت الفعّال بمقياس media_kit (0–100).
+///
+/// القاعدة: كسب المقطع × الماستر × 100. أي طرف يستدعي `setVolume` يجب أن
+/// يمرّ من هنا — سابقًا كان `_applyClipSettings` ينسى الـ ×100 فيعزف
+/// المعاينة عند ~1% بعد كل seek، بينما السلايدر كان يضبط الماستر وحده
+/// فيقفز الصوت عند أول تنقّل.
+double effectivePlayerVolume({
+  required double clipVolume,
+  required double master,
+  required bool muted,
+}) {
+  if (muted) return 0.0;
+  return (clipVolume * master * 100.0).clamp(0.0, 100.0);
+}

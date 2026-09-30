@@ -59,6 +59,38 @@ void main() {
     expect(find.byType(ListView), findsOneWidget);
   });
 
+  testWidgets('filter matches english ids too', (tester) async {
+    final calls = <String>[];
+    await _pumpPalette(tester, [
+      _fakeCmd('undo', calls),
+      _fakeCmd('redo', calls),
+      _fakeCmd('export', calls),
+    ]);
+
+    await tester.enterText(find.byType(TextField), 'export');
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('palette_row_export_0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('palette_row_undo_0')), findsNothing);
+  });
+
+  testWidgets('long lists auto-scroll keyboard selection into view',
+      (tester) async {
+    final calls = <String>[];
+    final cmds = List.generate(12, (i) => _fakeCmd('c$i', calls));
+    await _pumpPalette(tester, cmds);
+
+    for (var i = 0; i < 11; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+    }
+    // الصف الأخير مبني ومرئي بعد التمرير التلقائي (لا تحديد أعمى).
+    expect(find.byKey(const ValueKey('palette_selected_11')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(calls, ['c11']);
+  });
+
   testWidgets('arrow down moves selection highlight', (tester) async {
     final calls = <String>[];
     await _pumpPalette(tester, [

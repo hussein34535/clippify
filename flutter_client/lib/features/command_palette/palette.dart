@@ -21,17 +21,26 @@ class CommandPaletteOverlay extends StatefulWidget {
 }
 
 class _CommandPaletteOverlayState extends State<CommandPaletteOverlay> {
-  static const int _maxVisible = 8;
   static const double _rowHeight = 48;
 
   String _query = '';
   int _selectedIndex = 0;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   List<PaletteCommand> get _filtered {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return widget.commands;
+    // مطابقة الاسم العربي أو المعرف الإنجليزي (export/settings/…).
     return widget.commands
-        .where((c) => c.labelAr.toLowerCase().contains(q))
+        .where((c) =>
+            c.labelAr.toLowerCase().contains(q) ||
+            c.id.toLowerCase().contains(q))
         .toList();
   }
 
@@ -50,14 +59,19 @@ class _CommandPaletteOverlayState extends State<CommandPaletteOverlay> {
     setState(() {
       _selectedIndex = (_selectedIndex + delta).clamp(0, max);
     });
+    // التحديد بلوحة المفاتيح قد يخرج عن النافذة المرئية (قائمة أطول من
+    // الشاشة) — مرّر إليه بعد البناء حتى لا يعمل المستخدم على أعمى.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final target = (_selectedIndex * _rowHeight - 120.0).clamp(
+          0.0, _scrollController.position.maxScrollExtent);
+      _scrollController.jumpTo(target);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
-    final visibleCount = filtered.length > _maxVisible
-        ? _maxVisible
-        : filtered.length;
     if (_selectedIndex >= filtered.length) _selectedIndex = 0;
 
     return Dialog(
@@ -134,10 +148,13 @@ class _CommandPaletteOverlayState extends State<CommandPaletteOverlay> {
               )
             else
               Flexible(
+                // كل النتائج مرئية — التحديد بلوحة المفاتيح لا يضيع أبدًا
+                // في صفوف مخفية (كانت القائمة تعرض 8 فقط والتنقل يشمل الكل).
                 child: ListView.builder(
+                  controller: _scrollController,
                   shrinkWrap: true,
                   padding: const EdgeInsets.symmetric(vertical: 6),
-                  itemCount: visibleCount,
+                  itemCount: filtered.length,
                   itemBuilder: (context, index) =>
                       _buildRow(filtered[index], index),
                 ),

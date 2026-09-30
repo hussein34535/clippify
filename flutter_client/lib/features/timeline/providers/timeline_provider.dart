@@ -74,15 +74,22 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   // drag fills the whole undo stack and Ctrl+Z becomes useless.
   int _gestureDepth = 0;
   bool _gestureCheckpointPushed = false;
+  DateTime? _gestureStartedAt;
 
   void beginGesture() {
-    if (_gestureDepth == 0) _gestureCheckpointPushed = false;
+    if (_gestureDepth == 0) {
+      _gestureCheckpointPushed = false;
+      _gestureStartedAt = DateTime.now();
+    }
     _gestureDepth++;
   }
 
   void endGesture() {
     if (_gestureDepth > 0) _gestureDepth--;
-    if (_gestureDepth == 0) _gestureCheckpointPushed = false;
+    if (_gestureDepth == 0) {
+      _gestureCheckpointPushed = false;
+      _gestureStartedAt = null;
+    }
   }
 
   /// تسجيل الحالة الحالية في الـ Undo stack قبل أي تعديل
@@ -92,9 +99,19 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       state = state.copyWith(isDirty: true);
     }
     if (_gestureDepth > 0) {
-      // Inside a drag: only the very first mutation pushes the checkpoint.
-      if (_gestureCheckpointPushed) return;
-      _gestureCheckpointPushed = true;
+      // صمام أمان: سحبة علقت (pointer-up ضاع خارج اللوحة) تُصفَّر بعد 10 ثوانٍ
+      // من آخر begin حتى لا تُكتم كل checkpoints الـ undo للأبد.
+      final started = _gestureStartedAt;
+      if (started != null &&
+          DateTime.now().difference(started) > const Duration(seconds: 10)) {
+        _gestureDepth = 0;
+        _gestureCheckpointPushed = false;
+        _gestureStartedAt = null;
+      } else {
+        // Inside a drag: only the very first mutation pushes the checkpoint.
+        if (_gestureCheckpointPushed) return;
+        _gestureCheckpointPushed = true;
+      }
     }
     final currentHistory = List<TimelineState>.from(state.undoStack);
     if (currentHistory.length >= maxStackSize) {
@@ -1364,40 +1381,44 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   }
 
   /// هل يوجد كليب (فيديو/صوت/ترجمة) يتقاطع مع المؤشر وقابل للقص؟
+  /// هامش القصّ من الحواف: أقصر من أرضية التحجيم (0.1s) + أمان — يمنع
+  /// شظايا لا يمكن تحجيمها ولا تحديدها لاحقًا.
+  static const double kSplitEdgeMargin = 0.15;
+
+  bool _splittableAt(double start, double end, double t) =>
+      t - start > kSplitEdgeMargin && end - t > kSplitEdgeMargin;
+
   bool canSplitAtPlayhead(double timeSec) {
     final tracks = state.timeline.tracks;
     for (final track in tracks.video) {
       for (final clip in track.clips) {
-        if (timeSec > clip.startTimeInTimeline &&
-            timeSec < clip.endTimeInTimeline) {
+        if (_splittableAt(clip.startTimeInTimeline, clip.endTimeInTimeline, timeSec)) {
           return true;
         }
       }
     }
     for (final track in tracks.audio) {
       for (final clip in track.clips) {
-        if (timeSec > clip.startTimeInTimeline &&
-            timeSec < clip.endTimeInTimeline) {
+        if (_splittableAt(clip.startTimeInTimeline, clip.endTimeInTimeline, timeSec)) {
           return true;
         }
       }
     }
     for (final track in tracks.subtitles) {
       for (final clip in track.clips) {
-        if (timeSec > clip.startTime && timeSec < clip.endTime) return true;
+        if (_splittableAt(clip.startTime, clip.endTime, timeSec)) return true;
       }
     }
     for (final track in tracks.overlays) {
       for (final clip in track.clips) {
-        if (timeSec > clip.startTimeInTimeline &&
-            timeSec < clip.endTimeInTimeline) {
+        if (_splittableAt(clip.startTimeInTimeline, clip.endTimeInTimeline, timeSec)) {
           return true;
         }
       }
     }
     for (final track in tracks.text) {
       for (final clip in track.clips) {
-        if (timeSec > clip.startTime && timeSec < clip.endTime) return true;
+        if (_splittableAt(clip.startTime, clip.endTime, timeSec)) return true;
       }
     }
     return false;
@@ -1418,7 +1439,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       final clips = List<VideoClip>.from(track.clips);
       for (int j = 0; j < clips.length; j++) {
         final clip = clips[j];
-        if (timeSec > clip.startTimeInTimeline && timeSec < clip.endTimeInTimeline) {
+        if (_splittableAt(clip.startTimeInTimeline, clip.endTimeInTimeline, timeSec)) {
           final double splitOffset = timeSec - clip.startTimeInTimeline;
           final double sourceSplitOffset = splitOffset * clip.speed;
           final originalEnd = clip.endTimeInTimeline;
@@ -1453,7 +1474,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       final clips = List<AudioClip>.from(track.clips);
       for (int j = 0; j < clips.length; j++) {
         final clip = clips[j];
-        if (timeSec > clip.startTimeInTimeline && timeSec < clip.endTimeInTimeline) {
+        if (_splittableAt(clip.startTimeInTimeline, clip.endTimeInTimeline, timeSec)) {
           final double splitOffset = timeSec - clip.startTimeInTimeline;
           final originalEnd = clip.endTimeInTimeline;
           final originalTrimEnd = clip.sourceTrimEnd;
@@ -1487,7 +1508,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       final clips = List<SubtitleClip>.from(track.clips);
       for (int j = 0; j < clips.length; j++) {
         final clip = clips[j];
-        if (timeSec > clip.startTime && timeSec < clip.endTime) {
+        if (_splittableAt(clip.startTime, clip.endTime, timeSec)) {
           final originalEnd = clip.endTime;
           
           final clip1 = clip.copyWith(
@@ -1516,7 +1537,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       final clips = List<OverlayClip>.from(track.clips);
       for (int j = 0; j < clips.length; j++) {
         final clip = clips[j];
-        if (timeSec > clip.startTimeInTimeline && timeSec < clip.endTimeInTimeline) {
+        if (_splittableAt(clip.startTimeInTimeline, clip.endTimeInTimeline, timeSec)) {
           final double splitOffset = timeSec - clip.startTimeInTimeline;
           final originalEnd = clip.endTimeInTimeline;
           final originalTrimEnd = clip.sourceTrimEnd;
@@ -1550,7 +1571,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       final clips = List<TextClip>.from(track.clips);
       for (int j = 0; j < clips.length; j++) {
         final clip = clips[j];
-        if (timeSec > clip.startTime && timeSec < clip.endTime) {
+        if (_splittableAt(clip.startTime, clip.endTime, timeSec)) {
           final originalEnd = clip.endTime;
           
           final clip1 = clip.copyWith(
@@ -1721,7 +1742,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
         if (clip.endTime > duration) duration = clip.endTime;
       }
     }
-    return duration > 0 ? duration : 10.0; // افتراض 10 ثوانٍ كحد أدنى
+    return duration; // قد تكون 0.0 — التايملاين الفاضي طوله صفر لا 10 وهمية
   }
 
   /// تعيين كليب متعدد الكاميرات (Multicam)
@@ -1777,6 +1798,8 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   /// Internal clipboard for cut/copy/paste operations.
   List<Map<String, dynamic>> _clipboard = [];
 
+  bool get hasClipboard => _clipboard.isNotEmpty;
+
   /// Cut: remove selected clips from timeline and stash them in the clipboard.
   void cutSelectedClips({Set<String>? selectedIds}) {
     final ids = selectedIds ?? state.selectedClipIds;
@@ -1814,36 +1837,56 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       switch (type) {
         case 'video':
           if (videoTracks.isNotEmpty) {
-            final clip = VideoClip.fromJson(reidentified)
-                .copyWith(startTimeInTimeline: playhead);
+            final src = VideoClip.fromJson(reidentified);
+            final span = src.endTimeInTimeline - src.startTimeInTimeline;
+            final clip = src.copyWith(
+              startTimeInTimeline: playhead,
+              endTimeInTimeline: playhead + span,
+            );
             videoTracks[0] = videoTracks[0].copyWith(clips: [...videoTracks[0].clips, clip]);
           }
           break;
         case 'audio':
           if (audioTracks.isNotEmpty) {
-            final clip = AudioClip.fromJson(reidentified)
-                .copyWith(startTimeInTimeline: playhead);
+            final src = AudioClip.fromJson(reidentified);
+            final span = src.endTimeInTimeline - src.startTimeInTimeline;
+            final clip = src.copyWith(
+              startTimeInTimeline: playhead,
+              endTimeInTimeline: playhead + span,
+            );
             audioTracks[0] = audioTracks[0].copyWith(clips: [...audioTracks[0].clips, clip]);
           }
           break;
         case 'overlay':
           if (overlayTracks.isNotEmpty) {
-            final clip = OverlayClip.fromJson(reidentified)
-                .copyWith(startTimeInTimeline: playhead);
+            final src = OverlayClip.fromJson(reidentified);
+            final span = src.endTimeInTimeline - src.startTimeInTimeline;
+            final clip = src.copyWith(
+              startTimeInTimeline: playhead,
+              endTimeInTimeline: playhead + span,
+            );
             overlayTracks[0] = overlayTracks[0].copyWith(clips: [...overlayTracks[0].clips, clip]);
           }
           break;
         case 'subtitle':
           if (subtitleTracks.isNotEmpty) {
-            final clip = SubtitleClip.fromJson(reidentified)
-                .copyWith(startTime: playhead);
+            final src = SubtitleClip.fromJson(reidentified);
+            final span = src.endTime - src.startTime;
+            final clip = src.copyWith(
+              startTime: playhead,
+              endTime: playhead + span,
+            );
             subtitleTracks[0] = subtitleTracks[0].copyWith(clips: [...subtitleTracks[0].clips, clip]);
           }
           break;
         case 'text':
           if (textTracks.isNotEmpty) {
-            final clip = TextClip.fromJson(reidentified)
-                .copyWith(startTime: playhead);
+            final src = TextClip.fromJson(reidentified);
+            final span = src.endTime - src.startTime;
+            final clip = src.copyWith(
+              startTime: playhead,
+              endTime: playhead + span,
+            );
             textTracks[0] = textTracks[0].copyWith(clips: [...textTracks[0].clips, clip]);
           }
           break;
@@ -1916,7 +1959,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
       bool changed = false;
       for (int j = 0; j < clips.length; j++) {
         if (ids.contains(clips[j].id)) {
-          clips[j] = clips[j].copyWith(speed: speed);
+          clips[j] = clips[j].withSpeed(speed);
           changed = true;
         }
       }

@@ -266,7 +266,11 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
       child: Row(
         children: [
           IconButton(
-            onPressed: () => Navigator.of(context).maybePop(),
+            // المهمة شغالة؟ رجوع مباشر كان يتركها تحرق موارد السيرفر —
+            // يمرّ بتأكيد الإلغاء الذي يوقفها فعليًا. المنتهية تُغلق فورًا.
+            onPressed: (_finished || _errorDetail != null)
+                ? () => Navigator.of(context).maybePop()
+                : _confirmCancel,
             icon: const Icon(Icons.arrow_forward_rounded, size: 20),
             tooltip: context.l10n.t('common_back'),
           ),

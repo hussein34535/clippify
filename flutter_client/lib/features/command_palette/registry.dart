@@ -91,7 +91,9 @@ List<PaletteCommand> defaultCommands(WidgetRef ref, BuildContext ctx) {
       action: (context) {
         showDialog<ExportSettings>(
           context: context,
-          builder: (_) => const ExportModal(),
+          builder: (_) => ExportModal(
+            timelineSource: () => ref.read(timelineProvider).timeline,
+          ),
         );
       },
     ),
@@ -110,7 +112,7 @@ List<PaletteCommand> defaultCommands(WidgetRef ref, BuildContext ctx) {
       id: 'split',
       labelAr: 'قص عند المؤشر',
       icon: Icons.content_cut,
-      shortcutHint: 'Ctrl+S',
+      shortcutHint: 'S',
       action: (_) {
         final playhead = ref.read(timelineProvider).timeline.playheadSec;
         final notifier = ref.read(timelineProvider.notifier);

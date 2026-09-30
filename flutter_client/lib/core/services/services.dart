@@ -40,11 +40,13 @@ class AutosaveService {
   void start(TimelineState Function() getState, {
     Duration interval = const Duration(minutes: 5),
     List<Map<String, dynamic>> Function()? getMediaFiles,
+    List<Map<String, dynamic>> Function()? getComments,
   }) {
     _timer?.cancel();
     _timer = Timer.periodic(interval, (_) {
       try {
-        saveNow(getState(), mediaFiles: getMediaFiles?.call());
+        saveNow(getState(),
+            mediaFiles: getMediaFiles?.call(), comments: getComments?.call());
       } catch (e) {
         debugPrint('[AutosaveService] Error: $e');
       }
@@ -61,9 +63,12 @@ class AutosaveService {
     if (!value) stop();
   }
 
-  Future<void> saveNow(TimelineState state, {List<Map<String, dynamic>>? mediaFiles}) async {
+  Future<void> saveNow(TimelineState state,
+      {List<Map<String, dynamic>>? mediaFiles,
+      List<Map<String, dynamic>>? comments}) async {
     if (!_enabled) return;
-    await _storage.saveAutosave(state.toJson(), mediaFiles: mediaFiles);
+    await _storage.saveAutosave(state.toJson(),
+        mediaFiles: mediaFiles, comments: comments);
   }
 
   Future<TimelineState?> loadLast() async {
@@ -91,5 +96,13 @@ class ExportResult {
   final String? error;
   final String? sessionId;
 
-  ExportResult({required this.success, this.outputPath, this.error, this.sessionId});
+  /// تنبيهات غير قاتلة (تخفيض two-pass، watermark مفقودة، letterbox…).
+  final List<String> notes;
+
+  ExportResult(
+      {required this.success,
+      this.outputPath,
+      this.error,
+      this.sessionId,
+      this.notes = const []});
 }

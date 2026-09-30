@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
+import '../../core/native/ffmpeg_service.dart';
+
 class AudioWaveformPainter extends CustomPainter {
   final Color color;
   final String clipId;
@@ -112,22 +114,10 @@ class WaveformGenerator {
     }
 
     try {
-      final result = await Process.run(
-        'ffprobe',
-        [
-          '-v', 'error',
-          '-select_streams', 'a:0',
-          '-show_entries', 'stream=duration',
-          '-of', 'default=noprint_wrappers=1:nokey=1',
-          audioPath,
-        ],
-      );
+      // بلا ffprobe خام — مدة FfmpegService تستخدم المحلل المجمّع وتدعم العربي.
+      final duration =
+          await FfmpegService.probeDuration(audioPath) ?? 10.0;
 
-      if (result.exitCode != 0) {
-        return _generateFallback(sampleCount);
-      }
-
-      final duration = double.tryParse((result.stdout as String).trim()) ?? 10.0;
       final samples = await _extractWaveformSamples(audioPath, duration, sampleCount);
 
       cache.set(cacheKey, samples);
@@ -143,13 +133,15 @@ class WaveformGenerator {
     int sampleCount,
   ) async {
     try {
+      // 4kHz أحادي 16-bit ≈ 8KB/s (ساعة ≈ 29MB) بدل 8kHz عائم الذي كان
+      // يبتلع الذاكرة على الملفات الطويلة (OOM).
       final result = await Process.run(
-        'ffmpeg',
+        await FfmpegService.resolveExe(),
         [
           '-i', audioPath,
           '-ac', '1',
-          '-ar', '8000',
-          '-f', 'f32le',
+          '-ar', '4000',
+          '-f', 's16le',
           '-hide_banner',
           '-loglevel', 'error',
           'pipe:1',
@@ -162,27 +154,27 @@ class WaveformGenerator {
       }
 
       final bytes = result.stdout as List<int>;
-      if (bytes.length < 4) return _generateFallback(sampleCount);
+      if (bytes.length < 2) return _generateFallback(sampleCount);
 
-      final samples = Float32List.view(
+      final pcm = Int16List.view(
         Uint8List.fromList(bytes).buffer,
         0,
-        bytes.length ~/ 4,
+        bytes.length ~/ 2,
       );
 
-      if (samples.isEmpty) return _generateFallback(sampleCount);
+      if (pcm.isEmpty) return _generateFallback(sampleCount);
 
-      final segmentSize = (samples.length / sampleCount).ceil();
+      final segmentSize = (pcm.length / sampleCount).ceil();
       final waveform = <double>[];
 
       for (int i = 0; i < sampleCount; i++) {
         final segStart = i * segmentSize;
-        final segEnd = (segStart + segmentSize).clamp(0, samples.length);
+        final segEnd = (segStart + segmentSize).clamp(0, pcm.length);
 
         double sumSq = 0;
         int count = 0;
         for (int j = segStart; j < segEnd; j++) {
-          final s = samples[j];
+          final s = pcm[j] / 32768.0;
           sumSq += s * s;
           count++;
         }

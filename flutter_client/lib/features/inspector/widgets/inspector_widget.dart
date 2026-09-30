@@ -134,7 +134,16 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
         color: AppColors.surface,
         border: Border(left: BorderSide(color: AppColors.divider)),
       ),
-      child: Column(
+      // سحبة أي سلايدر = جلسة gesture واحدة → checkpoint واحد في الـ undo
+      // بدل عشرات الخطوات. النقرات المنفردة سلوكها مطابق للسابق (أول
+      // تعديل يدفع checkpoint ثم تُغلق الجلسة فورًا).
+      child: Listener(
+        onPointerDown: (_) =>
+            ref.read(timelineProvider.notifier).beginGesture(),
+        onPointerUp: (_) => ref.read(timelineProvider.notifier).endGesture(),
+        onPointerCancel: (_) =>
+            ref.read(timelineProvider.notifier).endGesture(),
+        child: Column(
         children: [
           TabBar(
             controller: _tabController,
@@ -161,7 +170,8 @@ class _InspectorWidgetState extends ConsumerState<InspectorWidget>
               ],
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

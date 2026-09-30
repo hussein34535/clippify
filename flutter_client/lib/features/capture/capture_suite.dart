@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import '../../../core/native/ffmpeg_service.dart';
 import '../../../core/theme/app_theme.dart';
 
 // ────────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ class ScreenRecorder {
     ]);
 
     try {
-      _process = await Process.start('ffmpeg', args);
+      _process = await Process.start(await FfmpegService.resolveExe(), args);
       _isRecording = true;
       _outputPath = outputPath;
       _startTime = DateTime.now();
@@ -104,22 +105,58 @@ class ScreenRecorder {
     if (!_isRecording || _process == null) return null;
 
     _timer?.cancel();
-    try {
-      _process?.stdin.write('q');
-    } catch (_) {}
-    _process?.kill();
-    await _process?.exitCode;
+    final proc = _process!;
+    _process = null;
+    await quitFfmpegGracefully(proc);
     _isRecording = false;
     _duration = 0.0;
     final path = _outputPath;
     _outputPath = null;
     onStop?.call();
+    if (!isUsableRecording(path)) {
+      onError?.call('التسجيل الناتج فارغ أو تالف.');
+      return null;
+    }
     return path;
   }
 
   void dispose() {
     _timer?.cancel();
     _process?.kill();
+    _process = null;
+  }
+}
+
+/// إيقاف ffmpeg بلطف: أمر 'q' يكتب التريلر (moov) قبل الخروج — القتل
+/// الفوري كان ينتج ملفات 0-byte غير قابلة للتشغيل. يُقتل فقط عند المهلة.
+Future<int?> quitFfmpegGracefully(Process proc,
+    {Duration grace = const Duration(seconds: 8)}) async {
+  try {
+    proc.stdin.write('q');
+    await proc.stdin.flush();
+  } catch (_) {}
+  try {
+    return await proc.exitCode.timeout(grace);
+  } on TimeoutException {
+    proc.kill(ProcessSignal.sigkill);
+    try {
+      return await proc.exitCode.timeout(const Duration(seconds: 3));
+    } catch (_) {
+      return null;
+    }
+  } catch (_) {
+    return null;
+  }
+}
+
+/// هل المخرج ملف حقيقي قابل للتشغيل أم بقايا ميتة؟
+bool isUsableRecording(String? path) {
+  if (path == null || path.isEmpty) return false;
+  try {
+    final f = File(path);
+    return f.existsSync() && f.lengthSync() > 0;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -137,6 +174,7 @@ class WebcamCapture {
   String _currentDevice = '';
   bool _pipEnabled = false;
   int _pipX = 0, _pipY = 0, _pipW = 240, _pipH = 180;
+  bool _disposed = false;
 
   final _frameController = StreamController<Uint8List?>.broadcast();
   Stream<Uint8List?> get frameStream => _frameController.stream;
@@ -154,14 +192,14 @@ class WebcamCapture {
 
   static Future<List<String>> listCameras() async {
     try {
-      final result = await Process.run('ffmpeg', [
+      final result = await Process.run(await FfmpegService.resolveExe(), [
         '-list_devices',
         'true',
         '-f',
         'dshow',
         '-i',
         'dummy',
-      ], runInShell: true);
+      ]);
       final stderr = result.stderr.toString();
       final cameras = <String>[];
       final lines = stderr.split('\n');
@@ -211,7 +249,8 @@ class WebcamCapture {
     ];
 
     try {
-      _captureProcess = await Process.start('ffmpeg', args);
+      _captureProcess =
+          await Process.start(await FfmpegService.resolveExe(), args);
       _isRecording = true;
       _currentOutputPath = outputPath;
       _currentDevice = device;
@@ -226,16 +265,26 @@ class WebcamCapture {
 
   void _startPreview(String device) {
     _previewProcess?.kill();
+    _previewProcess = null;
     _previewSub?.cancel();
+    _previewSub = null;
+    _previewStderrSub?.cancel();
+    _previewStderrSub = null;
 
+    unawaited(_startPreviewAsync(device));
+  }
+
+  Future<void> _startPreviewAsync(String device) async {
     try {
-      Process.start('ffmpeg', [
+      final exe = await FfmpegService.resolveExe();
+      if (_disposed) return;
+      final proc = await Process.start(exe, [
             '-f',
             'dshow',
             '-i',
             'video=$device',
             '-vf',
-            'scale=${_pipW}:${_pipH}',
+            'scale=$_pipW:$_pipH',
             '-f',
             'image2pipe',
             '-vcodec',
@@ -243,36 +292,33 @@ class WebcamCapture {
             '-q:v',
             '2',
             '-',
-          ])
-          .then((proc) {
-            _previewProcess = proc;
-            final completer = Completer<void>();
-            final buffer = <int>[];
-            _previewSub = proc.stdout.listen(
-              (data) {
-                buffer.addAll(data);
-                while (true) {
-                  final startIdx = _findMarker(buffer, [0xFF, 0xD8]);
-                  if (startIdx == -1) break;
-                  final endIdx = _findMarker(buffer, [
-                    0xFF,
-                    0xD9,
-                  ], startIdx + 2);
-                  if (endIdx == -1) break;
-                  final frame = buffer.sublist(startIdx, endIdx + 2);
-                  buffer.removeRange(0, endIdx + 2);
-                  _frameController.add(Uint8List.fromList(frame));
-                }
-              },
-              onDone: () {
-                if (!completer.isCompleted) completer.complete();
-              },
-            );
-            _previewStderrSub = proc.stderr.listen((_) {});
-          })
-          .catchError((e) {
-            debugPrint('[WebcamCapture] Preview error: $e');
-          });
+          ]);
+      // أُغلق الكائن أثناء بدء العملية؟ اقتل الوليدة ولا تلمس المتحكم.
+      if (_disposed || _frameController.isClosed) {
+        proc.kill(ProcessSignal.sigkill);
+        return;
+      }
+      _previewProcess = proc;
+      final buffer = <int>[];
+      _previewSub = proc.stdout.listen(
+        (data) {
+          if (_disposed || _frameController.isClosed) return;
+          buffer.addAll(data);
+          while (true) {
+            final startIdx = _findMarker(buffer, [0xFF, 0xD8]);
+            if (startIdx == -1) break;
+            final endIdx = _findMarker(buffer, [
+              0xFF,
+              0xD9,
+            ], startIdx + 2);
+            if (endIdx == -1) break;
+            final frame = buffer.sublist(startIdx, endIdx + 2);
+            buffer.removeRange(0, endIdx + 2);
+            _frameController.add(Uint8List.fromList(frame));
+          }
+        },
+      );
+      _previewStderrSub = proc.stderr.listen((_) {});
     } catch (e) {
       debugPrint('[WebcamCapture] Preview start error: $e');
     }
@@ -301,14 +347,18 @@ class WebcamCapture {
     _previewStderrSub = null;
     _previewProcess?.kill();
     _previewProcess = null;
-    _captureProcess?.kill();
-    await _captureProcess?.exitCode;
+    final proc = _captureProcess;
     _captureProcess = null;
+    if (proc != null) await quitFfmpegGracefully(proc);
     _isRecording = false;
     final path = _currentOutputPath;
     _currentOutputPath = null;
-    _frameController.add(null);
+    if (!_frameController.isClosed) _frameController.add(null);
     onStop?.call();
+    if (!isUsableRecording(path)) {
+      onError?.call('التسجيل الناتج فارغ أو تالف.');
+      return null;
+    }
     return path;
   }
 
@@ -327,12 +377,15 @@ class WebcamCapture {
   }
 
   void dispose() {
+    _disposed = true;
     _previewSub?.cancel();
     _previewSub = null;
     _previewStderrSub?.cancel();
     _previewStderrSub = null;
     _previewProcess?.kill();
+    _previewProcess = null;
     _captureProcess?.kill();
+    _captureProcess = null;
     _frameController.close();
   }
 }
@@ -405,7 +458,7 @@ class AudioRecorder {
     ];
 
     try {
-      _process = await Process.start('ffmpeg', args);
+      _process = await Process.start(await FfmpegService.resolveExe(), args);
       _isRecording = true;
       _outputPath = outputPath;
       onStart?.call();
@@ -419,16 +472,17 @@ class AudioRecorder {
   Future<String?> stopRecording() async {
     if (!_isRecording || _process == null) return null;
 
-    try {
-      _process?.stdin.write('q');
-    } catch (_) {}
-    _process?.kill();
-    await _process?.exitCode;
+    final proc = _process!;
     _process = null;
+    await quitFfmpegGracefully(proc);
     _isRecording = false;
     final path = _outputPath;
     _outputPath = null;
     onStop?.call();
+    if (!isUsableRecording(path)) {
+      onError?.call('التسجيل الناتج فارغ أو تالف.');
+      return null;
+    }
     return path;
   }
 

@@ -362,6 +362,7 @@ class ExportPresetPro extends ExportPreset {
   final String? watermarkPath;
   final String? watermarkPosition;
   final List<String> outputChannels;
+  final int targetBitrateMbps;
 
   const ExportPresetPro({
     required super.name,
@@ -381,6 +382,7 @@ class ExportPresetPro extends ExportPreset {
     this.watermarkPath,
     this.watermarkPosition,
     this.outputChannels = const ['video', 'audio'],
+    this.targetBitrateMbps = 0,
   });
 
   @override
@@ -394,6 +396,7 @@ class ExportPresetPro extends ExportPreset {
     'watermark_path': watermarkPath,
     'watermark_position': watermarkPosition,
     'output_channels': outputChannels,
+    'target_bitrate_mbps': targetBitrateMbps,
   };
 }
 
@@ -571,6 +574,8 @@ class BatchProcessor {
       includeMetadata: preset.includeMetadata,
       watermarkPath: preset.watermarkPath,
       watermarkPosition: preset.watermarkPosition,
+      bitrateMbps:
+          preset.targetBitrateMbps > 0 ? preset.targetBitrateMbps : null,
     );
 
     final result = await const TimelineExporter().render(
@@ -1421,6 +1426,7 @@ class _ExportPipelinePanelState extends State<ExportPipelinePanel> {
       includeMetadata: _includeMetadata,
       watermarkPath: _watermarkPath,
       watermarkPosition: _watermarkPosition,
+      targetBitrateMbps: _bitrateMbps,
     );
 
     setState(() {

@@ -46,6 +46,15 @@ class WelcomeHero extends StatelessWidget {
                 style: IOSButtonStyle.ghost,
                 onPressed: onOpenProject,
               ),
+              if (recentProjects.isEmpty) ...[
+                const SizedBox(height: AppSpacing.md),
+                const Text('استورد فيديو لبدء أول مشروع — يُحفظ تلقائيًا كل 5 دقائق',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                        fontFamilyFallback: AppTypography.fallbacks)),
+              ],
               if (recentProjects.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.xl),
                 const Text('مشاريع حديثة',

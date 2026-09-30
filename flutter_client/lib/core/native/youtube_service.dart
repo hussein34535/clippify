@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -39,12 +40,24 @@ class YoutubeService {
   }
 
   /// Download a YouTube video to [outputDir] as MP4 (1080p max).
-  /// Returns the downloaded file path, or null on failure.
+  /// Returns the downloaded file path, or null on failure/cancel.
+  ///
+  /// قابل للإلغاء عبر [cancelDownload] — كان Process.run حبيسًا بلا زر إيقاف.
+  static Process? _activeDownload;
+
+  static void cancelDownload() {
+    try {
+      _activeDownload?.kill(ProcessSignal.sigkill);
+    } catch (_) {}
+    _activeDownload = null;
+  }
+
   static Future<String?> download(
     String url,
     String outputDir, {
     void Function(double progress, String status)? onProgress,
   }) async {
+    Process? proc;
     try {
       final exe = await resolveExe();
       final isModule = exe.startsWith('python');
@@ -58,15 +71,21 @@ class YoutubeService {
 
       onProgress?.call(0.1, 'جاري التحميل من يوتيوب...');
 
-      final ProcessResult result;
-      if (isModule) {
-        result = await Process.run('python', args, stdoutEncoding: utf8, stderrEncoding: utf8);
-      } else {
-        result = await Process.run(exe, args, stdoutEncoding: utf8, stderrEncoding: utf8);
-      }
+      proc = isModule
+          ? await Process.start('python', args)
+          : await Process.start(exe, args);
+      _activeDownload = proc;
+      // تصريف متزامن — الانتظار قبل التصريف يملأ الأنبوب ويجمّد التحميل.
+      final stdoutDone = proc.stdout.drain<void>();
+      final stderrDone = proc.stderr.transform(utf8.decoder).join();
+      final code = await proc.exitCode;
+      await stdoutDone;
+      final err = await stderrDone;
+      _activeDownload = null;
 
-      if (result.exitCode != 0) {
-        onProgress?.call(0.0, 'فشل التحميل: ${result.stderr.toString().substring(0, (result.stderr.toString().length).clamp(0, 100))}');
+      if (code != 0) {
+        onProgress?.call(0.0,
+            'فشل التحميل: ${err.substring(0, err.length.clamp(0, 100))}');
         return null;
       }
 
@@ -93,6 +112,8 @@ class YoutubeService {
     } catch (e) {
       onProgress?.call(0.0, 'خطأ: $e');
       return null;
+    } finally {
+      _activeDownload = null;
     }
   }
 

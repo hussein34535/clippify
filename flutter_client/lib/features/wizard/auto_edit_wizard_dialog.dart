@@ -212,7 +212,11 @@ class _AutoEditWizardDialogState extends State<AutoEditWizardDialog> {
                         setDialogState(() => parsing = true);
                         final ok = await _parseBrief(text);
                         if (!ctx.mounted) return;
-                        if (ok) Navigator.of(ctx).pop();
+                        if (ok) {
+                          // خروج قبل أي setState — الحوار أُزيل ولا حالة بعده.
+                          Navigator.of(ctx).pop();
+                          return;
+                        }
                         setDialogState(() => parsing = false);
                       },
                 child: parsing

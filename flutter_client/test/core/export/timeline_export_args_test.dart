@@ -274,6 +274,74 @@ void main() {
       expect(args, contains('mov'));
       expect(args.contains('+faststart'), isFalse);
     });
+
+    test('concat inputs are interleaved video/audio pairs', () {
+      final args = build(segments: [
+        const ExportSegment(
+            sourcePath: 'a.mp4',
+            trimStart: 0,
+            trimDuration: 4,
+            speed: 1,
+            volume: 1,
+            hasAudio: true),
+        const ExportSegment(
+            sourcePath: 'b.mp4',
+            trimStart: 1,
+            trimDuration: 3,
+            speed: 1,
+            volume: 1,
+            hasAudio: true),
+      ]);
+      // ترتيب خاطئ (v,v,a,a) يفشل ربط الرسم — الصحيح أزواج متداخلة.
+      expect(
+          args.join(' '), contains('[v0][a0][v1][a1]concat=n=2:v=1:a=1'));
+    });
+
+    test('input pads attach directly — no comma (else empty filter)', () {
+      // انحدار حقيقي: '[0:v],scale' كانت تُنتج فلترًا فارغًا فيفشل الرسم
+      // كله بـ No such filter: '' — اكتُشف بتنفيذ ffmpeg فعليًا.
+      final flat = build().join(' ');
+      expect(flat, contains('[0:v]scale='));
+      expect(flat, contains('[0:a]volume='));
+      expect(flat.contains(RegExp(r'\[\d+:[va]\],')), isFalse);
+    });
+
+    test('gif output carries no audio map, encoder, or concat audio', () {
+      final args = build(format: 'gif');
+      final flat = args.join(' ');
+      expect(args.contains('[ac]'), isFalse);
+      expect(args.contains('aac'), isFalse);
+      expect(flat, contains('concat=n=1:v=1:a=0'));
+      expect(args, contains('gif'));
+      expect(args.contains('+faststart'), isFalse);
+    });
+
+    test('explicit bitrate reaches -b:v', () {
+      List<String> buildWithRate(int rate) => buildExportArgs(
+            segments: const [
+              ExportSegment(
+                  sourcePath: 'a.mp4',
+                  trimStart: 0,
+                  trimDuration: 10,
+                  speed: 1,
+                  volume: 1,
+                  hasAudio: true),
+            ],
+            width: 1080,
+            height: 1920,
+            fps: 30,
+            encoder: 'libx264',
+            pixelFormat: 'yuv420p',
+            bitrateMbps: rate,
+            maxBitrateMbps: 120,
+            encoderPreset: 'medium',
+            ffmpegFormat: 'mp4',
+            outputPath: 'out.mp4',
+            pass: 0,
+          );
+      final args = buildWithRate(100);
+      expect(args[args.indexOf('-b:v') + 1], '100M');
+    });
   });
 
   group('parseFfmpegProgress', () {

@@ -73,22 +73,37 @@ class BackendController {
   }
 
   /// قتل أي عملية غير الباك إند على port 8000
+  ///
+  /// بقواعد صارمة: المنفذ المحلي يجب أن يساوي 8000 تمامًا (لا ‎:80000)،
+  /// والقتل مقصور على صور الباك إند المعروفة فقط — القتل الأعمى السابق
+  /// كان قد يصيب خادم تطوير أو قاعدة بيانات بريئة.
+  static const _backendImages = {
+    'clippify_engine.exe',
+    'clippify-backend.exe',
+    'python.exe',
+    'pythonw.exe',
+  };
+
   Future<bool> _killRogueProcessOnPort8000() async {
     try {
       if (Platform.isWindows) {
         final result = await Process.run('cmd', ['/c', 'netstat -ano | findstr :8000']);
         final lines = result.stdout.toString().split('\n');
         for (final line in lines) {
-          if (line.contains('LISTENING')) {
-            final parts = line.trim().split(RegExp(r'\s+'));
-            if (parts.length >= 5) {
-              final pid = parts.last;
-              if (pid.isNotEmpty && int.tryParse(pid) != null) {
-                Process.killPid(int.parse(pid));
-                debugPrint('[BackendController] تم قتل العملية PID $pid');
-              }
-            }
+          if (!line.contains('LISTENING')) continue;
+          final parts = line.trim().split(RegExp(r'\s+'));
+          if (parts.length < 5) continue;
+          // العمود الثاني هو العنوان المحلي (IP:PORT) — يساوي 8000 تمامًا؟
+          final local = parts[1];
+          if (!RegExp(r':8000$').hasMatch(local)) continue;
+          final pid = parts.last;
+          if (pid.isEmpty || int.tryParse(pid) == null) continue;
+          if (!await _isKnownBackendImage(pid)) {
+            debugPrint('[BackendController] تخطي PID $pid — ليس من صور الباك إند.');
+            continue;
           }
+          Process.killPid(int.parse(pid));
+          debugPrint('[BackendController] تم قتل العملية PID $pid');
         }
       } else {
         final result = await Process.run('lsof', ['-ti:8000']);
@@ -108,6 +123,18 @@ class BackendController {
       return true;
     } catch (e) {
       debugPrint('[BackendController] فشل قتل العملية: $e');
+      return false;
+    }
+  }
+
+  /// هل هذه العملية من صور الباك إند المعروفة؟ (عبر tasklist)
+  Future<bool> _isKnownBackendImage(String pid) async {
+    try {
+      final r = await Process.run(
+          'tasklist', ['/FI', 'PID eq $pid', '/NH', '/FO', 'TABLE']);
+      final out = r.stdout.toString().toLowerCase();
+      return _backendImages.any(out.contains);
+    } catch (_) {
       return false;
     }
   }
@@ -174,11 +201,15 @@ class BackendController {
 
     try {
       debugPrint('[BackendController] تشغيل: $program ${arguments.join(' ')}');
+      // المسار المطلق يُشغَّل بلا shell — runInShell:true كان يقسّم المسار
+      // على المسافات (C:\Program Files\...) عبر cmd.exe فلا يقلع المحرك أبدًا.
+      // الـ shell يُستخدم فقط لاحتياطي 'python' الخام (بحث PATH).
+      final useShell = program == 'python' || program == 'python3';
       _backendProcess = await Process.start(
         program,
         arguments,
         workingDirectory: backendDir.path,
-        runInShell: true,
+        runInShell: useShell,
       );
 
       _isStarted = true;

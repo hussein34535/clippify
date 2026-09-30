@@ -548,13 +548,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           widget.onSelectClip(null, 'video');
           break;
         case 'speed_200':
-          if (trackType == 'video') notifier.updateVideoClip(clipId, (c) => c.copyWith(speed: 2.0));
+          if (trackType == 'video') notifier.updateVideoClip(clipId, (c) => c.withSpeed(2.0));
           break;
         case 'speed_100':
-          if (trackType == 'video') notifier.updateVideoClip(clipId, (c) => c.copyWith(speed: 1.0));
+          if (trackType == 'video') notifier.updateVideoClip(clipId, (c) => c.withSpeed(1.0));
           break;
         case 'speed_050':
-          if (trackType == 'video') notifier.updateVideoClip(clipId, (c) => c.copyWith(speed: 0.5));
+          if (trackType == 'video') notifier.updateVideoClip(clipId, (c) => c.withSpeed(0.5));
           break;
       }
     });
@@ -1513,6 +1513,20 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                 left: 0,
                 child: Stack(
                   children: [
+                    // تلميح المسار الفاضي — المستخدم الجديد لا يرى هدف الإفلات.
+                    if (clips.isEmpty && trackType == 'video')
+                      const Positioned.fill(
+                        child: IgnorePointer(
+                          child: Center(
+                            child: Text(
+                              'اسحب ملفًا هنا أو استورد من المكتبة',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textMuted),
+                            ),
+                          ),
+                        ),
+                      ),
                     ...clips.map((clip) {
                       double start = 0.0;
                       double end = 0.0;

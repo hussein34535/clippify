@@ -27,6 +27,103 @@ class CopilotStateData {
   }
 }
 
+/// أمر محلي يفهمه المساعد بدون باك إند (عربي/إنجليزي).
+enum LocalCopilotKind { deleteClip, setSpeed, setVolume, splitAtPlayhead, undo, redo }
+
+class LocalCopilotCommand {
+  final LocalCopilotKind kind;
+
+  /// القيمة: سرعة/صوت مطلقة، أو علامة نسبية (< 0).
+  /// السرعة: ‎-1 = ×2 عن الحالية، ‎-2 = ‎÷2. الصوت: ‎-1 = ‎-0.2، ‎-2 = ‎+0.2.
+  final double? value;
+  const LocalCopilotCommand(this.kind, [this.value]);
+}
+
+double? _extractNumber(String text) {
+  const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+  var norm = text;
+  for (var i = 0; i < arabicDigits.length; i++) {
+    norm = norm.replaceAll(arabicDigits[i], '$i');
+  }
+  norm = norm.replaceAll('٫', '.').replaceAll(',', '.');
+  final m = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(norm);
+  return m == null ? null : double.tryParse(m.group(1)!);
+}
+
+/// إسقاط علامات التشكيل العربية (U+064B–U+0655 وU+0670) — سرّع تصبح سرع
+/// فلا تكسر مطابقة الكلمات. بوحدات UTF-16 (كل التشكيل في BMP).
+String _stripTashkeel(String s) {
+  final buf = StringBuffer();
+  for (final code in s.codeUnits) {
+    if ((code >= 0x064B && code <= 0x0655) || code == 0x0670) continue;
+    buf.writeCharCode(code);
+  }
+  return buf.toString();
+}
+
+/// محلل أوامر نقي قابل للاختبار — يعيد null لما لا يفهم (يُرسَل للباك إند).
+LocalCopilotCommand? parseLocalCopilotCommand(String prompt) {
+  final t = prompt.trim();
+  if (t.isEmpty) return null;
+  final lower = _stripTashkeel(t.toLowerCase());
+  if (RegExp(r'تراجع|undo').hasMatch(lower)) {
+    return const LocalCopilotCommand(LocalCopilotKind.undo);
+  }
+  if (RegExp(r'إعادة|اعادة|تقدم|redo').hasMatch(lower)) {
+    return const LocalCopilotCommand(LocalCopilotKind.redo);
+  }
+  if (RegExp(r'قص|split|شطر').hasMatch(lower)) {
+    return const LocalCopilotCommand(LocalCopilotKind.splitAtPlayhead);
+  }
+  if (RegExp(r'احذف|امسح|حذف|مسح|delete|remove|شيل').hasMatch(lower)) {
+    return const LocalCopilotCommand(LocalCopilotKind.deleteClip);
+  }
+  if (RegExp(r'سرع|speed|تسريع|تبط|بطئ|بطي|أسرع|اسرع|أبطأ|ابطأ|faster|slower|slow|quick')
+      .hasMatch(lower)) {
+    final n = _extractNumber(t);
+    if (n != null) {
+      return LocalCopilotCommand(LocalCopilotKind.setSpeed, n);
+    }
+    // فعل عارٍ بلا رقم: مطابقة توكن كامل حتى لا يلتبس الاسم (السرعة) بالفعل.
+    final words =
+        lower.split(RegExp(r'[\s،,.!?؛:]+')).toSet();
+    const fasterVerbs = {
+      'سرع', 'اسرع', 'أسرع', 'تسريع', 'faster', 'speed', 'quicker'
+    };
+    const slowerVerbs = {
+      'ابطأ', 'أبطأ', 'تبطئ', 'تبطي', 'بطئ', 'بطي', 'slower', 'slow'
+    };
+    if (words.intersection(fasterVerbs).isNotEmpty ||
+        RegExp(r'speed up').hasMatch(lower)) {
+      return const LocalCopilotCommand(LocalCopilotKind.setSpeed, -1);
+    }
+    if (words.intersection(slowerVerbs).isNotEmpty ||
+        RegExp(r'slow down').hasMatch(lower)) {
+      return const LocalCopilotCommand(LocalCopilotKind.setSpeed, -2);
+    }
+    return null;
+  }
+  if (RegExp(r'صوت|volume|اخفض|ارفع|اكتم|mute|اصمت|علي الصوت|وطي الصوت|quiet|loud')
+      .hasMatch(lower)) {
+    if (RegExp(r'اكتم|mute|اصمت|صامت').hasMatch(lower)) {
+      return const LocalCopilotCommand(LocalCopilotKind.setVolume, 0);
+    }
+    final n = _extractNumber(t);
+    if (n != null) {
+      return LocalCopilotCommand(
+          LocalCopilotKind.setVolume, n > 2 ? n / 100 : n);
+    }
+    if (RegExp(r'اخفض|وطي|lower|down|quieter').hasMatch(lower)) {
+      return const LocalCopilotCommand(LocalCopilotKind.setVolume, -1);
+    }
+    if (RegExp(r'ارفع|علي|raise|up|louder').hasMatch(lower)) {
+      return const LocalCopilotCommand(LocalCopilotKind.setVolume, -2);
+    }
+    return null;
+  }
+  return null;
+}
+
 class CopilotNotifier extends StateNotifier<CopilotStateData> {
   CopilotNotifier() : super(CopilotStateData(messages: [], isLoading: false));
 
@@ -36,6 +133,24 @@ class CopilotNotifier extends StateNotifier<CopilotStateData> {
       messages: [...state.messages, userMessage],
       isLoading: true,
     );
+
+    // أولًا: الأوامر المحلية (أوفلاين بالكامل) — كانت كل الأوامر تذهب
+    // لendpoint ميت (501) فيرد المساعد بالفشل دائمًا.
+    final local = parseLocalCopilotCommand(prompt);
+    if (local != null) {
+      final reply = applyLocalCommand(
+        local,
+        ref.read(timelineProvider.notifier),
+      );
+      state = state.copyWith(
+        messages: [
+          ...state.messages,
+          ChatMessage(text: reply, isUser: false)
+        ],
+        isLoading: false,
+      );
+      return;
+    }
 
     final timelineState = ref.read(timelineProvider).timeline;
     
@@ -72,6 +187,113 @@ class CopilotNotifier extends StateNotifier<CopilotStateData> {
     }
   }
 
+  /// تنفيذ أمر محلي على التايملاين — دالة خالصة من الـ ref (تُختبر مباشرة
+  /// عبر TimelineNotifier) وتعيد رد المساعد بالعربية.
+  String applyLocalCommand(LocalCopilotCommand cmd, TimelineNotifier notifier) {
+    final timeline = notifier.state.timeline;
+    switch (cmd.kind) {
+      case LocalCopilotKind.undo:
+        if (!notifier.canUndo) return 'لا يوجد ما يمكن التراجع عنه.';
+        notifier.undo();
+        return 'تم التراجع.';
+      case LocalCopilotKind.redo:
+        if (!notifier.canRedo) return 'لا يوجد ما يمكن إعادته.';
+        notifier.redo();
+        return 'تمت الإعادة.';
+      case LocalCopilotKind.splitAtPlayhead:
+        final done =
+            notifier.splitClipAtPlayhead(timeline.playheadSec);
+        return done ? 'تم القص عند المؤشر.' : 'لا يوجد مقطع تحت المؤشر.';
+      case LocalCopilotKind.deleteClip:
+        final target = _resolveTarget(notifier);
+        if (target == null) return 'لا يوجد مقطع للحذف.';
+        switch (target.$1) {
+          case 'video':
+            notifier.removeVideoClip(target.$2);
+          case 'audio':
+            notifier.removeAudioClip(target.$2);
+          default:
+            return 'الحذف المحلي يدعم مقاطع الفيديو والصوت فقط.';
+        }
+        return 'تم حذف المقطع.';
+      case LocalCopilotKind.setSpeed:
+      case LocalCopilotKind.setVolume:
+        return _applyClipSetting(cmd, notifier);
+    }
+  }
+
+  /// (النوع، المعرف) للمقطع المستهدف: المحدد أولًا ثم أول فيديو.
+  (String, String)? _resolveTarget(TimelineNotifier notifier) {
+    final selected = notifier.state.selectedClipIds;
+    final tracks = notifier.state.timeline.tracks;
+    if (selected.isNotEmpty) {
+      final id = selected.first;
+      for (final t in tracks.video) {
+        for (final c in t.clips) {
+          if (c.id == id) return ('video', id);
+        }
+      }
+      for (final t in tracks.audio) {
+        for (final c in t.clips) {
+          if (c.id == id) return ('audio', id);
+        }
+      }
+    }
+    if (tracks.video.isNotEmpty && tracks.video.first.clips.isNotEmpty) {
+      return ('video', tracks.video.first.clips.first.id);
+    }
+    if (tracks.audio.isNotEmpty && tracks.audio.first.clips.isNotEmpty) {
+      return ('audio', tracks.audio.first.clips.first.id);
+    }
+    return null;
+  }
+
+  String _applyClipSetting(
+      LocalCopilotCommand cmd, TimelineNotifier notifier) {
+    final target = _resolveTarget(notifier);
+    if (target == null) return 'لا يوجد مقطع للتعديل.';
+    final isSpeed = cmd.kind == LocalCopilotKind.setSpeed;
+    VideoClip? video;
+    AudioClip? audio;
+    if (target.$1 == 'video') {
+      for (final t in notifier.state.timeline.tracks.video) {
+        for (final c in t.clips) {
+          if (c.id == target.$2) video = c;
+        }
+      }
+    } else {
+      for (final t in notifier.state.timeline.tracks.audio) {
+        for (final c in t.clips) {
+          if (c.id == target.$2) audio = c;
+        }
+      }
+    }
+    if (isSpeed) {
+      if (video == null) return 'السرعة لمقاطع الفيديو فقط.';
+      var speed = cmd.value ?? 1.0;
+      if (speed == -1) speed = (video.speed * 2).clamp(0.25, 4.0);
+      if (speed == -2) speed = (video.speed / 2).clamp(0.25, 4.0);
+      if (speed <= 0) return 'سرعة غير صالحة.';
+      notifier.updateVideoClip(video.id, (c) => c.withSpeed(speed));
+      return 'تم ضبط السرعة على ${speed.toStringAsFixed(speed.truncateToDouble() == speed ? 0 : 2)}x.';
+    }
+    var volume = cmd.value ?? 1.0;
+    if (video != null) {
+      if (volume == -1) volume = (video.volume - 0.2).clamp(0.0, 3.0);
+      if (volume == -2) volume = (video.volume + 0.2).clamp(0.0, 3.0);
+      notifier.updateVideoClip(
+          video.id, (c) => c.copyWith(volume: volume.clamp(0.0, 3.0)));
+    } else if (audio != null) {
+      if (volume == -1) volume = (audio.volume - 0.2).clamp(0.0, 3.0);
+      if (volume == -2) volume = (audio.volume + 0.2).clamp(0.0, 3.0);
+      notifier.updateAudioClip(
+          audio.id, (c) => c.copyWith(volume: volume.clamp(0.0, 3.0)));
+    } else {
+      return 'لا يوجد مقطع للتعديل.';
+    }
+    return 'تم ضبط الصوت.';
+  }
+
   String? _findClipType(String clipId, WidgetRef ref) {
     final tracks = ref.read(timelineProvider).timeline.tracks;
     for (final t in tracks.video) { for (final c in t.clips) { if (c.id == clipId) return 'video'; } }
@@ -104,17 +326,22 @@ class CopilotNotifier extends StateNotifier<CopilotStateData> {
         if (fields == null) continue;
 
         if (clipType == 'video') {
+          final wantSpeed = fields.containsKey('speed')
+              ? (fields['speed'] as num).toDouble()
+              : null;
           notifier.updateVideoClip(clipId, (clip) {
-            return clip.copyWith(
+            var out = clip.copyWith(
               aiFeatures: fields.containsKey('ai_features')
                   ? AIFeatures.fromJson(fields['ai_features'] as Map<String, dynamic>) : clip.aiFeatures,
               transform: fields.containsKey('transform')
                   ? TransformState.fromJson(fields['transform'] as Map<String, dynamic>) : clip.transform,
               colorGrading: fields.containsKey('color_grading')
                   ? ColorGradingState.fromJson(fields['color_grading'] as Map<String, dynamic>) : clip.colorGrading,
-              speed: fields.containsKey('speed') ? (fields['speed'] as num).toDouble() : clip.speed,
               volume: fields.containsKey('volume') ? (fields['volume'] as num).toDouble() : clip.volume,
             );
+            // السرعة وحدها تغيّر الطول — تمرّ عبر withSpeed لتبقى متسقة.
+            if (wantSpeed != null) out = out.withSpeed(wantSpeed);
+            return out;
           });
         } else if (clipType == 'audio') {
           notifier.updateAudioClip(clipId, (clip) {

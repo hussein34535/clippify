@@ -265,9 +265,25 @@ class _AutoEditResultsScreenState extends ConsumerState<AutoEditResultsScreen> {
                   final cols = constraints.maxWidth >= 900 ? 2 : 1;
                   if (ranked.isEmpty) {
                     return Center(
-                      child: Text(
-                        context.l10n.t('results_empty'),
-                        style: Theme.of(context).textTheme.bodyMedium,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.search_off_rounded,
+                              size: 40, color: AppColors.textMuted),
+                          const SizedBox(height: 12),
+                          Text(
+                            context.l10n.t('results_empty'),
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: () =>
+                                Navigator.of(context).maybePop(),
+                            icon: const Icon(Icons.arrow_back, size: 16),
+                            label: Text(
+                                context.l10n.t('common_back')),
+                          ),
+                        ],
                       ),
                     );
                   }
@@ -360,6 +376,8 @@ class _AutoEditResultsScreenState extends ConsumerState<AutoEditResultsScreen> {
   }
 
   Widget _buildBottomBar() {
+    // أزرار فارغة مفعّلة كانت تطلع «added 0 clips» — تُعطَّل مع القائمة.
+    final empty = widget.rankedClips.isEmpty;
     return Container(
       decoration: AppDecorations.toolbar.copyWith(
         border: const Border(top: BorderSide(color: AppColors.borderSubtle)),
@@ -373,14 +391,14 @@ class _AutoEditResultsScreenState extends ConsumerState<AutoEditResultsScreen> {
         children: [
           OutlinedButton.icon(
             key: const ValueKey('export_all'),
-            onPressed: _handleExportAll,
+            onPressed: empty ? null : _handleExportAll,
             icon: const Icon(Icons.folder_copy_outlined, size: 16),
             label: Text(context.l10n.t('results_export_all')),
           ),
           const SizedBox(width: tokens.Spacing.md),
           ElevatedButton.icon(
             key: const ValueKey('add_all'),
-            onPressed: _handleAddAll,
+            onPressed: empty ? null : _handleAddAll,
             icon: const Icon(Icons.playlist_add, size: 16),
             label: Text(context.l10n.t('results_add_all')),
           ),

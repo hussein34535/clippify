@@ -37,6 +37,7 @@ class HeaderWidget extends ConsumerWidget {
   final VoidCallback? onPaste;
   final VoidCallback? onSelectAll;
   final VoidCallback? onFullScreen;
+  final VoidCallback? onShowShortcuts;
   final Widget? statusBadge;
 
   const HeaderWidget({
@@ -58,6 +59,7 @@ class HeaderWidget extends ConsumerWidget {
     this.onPaste,
     this.onSelectAll,
     this.onFullScreen,
+    this.onShowShortcuts,
     this.statusBadge,
   });
 
@@ -84,7 +86,8 @@ class HeaderWidget extends ConsumerWidget {
   ];
 
   List<EdgeMenuEntry> _viewMenu() => [
-    EdgeMenuEntry(label: 'ملء الشاشة', shortcut: 'F11', icon: Icons.fullscreen_rounded, action: onFullScreen),
+    EdgeMenuEntry(label: 'ملء الشاشة', shortcut: 'F', icon: Icons.fullscreen_rounded, action: onFullScreen),
+    EdgeMenuEntry(label: 'اختصارات لوحة المفاتيح', shortcut: 'F1', icon: Icons.keyboard_rounded, action: onShowShortcuts),
     const EdgeMenuEntry.divider(),
     ..._workspacePresets.map((p) => EdgeMenuEntry(
       label: p.$2,

@@ -477,6 +477,20 @@ class VideoClip {
     this.automationLanes = const [],
   });
 
+  /// نسخة بنفس المادة لكن بسرعة [speed] — يطابق طول التايملاين المادة ÷ السرعة.
+  ///
+  /// القاعدة الذهبية الوحيدة لتغيير السرعة: أي مسار يغيّر `speed` يجب أن
+  /// يمرّ من هنا حتى لا يخرج الطول المرئي عن طول التصدير.
+  VideoClip withSpeed(double speed) {
+    final s = speed <= 0 ? 1.0 : speed;
+    final material =
+        (sourceTrimEnd - sourceTrimStart).clamp(0.01, double.infinity);
+    return copyWith(
+      speed: s,
+      endTimeInTimeline: startTimeInTimeline + material / s,
+    );
+  }
+
   factory VideoClip.fromJson(Map<String, dynamic> json) => VideoClip(
         id: json['id'] as String,
         sourcePath: json['source_path'] as String,

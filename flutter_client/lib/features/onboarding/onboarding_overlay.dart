@@ -24,15 +24,23 @@ class _OnboardingOverlayState extends ConsumerState<OnboardingOverlay> {
   bool _visible = false;
   final PageController _pageController = PageController();
   int _page = 0;
+  ProviderSubscription<bool>? _replaySub;
 
   @override
   void initState() {
     super.initState();
+    // مستمع لمرة واحدة هنا لا في build — كان ref.listen داخل build
+    // يشترك من جديد مع كل إعادة بناء.
+    _replaySub = ref.listenManual<bool>(onboardingReplayProvider,
+        (prev, next) {
+      if (next == true && mounted) setState(() => _visible = true);
+    });
     _resolveVisibility();
   }
 
   @override
   void dispose() {
+    _replaySub?.close();
     _pageController.dispose();
     super.dispose();
   }
@@ -65,11 +73,6 @@ class _OnboardingOverlayState extends ConsumerState<OnboardingOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    // Replay request from Settings overrides the first-run gate.
-    ref.listen(onboardingReplayProvider, (prev, next) {
-      if (next && !_visible) setState(() => _visible = true);
-    });
-
     if (!_checked || !_visible) return const SizedBox.shrink();
 
     return Positioned.fill(
@@ -77,8 +80,12 @@ class _OnboardingOverlayState extends ConsumerState<OnboardingOverlay> {
       child: Material(
         color: Colors.black.withValues(alpha: 0.82),
         child: Center(
-          child: Container(
-            width: 520,
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Container(
+              // عرض متكيف — 520 الثابتة كانت تفيض على النوافذ الصغيرة.
+              width: (MediaQuery.sizeOf(context).width - 48)
+                  .clamp(280.0, 520.0),
             padding: const EdgeInsets.all(AppSpacing.xl),
             decoration: BoxDecoration(
               color: AppColors.surface,
@@ -165,6 +172,7 @@ class _OnboardingOverlayState extends ConsumerState<OnboardingOverlay> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

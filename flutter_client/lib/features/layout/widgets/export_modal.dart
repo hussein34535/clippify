@@ -42,6 +42,7 @@ class _ExportModalState extends State<ExportModal> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _filenameController = TextEditingController(text: 'project_render_${DateTime.now().millisecondsSinceEpoch}.mp4');
     _xmlPathController = TextEditingController(
       text: '${widget.defaultOutputDir}/nle_project_${DateTime.now().millisecondsSinceEpoch}.xml',
@@ -49,8 +50,17 @@ class _ExportModalState extends State<ExportModal> with SingleTickerProviderStat
     _exportQuality = widget.defaultQuality;
   }
 
+  int _tabIndex = 0;
+
+  void _onTabChanged() {
+    if (_tabIndex != _tabController.index) {
+      setState(() => _tabIndex = _tabController.index);
+    }
+  }
+
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _filenameController.dispose();
     _xmlPathController.dispose();
@@ -178,7 +188,7 @@ class _ExportModalState extends State<ExportModal> with SingleTickerProviderStat
             // ── Tab Contents ──
             Flexible(
               child: SizedBox(
-                height: _tabController.index == 1 ? 480 : 240,
+                height: _tabIndex == 1 ? 480 : 240,
                 child: TabBarView(
                   controller: _tabController,
                   children: [
@@ -214,6 +224,9 @@ class _ExportModalState extends State<ExportModal> with SingleTickerProviderStat
                         includeMetadata: _includeMetadata,
                         watermarkPath: _watermarkPath,
                         watermarkPosition: _watermarkPosition,
+                        bitrateMbps: (_lastPipelinePreset?.targetBitrateMbps ?? 0) > 0
+                            ? _lastPipelinePreset!.targetBitrateMbps
+                            : null,
                       );
                       Navigator.pop(context, settings);
                     },
@@ -258,12 +271,42 @@ class _ExportModalState extends State<ExportModal> with SingleTickerProviderStat
   }
 
   Widget _buildVideoPipelineTab() {
-    return ExportPipelinePanel(
-      initialPreset: _selectedPresetName != null
-          ? ExportPreset.available.where((p) => p.name == _selectedPresetName).firstOrNull
-          : ExportPreset.available[0],
-      onEnqueue: _onPipelineEnqueue,
-      timelineSource: widget.timelineSource,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        const Text('اسم ملف الإخراج (يُحفظ في Documents/Clippify/exports):',
+            style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+        const SizedBox(height: 6),
+        Container(
+          height: 36,
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: TextField(
+            controller: _filenameController,
+            style: const TextStyle(fontSize: 11, color: Colors.white),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: ExportPipelinePanel(
+            initialPreset: _selectedPresetName != null
+                ? ExportPreset.available
+                    .where((p) => p.name == _selectedPresetName)
+                    .firstOrNull
+                : ExportPreset.available[0],
+            onEnqueue: _onPipelineEnqueue,
+            timelineSource: widget.timelineSource,
+          ),
+        ),
+      ],
     );
   }
 
