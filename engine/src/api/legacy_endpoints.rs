@@ -64,7 +64,8 @@ pub fn router(auto_edit_state: AutoEditState) -> Router {
         .route("/audio/ducking", post(not_implemented))
         .route("/viral/recommendations", post(not_implemented))
         .route("/project/ai/autoframing", post(not_implemented))
-        .route("/brief/parse", post(not_implemented))
+        // NOTE: /brief/parse lives in features::router() (real handler);
+        // registering it here too made axum panic on overlapping routes.
         .with_state(auto_edit_state)
 }
 

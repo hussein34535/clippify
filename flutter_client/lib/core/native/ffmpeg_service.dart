@@ -80,15 +80,17 @@ class FfmpegService {
     }
   }
 
-  /// Probe media duration (seconds). Tries the Rust engine first, then
-  /// parses ffmpeg's `Duration:` line as fallback.
+  /// Probe media duration (seconds). Header-only: ffmpeg prints `Duration:`
+  /// without decoding anything (a full `-f null -` decode pegs the CPU for
+  /// hours on long AV1 files and has crashed the bundled build mid-decode).
+  /// Tries the Rust engine first, then parses ffmpeg's `Duration:` line.
   static Future<double?> probeDuration(String mediaPath) async {
     final rust = await probeDurationViaRust(mediaPath);
     if (rust != null) return rust;
     try {
       final exe = await resolveExe();
       final result = await Process.run(exe, [
-        '-hide_banner', '-i', mediaPath, '-f', 'null', '-',
+        '-hide_banner', '-i', mediaPath,
       ], stdoutEncoding: utf8, stderrEncoding: utf8);
       final blob = result.stderr;
       return parseDuration(blob);
@@ -108,6 +110,7 @@ class FfmpegService {
       final exe = await resolveExe();
       final result = await Process.run(exe, [
         '-hide_banner',
+        '-vn', // audio-only: skip the (flaky on huge AV1) video decoder
         '-i', mediaPath,
         '-af', 'silencedetect=noise=${noiseDb}dB:d=${minSilenceDur.toStringAsFixed(2)}',
         '-f', 'null', '-',

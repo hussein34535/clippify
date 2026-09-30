@@ -45,6 +45,26 @@ mod magic_preview;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 
+// No new dependencies: kernel32 link lets the engine (and, by inheritance,
+// every ffmpeg child it spawns) fail with an exit code instead of popping a
+// Windows "Application Error" dialog on native crashes.
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn SetErrorMode(uMode: u32) -> u32;
+}
+
+#[cfg(windows)]
+fn suppress_crash_dialogs() {
+    // SEM_FAILCRITICALERRORS (0x0001) | SEM_NOGPFAULTERRORBOX (0x0002).
+    unsafe {
+        SetErrorMode(0x0001 | 0x0002);
+    }
+}
+
+#[cfg(not(windows))]
+fn suppress_crash_dialogs() {}
+
 #[derive(Parser)]
 #[command(name = "clippify_engine", about = "Clippify Rust Engine")]
 struct Cli {
@@ -105,6 +125,7 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    suppress_crash_dialogs();
     let cli = Cli::parse();
     let media = media::MediaEngine::new();
 

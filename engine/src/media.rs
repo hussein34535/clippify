@@ -65,8 +65,11 @@ impl MediaEngine {
     }
 
     pub async fn probe_duration(&self, media_path: &str) -> Result<f64> {
+        // Header-only: ffmpeg prints `Duration:` without decoding a single
+        // frame. (A full `-f null -` decode pegs the CPU for hours on long
+        // AV1 files and has crashed the bundled build mid-decode.)
         let output = tokio::process::Command::new(&self.ffmpeg_path)
-            .args(["-hide_banner", "-i", media_path, "-f", "null", "-"])
+            .args(["-hide_banner", "-i", media_path])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -108,7 +111,9 @@ impl MediaEngine {
             noise_db, min_dur
         );
         let output = tokio::process::Command::new(&self.ffmpeg_path)
-            .args(["-hide_banner", "-i", media_path, "-af", &filter, "-f", "null", "-"])
+            // -vn: silencedetect is audio-only; skipping video decode avoids
+            // the (flaky, on huge AV1 files) video decoder entirely.
+            .args(["-hide_banner", "-vn", "-i", media_path, "-af", &filter, "-f", "null", "-"])
             .output()
             .await
             .context("silencedetect failed")?;
