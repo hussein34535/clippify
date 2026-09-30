@@ -314,6 +314,38 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     moveFn(clipId, snapped);
   }
 
+  /// Ends a clip drag: restore the "no overlap per track" invariant (free
+  /// dragging may have crossed neighbours) keeping [clipId] where it was
+  /// dropped, then close the undo gesture so the whole drag collapses into
+  /// ONE Ctrl+Z step.
+  void _finishClipGesture(String trackType, String clipId) {
+    final notifier = ref.read(timelineProvider.notifier);
+    switch (trackType) {
+      case 'video':
+        notifier.resolveVideoOverlaps(clipId);
+        break;
+      case 'audio':
+        notifier.resolveAudioOverlaps(clipId);
+        break;
+      case 'overlay':
+        notifier.resolveOverlayOverlaps(clipId);
+        break;
+      case 'subtitle':
+        notifier.resolveSubtitleOverlaps(clipId);
+        break;
+      case 'text':
+        notifier.resolveTextOverlaps(clipId);
+        break;
+    }
+    notifier.endGesture();
+    if (mounted) {
+      setState(() {
+        _snapLinePositionSec = null;
+        _isDraggingClip = false;
+      });
+    }
+  }
+
   void _handleClipResizeLeft(String clipId, double deltaSec, double zoomLevel, double playhead) {
     final notifier = ref.read(timelineProvider.notifier);
     dynamic cur;
@@ -625,9 +657,17 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
     final timelineState = ref.read(timelineProvider).timeline;
 
-    // Snap to grid lines
-    for (double g = 0; g <= ref.read(timelineProvider.notifier).totalDuration; g += TimelineConstants.gridIntervalSec.toDouble()) {
-      snapPoints.add(g);
+    // Snap to grid lines — compute ONLY the nearest grid point(s)
+    // arithmetically for the clip's start and end. (The old loop added every
+    // grid line on the timeline per pointer-move: O(totalDuration) work on
+    // every drag event.)
+    final double gridSec = TimelineConstants.gridIntervalSec.toDouble();
+    final double totalDuration = ref.read(timelineProvider.notifier).totalDuration;
+    for (final anchor in <double>[targetStart, targetStart + clipDuration]) {
+      final double nearest = (anchor / gridSec).round() * gridSec;
+      if (nearest >= 0.0 && nearest <= totalDuration) {
+        snapPoints.add(nearest);
+      }
     }
 
     // Snap to text clips
@@ -1648,7 +1688,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                   }
                                  },
                                  onContextMenu: () => _showClipContextMenu(context, clipId, trackType, trackType),
-                               )
+                                 onDragStart: () =>
+                                     ref.read(timelineProvider.notifier).beginGesture(),
+                                 onDragEnd: () => _finishClipGesture('text', clipId),
+                                )
                              : ClipItemWidget(
                                  clip: clip,
                                  clipType: trackType,
@@ -1660,14 +1703,18 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                  isDragging: _isDraggingClip,
                                  clipMinWidth: layoutPrefs.clipMinWidth,
                                  resizeHandleWidth: layoutPrefs.resizeHandleWidth,
-                                 onDragStart: () => setState(() {
-                                   _snapLinePositionSec = null;
-                                   _isDraggingClip = true;
-                                 }),
-                                 onDragEnd: () => setState(() {
-                                   _snapLinePositionSec = null;
-                                   _isDraggingClip = false;
-                                 }),
+                                  onDragStart: () {
+                                    ref
+                                        .read(timelineProvider.notifier)
+                                        .beginGesture();
+                                    setState(() {
+                                      _snapLinePositionSec = null;
+                                      _isDraggingClip = true;
+                                    });
+                                  },
+                                  onDragEnd: () {
+                                    _finishClipGesture(trackType, clipId);
+                                  },
                                  onSelect: () {
                                    final isShift = HardwareKeyboard.instance.isShiftPressed;
                                    if (isShift) {

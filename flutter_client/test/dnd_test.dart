@@ -7,6 +7,7 @@ import 'package:flutter_client/core/constants/timeline_constants.dart';
 import 'package:flutter_client/core/models/timeline_models.dart';
 import 'package:flutter_client/features/library/widgets/media_library_widget.dart';
 import 'package:flutter_client/features/timeline/providers/timeline_provider.dart';
+import 'package:flutter_client/features/timeline/widgets/clip_item_widget.dart';
 import 'package:flutter_client/features/timeline/widgets/timeline_widget.dart';
 import 'package:flutter_client/shared/providers/toast_provider.dart';
 
@@ -16,7 +17,10 @@ Future<Map<String, dynamic>?> fakeResolver(String path) async =>
 
 const double _kZoom = 30.0;
 
-TimelineNotifier _seededNotifier({double playhead = 0.0}) {
+TimelineNotifier _seededNotifier({
+  double playhead = 0.0,
+  List<VideoClip> clips = const [],
+}) {
   final notifier = TimelineNotifier();
   notifier.loadProject(
     TimelineState(
@@ -26,7 +30,7 @@ TimelineNotifier _seededNotifier({double playhead = 0.0}) {
       // Exactly ONE empty video track → lanes = [video], height 78 + 4 gap.
       tracks: Tracks(
         video: [
-          VideoTrack(id: 'v_main', name: 'Video 1', index: 0, clips: []),
+          VideoTrack(id: 'v_main', name: 'Video 1', index: 0, clips: clips),
         ],
         audio: [],
         subtitles: [],
@@ -39,6 +43,19 @@ TimelineNotifier _seededNotifier({double playhead = 0.0}) {
   );
   return notifier;
 }
+
+VideoClip _vc(String id, double start, double end) => VideoClip(
+      id: id,
+      sourcePath: '/fake/v.mp4',
+      startTimeInTimeline: start,
+      endTimeInTimeline: end,
+      sourceTrimStart: 0,
+      sourceTrimEnd: end - start,
+      transform: TransformState.defaultState(),
+      colorGrading: ColorGradingState(),
+      filters: [],
+      aiFeatures: AIFeatures(),
+    );
 
 const String _kAddedToast = 'تمت إضافة الوسائط إلى المسار';
 const String _kWrongTrackToast = 'اسحب للمسار الصحيح';
@@ -57,8 +74,9 @@ Widget buildHarness({
   double seedPlayhead = 0.0,
   required List<String> toastLog,
   bool useRealLibraryCard = false,
+  List<VideoClip> seedClips = const [],
 }) {
-  final notifier = _seededNotifier(playhead: seedPlayhead);
+  final notifier = _seededNotifier(playhead: seedPlayhead, clips: seedClips);
   return ProviderScope(
     overrides: [
       timelineProvider.overrideWith((ref) => notifier),
@@ -256,6 +274,91 @@ void main() {
           reason: 'locked track must not receive the clip');
       expect(toasts, isNot(contains(_kAddedToast)));
       expect(toasts, isNot(contains(_kWrongTrackToast)));
+
+      await _drainTimers(tester);
+    });
+
+    testWidgets(
+        '(e) dragging a NEIGHBOURING clip follows the pointer while held, and '
+        'on release the overlapped clip is pushed right (magnetic drop)',
+        (tester) async {
+      _useBigSurface(tester);
+      final toasts = <String>[];
+      await tester.pumpWidget(buildHarness(
+        toastLog: toasts,
+        seedClips: [_vc('v1', 0, 4), _vc('v2', 4, 8)],
+      ));
+      await tester.pump();
+
+      // First move event is swallowed by touch-slop acceptance, so do three
+      // steps: 60px (accepts) + 30 + 30 = at least 60px of real movement.
+      final clipFinder = find.byType(ClipItemWidget).first;
+      final gesture = await tester.startGesture(tester.getCenter(clipFinder));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveBy(const Offset(60, 0));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveBy(const Offset(30, 0));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveBy(const Offset(30, 0));
+      await tester.pump(const Duration(milliseconds: 50));
+
+      final midStart =
+          readVideoClips(tester).firstWhere((c) => c.id == 'v1').startTimeInTimeline;
+      expect(midStart, greaterThan(1.0),
+          reason: 'يجب أن يتبع الكليب الإصبع أثناء السحب (كان متجمدًا)، '
+              'الآن=$midStart');
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump();
+
+      final clips = readVideoClips(tester);
+      final v1 = clips.firstWhere((c) => c.id == 'v1');
+      final v2 = clips.firstWhere((c) => c.id == 'v2');
+
+      expect(v1.startTimeInTimeline, inInclusiveRange(1.5, 4.0),
+          reason: 'start=${v1.startTimeInTimeline} — السحب لليمين يجب أن يحركه '
+              'بشكل ملموس (كان 0 قبل الإصلاح)');
+      expect(v2.startTimeInTimeline, moreOrLessEquals(v1.endTimeInTimeline),
+          reason: 'الجار المتصادم يُدفع ليمين الكليب المسحوب');
+      expect(v2.endTimeInTimeline - v2.startTimeInTimeline, moreOrLessEquals(4.0),
+          reason: 'مدّة الجار لا تتغير عند الدفع');
+
+      await _drainTimers(tester);
+    });
+
+    testWidgets(
+        '(f) one drag = ONE undo step (the per-pixel undo flood is gone)',
+        (tester) async {
+      _useBigSurface(tester);
+      final toasts = <String>[];
+      await tester.pumpWidget(buildHarness(
+        toastLog: toasts,
+        seedClips: [_vc('v1', 0, 4), _vc('v2', 4, 8)],
+      ));
+      await tester.pump();
+
+      final clipFinder = find.byType(ClipItemWidget).first;
+      final gesture = await tester.startGesture(tester.getCenter(clipFinder));
+      await tester.pump(const Duration(milliseconds: 50));
+      for (final dx in <double>[15, 15, 15, 15, 15, 15]) {
+        await gesture.moveBy(Offset(dx, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.up();
+      await tester.pump();
+      await tester.pump();
+
+      final container = ProviderScope.containerOf(
+          tester.element(find.byType(TimelineWidget)));
+      final depthAfterDrag = container.read(timelineProvider).undoStack.length;
+      expect(depthAfterDrag, 1,
+          reason: 'سحبة كاملة = خطوة تراجع واحدة (كان يُملأ الـ stack بالسحب)');
+
+      container.read(timelineProvider.notifier).undo();
+      expect(readVideoClips(tester).firstWhere((c) => c.id == 'v1').startTimeInTimeline,
+          0.0,
+          reason: 'تراجع واحد يعيد الكليب لموضعه الأصلي');
 
       await _drainTimers(tester);
     });

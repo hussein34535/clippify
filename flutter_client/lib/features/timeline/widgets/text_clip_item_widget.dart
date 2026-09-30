@@ -11,6 +11,8 @@ class TextClipItemWidget extends StatelessWidget {
   final ValueChanged<double> onResizeLeft;
   final ValueChanged<double> onResizeRight;
   final VoidCallback? onContextMenu;
+  final VoidCallback? onDragStart;
+  final VoidCallback? onDragEnd;
 
   const TextClipItemWidget({
     super.key,
@@ -23,6 +25,8 @@ class TextClipItemWidget extends StatelessWidget {
     required this.onResizeLeft,
     required this.onResizeRight,
     this.onContextMenu,
+    this.onDragStart,
+    this.onDragEnd,
   });
 
   @override
@@ -34,6 +38,13 @@ class TextClipItemWidget extends StatelessWidget {
       onTap: onSelect,
       onDoubleTap: onEdit,
       onSecondaryTap: onContextMenu,
+      // Body drag: [onMove] was declared but never invoked — text clips were
+      // literally impossible to drag. Horizontal drag moves the clip; the
+      // resize handles below are children so they win their own zones.
+      onHorizontalDragStart: (_) => onDragStart?.call(),
+      onHorizontalDragEnd: (_) => onDragEnd?.call(),
+      onHorizontalDragCancel: () => onDragEnd?.call(),
+      onHorizontalDragUpdate: (details) => onMove(details.delta.dx / zoomLevel),
       child: Container(
         width: width,
         height: 50,
@@ -105,6 +116,9 @@ class TextClipItemWidget extends StatelessWidget {
                 child: MouseRegion(
                   cursor: SystemMouseCursors.resizeLeftRight,
                   child: GestureDetector(
+                    onHorizontalDragStart: (_) => onDragStart?.call(),
+                    onHorizontalDragEnd: (_) => onDragEnd?.call(),
+                    onHorizontalDragCancel: () => onDragEnd?.call(),
                     onHorizontalDragUpdate: (details) {
                       final deltaSec = details.delta.dx / zoomLevel;
                       onResizeLeft(deltaSec);
@@ -123,6 +137,9 @@ class TextClipItemWidget extends StatelessWidget {
                 child: MouseRegion(
                   cursor: SystemMouseCursors.resizeLeftRight,
                   child: GestureDetector(
+                    onHorizontalDragStart: (_) => onDragStart?.call(),
+                    onHorizontalDragEnd: (_) => onDragEnd?.call(),
+                    onHorizontalDragCancel: () => onDragEnd?.call(),
                     onHorizontalDragUpdate: (details) {
                       final deltaSec = details.delta.dx / zoomLevel;
                       onResizeRight(deltaSec);

@@ -310,6 +310,7 @@ class ClipItemWidget extends StatelessWidget {
                 GestureDetector(
                   onHorizontalDragStart: isLocked ? null : (_) => onDragStart?.call(),
                   onHorizontalDragEnd: isLocked ? null : (_) => onDragEnd?.call(),
+                  onHorizontalDragCancel: isLocked ? null : () => onDragEnd?.call(),
                   onHorizontalDragUpdate: isLocked
                       ? null
                       : (details) {
@@ -420,6 +421,7 @@ class ClipItemWidget extends StatelessWidget {
                 behavior: HitTestBehavior.translucent,
                 onHorizontalDragStart: (_) => onDragStart?.call(),
                 onHorizontalDragEnd: (_) => onDragEnd?.call(),
+                onHorizontalDragCancel: () => onDragEnd?.call(),
                 onHorizontalDragUpdate: (details) {
                   onResize(details.delta.dx);
                 },

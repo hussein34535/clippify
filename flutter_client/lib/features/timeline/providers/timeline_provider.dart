@@ -67,9 +67,35 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     });
   }
 
+  // ── Gesture sessions ──────────────────────────────────────────────────
+  // A drag fires dozens/hundreds of mutations (one per pointer move). We push
+  // a SINGLE undo checkpoint (the state before the first mutation) when the
+  // gesture starts, then skip further pushes until it ends — otherwise one
+  // drag fills the whole undo stack and Ctrl+Z becomes useless.
+  int _gestureDepth = 0;
+  bool _gestureCheckpointPushed = false;
+
+  void beginGesture() {
+    if (_gestureDepth == 0) _gestureCheckpointPushed = false;
+    _gestureDepth++;
+  }
+
+  void endGesture() {
+    if (_gestureDepth > 0) _gestureDepth--;
+    if (_gestureDepth == 0) _gestureCheckpointPushed = false;
+  }
+
   /// تسجيل الحالة الحالية في الـ Undo stack قبل أي تعديل
   void _saveToUndoStack() {
     _scheduleAutosave();
+    if (!state.isDirty) {
+      state = state.copyWith(isDirty: true);
+    }
+    if (_gestureDepth > 0) {
+      // Inside a drag: only the very first mutation pushes the checkpoint.
+      if (_gestureCheckpointPushed) return;
+      _gestureCheckpointPushed = true;
+    }
     final currentHistory = List<TimelineState>.from(state.undoStack);
     if (currentHistory.length >= maxStackSize) {
       currentHistory.removeAt(0);
@@ -457,55 +483,52 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   }
 
   /// تحريك كليب فيديو إلى موقع جديد
-  void moveVideoClip(String clipId, double newStart, {int trackIndex = 0}) {
-    _saveToUndoStack();
+  /// حرّك كليب فيديو إلى موضع جديد.
+  ///
+  /// أثناء السحب تكون الحركة حرة (يُسمح بالتداخل مؤقتًا حتى يتبع الكليب
+  /// الإصبع فعليًا) — التصادمات تُحل لاحقًا عبر [resolveVideoOverlaps]
+  /// عند رفع اليد. [trackIndex] يُستنتج تلقائيًا إذا لم يُمرَّر.
+  void moveVideoClip(String clipId, double newStart, {int? trackIndex}) {
     final currentTracks = state.timeline.tracks;
     final videoTracks = List<VideoTrack>.from(currentTracks.video);
+    final int ti = trackIndex ??
+        videoTracks.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (ti < 0 || ti >= videoTracks.length) return;
 
-    if (trackIndex < videoTracks.length) {
-      final targetTrack = videoTracks[trackIndex];
-      final clips = targetTrack.clips;
-      
-      final index = clips.indexWhere((c) => c.id == clipId);
-      if (index == -1) return;
-      final clip = clips[index];
-      final dur = clip.endTimeInTimeline - clip.startTimeInTimeline;
-      
-      double leftLimit = 0.0;
-      double rightLimit = double.infinity;
-      for (var c in clips) {
-        if (c.id == clipId) continue;
-        if (c.endTimeInTimeline < clip.endTimeInTimeline && c.endTimeInTimeline > leftLimit) {
-          leftLimit = c.endTimeInTimeline;
-        }
-        if (c.startTimeInTimeline > clip.startTimeInTimeline && c.startTimeInTimeline < rightLimit) {
-          rightLimit = c.startTimeInTimeline;
-        }
+    final targetTrack = videoTracks[ti];
+    final clips = targetTrack.clips;
+    final index = clips.indexWhere((c) => c.id == clipId);
+    if (index == -1) return;
+
+    _saveToUndoStack();
+    final clip = clips[index];
+    final dur = clip.endTimeInTimeline - clip.startTimeInTimeline;
+
+    final double clampedStart = newStart < 0.0 ? 0.0 : newStart;
+
+    final updatedClips = clips.map((c) {
+      if (c.id == clipId) {
+        return c.copyWith(
+          startTimeInTimeline: clampedStart,
+          endTimeInTimeline: clampedStart + dur,
+        );
       }
-      
-      final double clampedStart = newStart.clamp(leftLimit, rightLimit - dur);
-      
-      final updatedClips = targetTrack.clips.map((c) {
-        if (c.id == clipId) {
-          return c.copyWith(
-            startTimeInTimeline: clampedStart,
-            endTimeInTimeline: clampedStart + dur,
-          );
-        }
-        return c;
-      }).toList();
+      return c;
+    }).toList();
 
-      videoTracks[trackIndex] = targetTrack.copyWith(clips: updatedClips);
-      state = state.copyWith(
-        timeline: state.timeline.copyWith(
-          tracks: currentTracks.copyWith(video: videoTracks),
-        ),
-      );
-    }
+    videoTracks[ti] = targetTrack.copyWith(clips: updatedClips);
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: currentTracks.copyWith(video: videoTracks),
+      ),
+    );
   }
 
   /// تغيير طول كليب فيديو (من الحافة اليمنى)
-  void resizeVideoClip(String clipId, double newEnd, {int trackIndex = 0}) {
+  void resizeVideoClip(String clipId, double newEnd, {int? trackIndex}) {
+    trackIndex ??=
+        state.timeline.tracks.video.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (trackIndex < 0) return;
     _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final videoTracks = List<VideoTrack>.from(currentTracks.video);
@@ -597,53 +620,47 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   }
 
   /// تحريك كليب صوتي
-  void moveAudioClip(String clipId, double newStart, {int trackIndex = 0}) {
-    _saveToUndoStack();
+  /// حرّك كليب صوتي — راجع [moveVideoClip] لسلوك السحب الحر.
+  void moveAudioClip(String clipId, double newStart, {int? trackIndex}) {
     final currentTracks = state.timeline.tracks;
     final audioTracks = List<AudioTrack>.from(currentTracks.audio);
-    if (trackIndex < audioTracks.length) {
-      final targetTrack = audioTracks[trackIndex];
-      final clips = targetTrack.clips;
-      
-      final index = clips.indexWhere((c) => c.id == clipId);
-      if (index == -1) return;
-      final clip = clips[index];
-      final dur = clip.endTimeInTimeline - clip.startTimeInTimeline;
-      
-      double leftLimit = 0.0;
-      double rightLimit = double.infinity;
-      for (var c in clips) {
-        if (c.id == clipId) continue;
-        if (c.endTimeInTimeline < clip.endTimeInTimeline && c.endTimeInTimeline > leftLimit) {
-          leftLimit = c.endTimeInTimeline;
-        }
-        if (c.startTimeInTimeline > clip.startTimeInTimeline && c.startTimeInTimeline < rightLimit) {
-          rightLimit = c.startTimeInTimeline;
-        }
+    final int ti = trackIndex ??
+        audioTracks.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (ti < 0 || ti >= audioTracks.length) return;
+
+    final targetTrack = audioTracks[ti];
+    final clips = targetTrack.clips;
+    final index = clips.indexWhere((c) => c.id == clipId);
+    if (index == -1) return;
+
+    _saveToUndoStack();
+    final clip = clips[index];
+    final dur = clip.endTimeInTimeline - clip.startTimeInTimeline;
+    final double clampedStart = newStart < 0.0 ? 0.0 : newStart;
+
+    final updatedClips = clips.map((c) {
+      if (c.id == clipId) {
+        return c.copyWith(
+          startTimeInTimeline: clampedStart,
+          endTimeInTimeline: clampedStart + dur,
+        );
       }
-      
-      final double clampedStart = newStart.clamp(leftLimit, rightLimit - dur);
-      
-      final updatedClips = targetTrack.clips.map((c) {
-        if (c.id == clipId) {
-          return c.copyWith(
-            startTimeInTimeline: clampedStart,
-            endTimeInTimeline: clampedStart + dur,
-          );
-        }
-        return c;
-      }).toList();
-      audioTracks[trackIndex] = targetTrack.copyWith(clips: updatedClips);
-      state = state.copyWith(
-        timeline: state.timeline.copyWith(
-          tracks: currentTracks.copyWith(audio: audioTracks),
-        ),
-      );
-    }
+      return c;
+    }).toList();
+
+    audioTracks[ti] = targetTrack.copyWith(clips: updatedClips);
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: currentTracks.copyWith(audio: audioTracks),
+      ),
+    );
   }
 
   /// تغيير طول كليب صوتي
-  void resizeAudioClip(String clipId, double newEnd, {int trackIndex = 0}) {
+  void resizeAudioClip(String clipId, double newEnd, {int? trackIndex}) {
+    trackIndex ??=
+        state.timeline.tracks.audio.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (trackIndex < 0) return;
     _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final audioTracks = List<AudioTrack>.from(currentTracks.audio);
@@ -692,7 +709,10 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   }
 
   /// تغيير طول كليب فيديو من الحافة اليسرى (Trim Start)
-  void resizeVideoClipLeft(String clipId, double newStart, {int trackIndex = 0}) {
+  void resizeVideoClipLeft(String clipId, double newStart, {int? trackIndex}) {
+    trackIndex ??=
+        state.timeline.tracks.video.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (trackIndex < 0) return;
     _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final videoTracks = List<VideoTrack>.from(currentTracks.video);
@@ -743,7 +763,10 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   }
 
   /// تغيير طول كليب صوتي من الحافة اليسرى (Trim Start)
-  void resizeAudioClipLeft(String clipId, double newStart, {int trackIndex = 0}) {
+  void resizeAudioClipLeft(String clipId, double newStart, {int? trackIndex}) {
+    trackIndex ??=
+        state.timeline.tracks.audio.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (trackIndex < 0) return;
     _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final audioTracks = List<AudioTrack>.from(currentTracks.audio);
@@ -793,53 +816,47 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   }
 
   /// تحريك كليب تراكب
-  void moveOverlayClip(String clipId, double newStart, {int trackIndex = 0}) {
-    _saveToUndoStack();
+  /// حرّك كليب تراكب — راجع [moveVideoClip] لسلوك السحب الحر.
+  void moveOverlayClip(String clipId, double newStart, {int? trackIndex}) {
     final currentTracks = state.timeline.tracks;
     final overlayTracks = List<OverlayTrack>.from(currentTracks.overlays);
-    if (trackIndex < overlayTracks.length) {
-      final targetTrack = overlayTracks[trackIndex];
-      final clips = targetTrack.clips;
-      
-      final index = clips.indexWhere((c) => c.id == clipId);
-      if (index == -1) return;
-      final clip = clips[index];
-      final dur = clip.endTimeInTimeline - clip.startTimeInTimeline;
-      
-      double leftLimit = 0.0;
-      double rightLimit = double.infinity;
-      for (var c in clips) {
-        if (c.id == clipId) continue;
-        if (c.endTimeInTimeline < clip.endTimeInTimeline && c.endTimeInTimeline > leftLimit) {
-          leftLimit = c.endTimeInTimeline;
-        }
-        if (c.startTimeInTimeline > clip.startTimeInTimeline && c.startTimeInTimeline < rightLimit) {
-          rightLimit = c.startTimeInTimeline;
-        }
+    final int ti = trackIndex ??
+        overlayTracks.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (ti < 0 || ti >= overlayTracks.length) return;
+
+    final targetTrack = overlayTracks[ti];
+    final clips = targetTrack.clips;
+    final index = clips.indexWhere((c) => c.id == clipId);
+    if (index == -1) return;
+
+    _saveToUndoStack();
+    final clip = clips[index];
+    final dur = clip.endTimeInTimeline - clip.startTimeInTimeline;
+    final double clampedStart = newStart < 0.0 ? 0.0 : newStart;
+
+    final updatedClips = clips.map((c) {
+      if (c.id == clipId) {
+        return c.copyWith(
+          startTimeInTimeline: clampedStart,
+          endTimeInTimeline: clampedStart + dur,
+        );
       }
-      
-      final double clampedStart = newStart.clamp(leftLimit, rightLimit - dur);
-      
-      final updatedClips = targetTrack.clips.map((c) {
-        if (c.id == clipId) {
-          return c.copyWith(
-            startTimeInTimeline: clampedStart,
-            endTimeInTimeline: clampedStart + dur,
-          );
-        }
-        return c;
-      }).toList();
-      overlayTracks[trackIndex] = targetTrack.copyWith(clips: updatedClips);
-      state = state.copyWith(
-        timeline: state.timeline.copyWith(
-          tracks: currentTracks.copyWith(overlays: overlayTracks),
-        ),
-      );
-    }
+      return c;
+    }).toList();
+
+    overlayTracks[ti] = targetTrack.copyWith(clips: updatedClips);
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: currentTracks.copyWith(overlays: overlayTracks),
+      ),
+    );
   }
 
   /// تغيير طول كليب تراكب من اليمين
-  void resizeOverlayClip(String clipId, double newEnd, {int trackIndex = 0}) {
+  void resizeOverlayClip(String clipId, double newEnd, {int? trackIndex}) {
+    trackIndex ??= state
+        .timeline.tracks.overlays.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (trackIndex < 0) return;
     _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final overlayTracks = List<OverlayTrack>.from(currentTracks.overlays);
@@ -888,7 +905,10 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   }
 
   /// تغيير طول كليب تراكب من اليسار
-  void resizeOverlayClipLeft(String clipId, double newStart, {int trackIndex = 0}) {
+  void resizeOverlayClipLeft(String clipId, double newStart, {int? trackIndex}) {
+    trackIndex ??= state
+        .timeline.tracks.overlays.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (trackIndex < 0) return;
     _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final overlayTracks = List<OverlayTrack>.from(currentTracks.overlays);
@@ -935,54 +955,302 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     }
   }
 
-  /// تحريك كليب ترجمة
-  void moveSubtitleClip(String clipId, double newStart, {int trackIndex = 0}) {
-    _saveToUndoStack();
+  /// حرّك كليب ترجمة — راجع [moveVideoClip] لسلوك السحب الحر.
+  void moveSubtitleClip(String clipId, double newStart, {int? trackIndex}) {
     final currentTracks = state.timeline.tracks;
     final subtitleTracks = List<SubtitleTrack>.from(currentTracks.subtitles);
-    if (trackIndex < subtitleTracks.length) {
-      final targetTrack = subtitleTracks[trackIndex];
-      final clips = targetTrack.clips;
-      
-      final index = clips.indexWhere((c) => c.id == clipId);
-      if (index == -1) return;
-      final clip = clips[index];
-      final dur = clip.endTime - clip.startTime;
-      
-      double leftLimit = 0.0;
-      double rightLimit = double.infinity;
-      for (var c in clips) {
-        if (c.id == clipId) continue;
-        if (c.endTime < clip.endTime && c.endTime > leftLimit) {
-          leftLimit = c.endTime;
-        }
-        if (c.startTime > clip.startTime && c.startTime < rightLimit) {
-          rightLimit = c.startTime;
-        }
+    final int ti = trackIndex ??
+        subtitleTracks.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (ti < 0 || ti >= subtitleTracks.length) return;
+
+    final targetTrack = subtitleTracks[ti];
+    final clips = targetTrack.clips;
+    final index = clips.indexWhere((c) => c.id == clipId);
+    if (index == -1) return;
+
+    _saveToUndoStack();
+    final clip = clips[index];
+    final dur = clip.endTime - clip.startTime;
+    final double clampedStart = newStart < 0.0 ? 0.0 : newStart;
+
+    final updatedClips = clips.map((c) {
+      if (c.id == clipId) {
+        return c.copyWith(
+          startTime: clampedStart,
+          endTime: clampedStart + dur,
+        );
       }
-      
-      final double clampedStart = newStart.clamp(leftLimit, rightLimit - dur);
-      
-      final updatedClips = targetTrack.clips.map((c) {
-        if (c.id == clipId) {
-          return c.copyWith(
-            startTime: clampedStart,
-            endTime: clampedStart + dur,
-          );
-        }
-        return c;
-      }).toList();
-      subtitleTracks[trackIndex] = targetTrack.copyWith(clips: updatedClips);
-      state = state.copyWith(
-        timeline: state.timeline.copyWith(
-          tracks: currentTracks.copyWith(subtitles: subtitleTracks),
-        ),
-      );
+      return c;
+    }).toList();
+
+    subtitleTracks[ti] = targetTrack.copyWith(clips: updatedClips);
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: currentTracks.copyWith(subtitles: subtitleTracks),
+      ),
+    );
+  }
+
+  // ── Overlap resolution (called when a drag ends) ──────────────────────
+  // Free dragging lets a clip pass over its neighbours so it tracks the
+  // pointer. On release we restore the "no overlap per track" invariant with
+  // magnetic semantics: the dragged clip STAYS where it was dropped and any
+  // clip it collides with is pushed to the right (cascading).
+
+  /// Fallback when the anchor is gone: keep time order, push overlaps right.
+  static List<T> _pushOverlaps<T>(
+    List<T> clips, {
+    required double Function(T) startOf,
+    required double Function(T) endOf,
+    required T Function(T, double, double) withRange,
+  }) {
+    if (clips.length < 2) return clips;
+    final order = List<int>.generate(clips.length, (i) => i)
+      ..sort((a, b) => startOf(clips[a]).compareTo(startOf(clips[b])));
+
+    final starts = List<double>.filled(clips.length, 0.0);
+    final ends = List<double>.filled(clips.length, 0.0);
+    double lastEnd = 0.0;
+    var first = true;
+    var changed = false;
+
+    for (final i in order) {
+      var s = startOf(clips[i]);
+      var e = endOf(clips[i]);
+      if (s < 0.0) {
+        e -= s;
+        s = 0.0;
+      }
+      if (!first && s < lastEnd) {
+        e += lastEnd - s;
+        s = lastEnd;
+      }
+      if (s != startOf(clips[i]) || e != endOf(clips[i])) changed = true;
+      starts[i] = s;
+      ends[i] = e;
+      lastEnd = e;
+      first = false;
     }
+
+    if (!changed) return clips;
+    return [
+      for (var i = 0; i < clips.length; i++)
+        withRange(clips[i], starts[i], ends[i]),
+    ];
+  }
+
+  /// [anchorId] = the dragged clip: it keeps its dropped position; clips that
+  /// ended up on top of it are pushed right (order-free — a clip dropped to
+  /// the LEFT of a neighbour swaps past it, like a magnetic timeline).
+  static List<T> _resolveAroundAnchor<T>(
+    List<T> clips, {
+    required String anchorId,
+    required String Function(T) idOf,
+    required double Function(T) startOf,
+    required double Function(T) endOf,
+    required T Function(T, double, double) withRange,
+  }) {
+    final ai = clips.indexWhere((c) => idOf(c) == anchorId);
+    if (ai == -1) {
+      return _pushOverlaps(clips,
+          startOf: startOf, endOf: endOf, withRange: withRange);
+    }
+
+    var s = startOf(clips[ai]);
+    var e = endOf(clips[ai]);
+    if (s < 0.0) {
+      e -= s;
+      s = 0.0;
+    }
+
+    // Left side: clips entirely before the anchor stay put (the track was
+    // clean before the drag, so they cannot overlap each other).
+    // Everything else must clear the anchor's end.
+    final rest = <int>[];
+    final starts = List<double>.filled(clips.length, 0.0);
+    final ends = List<double>.filled(clips.length, 0.0);
+    starts[ai] = s;
+    ends[ai] = e;
+    var changed = s != startOf(clips[ai]) || e != endOf(clips[ai]);
+
+    for (var i = 0; i < clips.length; i++) {
+      if (i == ai) continue;
+      if (endOf(clips[i]) <= s) {
+        starts[i] = startOf(clips[i]);
+        ends[i] = endOf(clips[i]);
+      } else {
+        rest.add(i);
+      }
+    }
+    rest.sort((a, b) => startOf(clips[a]).compareTo(startOf(clips[b])));
+
+    double cursor = e;
+    for (final i in rest) {
+      final dur = endOf(clips[i]) - startOf(clips[i]);
+      var ns = startOf(clips[i]);
+      if (ns < cursor) ns = cursor;
+      final ne = ns + dur;
+      if (ns != startOf(clips[i]) || ne != endOf(clips[i])) changed = true;
+      starts[i] = ns;
+      ends[i] = ne;
+      cursor = ne;
+    }
+
+    if (!changed) return clips;
+    return [
+      for (var i = 0; i < clips.length; i++)
+        withRange(clips[i], starts[i], ends[i]),
+    ];
+  }
+
+  void resolveVideoOverlaps(String anchorId) {
+    final currentTracks = state.timeline.tracks;
+    final videoTracks = List<VideoTrack>.from(currentTracks.video);
+    var changed = false;
+    for (var i = 0; i < videoTracks.length; i++) {
+      final clips = videoTracks[i].clips;
+      final resolved = _resolveAroundAnchor<VideoClip>(
+        clips,
+        anchorId: anchorId,
+        idOf: (c) => c.id,
+        startOf: (c) => c.startTimeInTimeline,
+        endOf: (c) => c.endTimeInTimeline,
+        withRange: (c, s, e) =>
+            c.copyWith(startTimeInTimeline: s, endTimeInTimeline: e),
+      );
+      if (!identical(resolved, clips)) {
+        videoTracks[i] = videoTracks[i].copyWith(clips: resolved);
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    _saveToUndoStack(); // coalesced into the ongoing drag checkpoint
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: currentTracks.copyWith(video: videoTracks),
+      ),
+    );
+  }
+
+  void resolveAudioOverlaps(String anchorId) {
+    final currentTracks = state.timeline.tracks;
+    final audioTracks = List<AudioTrack>.from(currentTracks.audio);
+    var changed = false;
+    for (var i = 0; i < audioTracks.length; i++) {
+      final clips = audioTracks[i].clips;
+      final resolved = _resolveAroundAnchor<AudioClip>(
+        clips,
+        anchorId: anchorId,
+        idOf: (c) => c.id,
+        startOf: (c) => c.startTimeInTimeline,
+        endOf: (c) => c.endTimeInTimeline,
+        withRange: (c, s, e) =>
+            c.copyWith(startTimeInTimeline: s, endTimeInTimeline: e),
+      );
+      if (!identical(resolved, clips)) {
+        audioTracks[i] = audioTracks[i].copyWith(clips: resolved);
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    _saveToUndoStack();
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: currentTracks.copyWith(audio: audioTracks),
+      ),
+    );
+  }
+
+  void resolveOverlayOverlaps(String anchorId) {
+    final currentTracks = state.timeline.tracks;
+    final overlayTracks = List<OverlayTrack>.from(currentTracks.overlays);
+    var changed = false;
+    for (var i = 0; i < overlayTracks.length; i++) {
+      final clips = overlayTracks[i].clips;
+      final resolved = _resolveAroundAnchor<OverlayClip>(
+        clips,
+        anchorId: anchorId,
+        idOf: (c) => c.id,
+        startOf: (c) => c.startTimeInTimeline,
+        endOf: (c) => c.endTimeInTimeline,
+        withRange: (c, s, e) =>
+            c.copyWith(startTimeInTimeline: s, endTimeInTimeline: e),
+      );
+      if (!identical(resolved, clips)) {
+        overlayTracks[i] = overlayTracks[i].copyWith(clips: resolved);
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    _saveToUndoStack();
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: currentTracks.copyWith(overlays: overlayTracks),
+      ),
+    );
+  }
+
+  void resolveSubtitleOverlaps(String anchorId) {
+    final currentTracks = state.timeline.tracks;
+    final subtitleTracks = List<SubtitleTrack>.from(currentTracks.subtitles);
+    var changed = false;
+    for (var i = 0; i < subtitleTracks.length; i++) {
+      final clips = subtitleTracks[i].clips;
+      final resolved = _resolveAroundAnchor<SubtitleClip>(
+        clips,
+        anchorId: anchorId,
+        idOf: (c) => c.id,
+        startOf: (c) => c.startTime,
+        endOf: (c) => c.endTime,
+        withRange: (c, s, e) => c.copyWith(startTime: s, endTime: e),
+      );
+      if (!identical(resolved, clips)) {
+        subtitleTracks[i] = subtitleTracks[i].copyWith(clips: resolved);
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    _saveToUndoStack();
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: currentTracks.copyWith(subtitles: subtitleTracks),
+      ),
+    );
+  }
+
+  void resolveTextOverlaps(String anchorId) {
+    final currentTracks = state.timeline.tracks;
+    final textTracks = List<TextTrack>.from(currentTracks.text);
+    var changed = false;
+    for (var i = 0; i < textTracks.length; i++) {
+      final clips = textTracks[i].clips;
+      final resolved = _resolveAroundAnchor<TextClip>(
+        clips,
+        anchorId: anchorId,
+        idOf: (c) => c.id,
+        startOf: (c) => c.startTime,
+        endOf: (c) => c.endTime,
+        withRange: (c, s, e) => c.copyWith(startTime: s, endTime: e),
+      );
+      if (!identical(resolved, clips)) {
+        textTracks[i] = textTracks[i].copyWith(clips: resolved);
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    _saveToUndoStack();
+    state = state.copyWith(
+      timeline: state.timeline.copyWith(
+        tracks: currentTracks.copyWith(text: textTracks),
+      ),
+    );
   }
 
   /// تغيير طول كليب ترجمة من اليمين
-  void resizeSubtitleClip(String clipId, double newEnd, {int trackIndex = 0}) {
+  void resizeSubtitleClip(String clipId, double newEnd, {int? trackIndex}) {
+    trackIndex ??= state
+        .timeline.tracks.subtitles.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (trackIndex < 0) return;
     _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final subtitleTracks = List<SubtitleTrack>.from(currentTracks.subtitles);
@@ -1022,7 +1290,10 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
   }
 
   /// تغيير طول كليب ترجمة من اليسار
-  void resizeSubtitleClipLeft(String clipId, double newStart, {int trackIndex = 0}) {
+  void resizeSubtitleClipLeft(String clipId, double newStart, {int? trackIndex}) {
+    trackIndex ??= state
+        .timeline.tracks.subtitles.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+    if (trackIndex < 0) return;
     _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final subtitleTracks = List<SubtitleTrack>.from(currentTracks.subtitles);
