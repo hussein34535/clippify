@@ -120,6 +120,9 @@ class FfmpegService {
 
   /// Speech segments = timeline MINUS silences. Same shape as the backend
   /// /api/detect-silence payload so callers can swap freely.
+  ///
+  /// مرّر [minSilenceDur] من [silenceThresholdFor] حسب طول الملف —
+  /// العتبة الثابتة 0.5s تعمي الكشف في الملفات القصيرة.
   static Future<List<Map<String, dynamic>>> detectSilences(
     String mediaPath, {
     double noiseDb = -30,
@@ -221,5 +224,60 @@ class FfmpegService {
       segments.add({'start': cursor, 'end': totalDuration});
     }
     return segments;
+  }
+
+  /// عتبة الصمت المتكيفة مع طول الملف: الملفات القصيرة تحتاج دقة أنعم —
+  /// عتبة 0.5s الثابتة كانت تعمي الكشف تمامًا تحت ~2 ثانية.
+  static double silenceThresholdFor(double totalDurationSec) {
+    if (totalDurationSec <= 0) return 0.5;
+    if (totalDurationSec < 2) return 0.1;
+    if (totalDurationSec < 5) return 0.2;
+    if (totalDurationSec < 15) return 0.35;
+    return 0.5;
+  }
+
+  /// ثقة مقطع كلام (0..1) من طوله: الشذرات القصيرة غالبًا تقطيع زائف
+  /// (حرف متأخر، نَفَس، طرقة) لا كلام يستحق مقطعًا مستقلًا.
+  static double speechConfidence(double segmentDurationSec) {
+    if (segmentDurationSec <= 0.15) return 0.0;
+    if (segmentDurationSec >= 1.0) return 1.0;
+    return (segmentDurationSec - 0.15) / 0.85;
+  }
+
+  /// دمج المقاطع الضعيفة في جيرانها: المشكوك فيه يُحفَظ لا يُحذف —
+  /// القصّ الزائد أسوأ من صمت زائد (قد يبتلع كلامًا حقيقيًا).
+  ///
+  /// - ضعيف بعد قوي → يذوب في السابق (يمتد لنهايته).
+  /// - ضعيف في البداية → يلتحق بأول قوي (من بدايته لنهاية القوي).
+  /// - ضعيف أخير بلا قوي بعده → يُحفَظ كما هو (لا حذف أبدًا).
+  static List<Map<String, double>> mergeWeakSpeechSegments(
+    List<Map<String, double>> segments, {
+    double minConfidentDur = 0.4,
+  }) {
+    if (segments.length < 2) return segments;
+    final out = <Map<String, double>>[];
+    Map<String, double>? pending;
+    for (final s in segments) {
+      final dur = (s['end'] ?? 0) - (s['start'] ?? 0);
+      if (dur >= minConfidentDur) {
+        if (pending != null) {
+          out.add({'start': pending['start']!, 'end': s['end']!});
+          pending = null;
+        } else {
+          out.add({'start': s['start']!, 'end': s['end']!});
+        }
+      } else {
+        if (out.isNotEmpty) {
+          final prev = out.removeLast();
+          out.add({'start': prev['start']!, 'end': s['end']!});
+        } else {
+          pending = pending == null
+              ? {'start': s['start']!, 'end': s['end']!}
+              : {'start': pending['start']!, 'end': s['end']!};
+        }
+      }
+    }
+    if (pending != null) out.add(pending);
+    return out;
   }
 }

@@ -377,14 +377,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// Offline AutoCut via bundled ffmpeg silencedetect. Returns true when the
   /// cut was produced locally (success OR definitive failure with feedback).
+  ///
+  /// عتبة متكيفة + دمج الضعيف: الملفات القصيرة تُكشَف بعتبة أنعم، والشذرات
+  /// المشكوك فيها تذوب في جيرانها بدل أن تصبح مقاطع مبتورة.
   Future<bool> _autoCutLocal() async {
     try {
       final video = _currentPreviewVideo!;
       final duration = await FfmpegService.probeDuration(video) ?? 0.0;
       if (duration <= 0) return false; // fall back to backend
-      final silences = await FfmpegService.detectSilences(video);
-      if (silences.isEmpty && duration < 1.0) return false;
-      final speech = FfmpegService.speechSegments(silences, duration);
+      final silences = await FfmpegService.detectSilences(video,
+          minSilenceDur: FfmpegService.silenceThresholdFor(duration));
+      if (silences.isEmpty && duration < 0.5) return false;
+      final speech = FfmpegService.mergeWeakSpeechSegments(
+          FfmpegService.speechSegments(silences, duration));
       if (speech.isEmpty) {
         setState(() { _isExporting = false; _exportStatus = ''; });
         ref.read(toastProvider.notifier).error('لا يوجد كلام واضح في الفيديو.');
@@ -445,23 +450,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               srcDur = await FfmpegService.probeDuration(_currentPreviewVideo!) ?? 0.0;
             } catch (_) {}
             final List<VideoClip> newClips = [];
+            final rawSegs = <Map<String, double>>[];
             double lastStart = 0.0;
-            int index = 0;
             for (var sil in silences) {
               try {
                 final startSilence = ((sil['start'] as num?) ?? 0.0).toDouble();
                 final endSilence = ((sil['end'] as num?) ?? 0.0).toDouble();
                 if (startSilence > lastStart) {
-                  newClips.add(VideoClip(id: 'clip_autocut_$index', sourcePath: _currentPreviewVideo!,
-                    startTimeInTimeline: lastStart, endTimeInTimeline: startSilence,
-                    sourceTrimStart: lastStart, sourceTrimEnd: startSilence,
-                    sourceDuration: srcDur,
-                    transform: TransformState.defaultState(), colorGrading: ColorGradingState(),
-                    filters: [], aiFeatures: AIFeatures()));
-                  index++;
+                  rawSegs.add({'start': lastStart, 'end': startSilence});
                 }
                 lastStart = endSilence;
               } catch (_) {}
+            }
+            // الذيل بعد آخر صمت كان يُسقَط بصمت — يُحفَظ الآن مع دمج الضعيف.
+            if (srcDur > 0 && lastStart < srcDur - 0.15) {
+              rawSegs.add({'start': lastStart, 'end': srcDur});
+            }
+            final segs =
+                FfmpegService.mergeWeakSpeechSegments(rawSegs);
+            int index = 0;
+            for (final seg in segs) {
+              newClips.add(VideoClip(id: 'clip_autocut_$index', sourcePath: _currentPreviewVideo!,
+                startTimeInTimeline: seg['start']!, endTimeInTimeline: seg['end']!,
+                sourceTrimStart: seg['start']!, sourceTrimEnd: seg['end']!,
+                sourceDuration: srcDur,
+                transform: TransformState.defaultState(), colorGrading: ColorGradingState(),
+                filters: [], aiFeatures: AIFeatures()));
+              index++;
             }
             ref.read(timelineProvider.notifier).setClips(newClips);
             setState(() { _isExporting = false; _exportStatus = ''; });
