@@ -13,6 +13,7 @@ import 'transition_picker.dart';
 import 'timeline_painters.dart';
 import '../../text/widgets/text_editor_dialog.dart';
 import '../../../shared/providers/toast_provider.dart';
+import '../../../shared/utils/duration_utils.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../../../shared/widgets/advanced_gestures.dart';
@@ -455,8 +456,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       final info = await resolver(path);
       final raw = info?['duration'];
       if (raw is num && raw > 0) {
-        var dur = raw.toDouble();
-        if (dur > 6 * 3600) dur /= 1000.0;
+        final dur = normalizeProbeDurationSeconds(raw.toDouble());
         if (dur > 0) return dur;
       }
     } catch (_) {}

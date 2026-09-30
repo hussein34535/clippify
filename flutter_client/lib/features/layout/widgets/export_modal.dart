@@ -1,50 +1,22 @@
 import 'package:flutter/material.dart';
+import '../../../core/models/timeline_models.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../export/data/export_presets.dart';
+import '../../export/data/export_settings.dart';
 import '../../export/pipeline/export_pipeline.dart';
 
-class ExportSettings {
-  final String type;
-  final String outputFilename;
-  final String exportQuality;
-  final String xmlFormat;
-  final bool includeSubtitles;
-  final String xmlOutputPath;
-  final String? presetName;
-  final String? codec;
-  final String? pixelFormat;
-  final ExportPresetPro? presetPro;
-  final bool twoPass;
-  final bool includeMetadata;
-  final String? watermarkPath;
-  final String? watermarkPosition;
-
-  ExportSettings({
-    required this.type,
-    required this.outputFilename,
-    required this.exportQuality,
-    required this.xmlFormat,
-    required this.includeSubtitles,
-    required this.xmlOutputPath,
-    this.presetName,
-    this.codec,
-    this.pixelFormat,
-    this.presetPro,
-    this.twoPass = false,
-    this.includeMetadata = true,
-    this.watermarkPath,
-    this.watermarkPosition,
-  });
-}
+export '../../export/data/export_settings.dart' show ExportSettings;
 
 class ExportModal extends StatefulWidget {
   final String defaultOutputDir;
   final String defaultQuality;
+  final TimelineState Function()? timelineSource;
 
   const ExportModal({
     super.key,
     this.defaultOutputDir = './exports',
     this.defaultQuality = 'High',
+    this.timelineSource,
   });
 
   @override
@@ -291,6 +263,7 @@ class _ExportModalState extends State<ExportModal> with SingleTickerProviderStat
           ? ExportPreset.available.where((p) => p.name == _selectedPresetName).firstOrNull
           : ExportPreset.available[0],
       onEnqueue: _onPipelineEnqueue,
+      timelineSource: widget.timelineSource,
     );
   }
 

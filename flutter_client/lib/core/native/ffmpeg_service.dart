@@ -99,6 +99,25 @@ class FfmpegService {
     }
   }
 
+  /// هل يحوي الملف مسار صوت؟ — header-only (‎`-i` لا يفكّ ترميز أي شيء).
+  static Future<bool> probeHasAudio(String mediaPath) async {
+    try {
+      final exe = await resolveExe();
+      final result = await Process.run(exe, [
+        '-hide_banner',
+        '-i',
+        mediaPath,
+      ], stdoutEncoding: utf8, stderrEncoding: utf8);
+      final blob = result.stderr as String;
+      // ملف بلا أي مسار صوت (أو تعذّر القراءة) → نُعامِله كلا يحتوي صوتًا
+      // حتى يبقى المسار الآمن في الفرز (صمت) لا فشل حاد في ffmpeg.
+      if (!RegExp(r'Stream #\d+:\d+.*: Video:').hasMatch(blob)) return true;
+      return RegExp(r'Stream #\d+:\d+.*: Audio:').hasMatch(blob);
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// Speech segments = timeline MINUS silences. Same shape as the backend
   /// /api/detect-silence payload so callers can swap freely.
   static Future<List<Map<String, dynamic>>> detectSilences(

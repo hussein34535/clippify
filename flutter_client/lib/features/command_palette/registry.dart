@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../layout/widgets/export_modal.dart';
 import '../layout/widgets/settings_modal.dart';
 import '../timeline/providers/timeline_provider.dart';
+import '../../core/models/timeline_models.dart';
+import '../wizard/auto_edit_wizard_dialog.dart'
+    show showAutoEditWizardDialog;
 import '../../shared/providers/toast_provider.dart';
 import 'palette.dart';
 
@@ -33,6 +36,14 @@ class PaletteCommand {
   });
 }
 
+/// أول مصدر فيديو على التايملاين — دالة نقية قابلة للاختبار.
+String? firstVideoSourcePath(TimelineState timeline) {
+  for (final track in timeline.tracks.video) {
+    if (track.clips.isNotEmpty) return track.clips.first.sourcePath;
+  }
+  return null;
+}
+
 /// الأوامر الافتراضية المربوطة بأشياء حقيقية عبر [ref].
 ///
 /// تُمرَّر من أي مكان لديه WidgetRef:
@@ -40,6 +51,8 @@ class PaletteCommand {
 /// showCommandPalette(context, defaultCommands(ref, context));
 /// ```
 List<PaletteCommand> defaultCommands(WidgetRef ref, BuildContext ctx) {
+  final autoEditPath =
+      firstVideoSourcePath(ref.read(timelineProvider).timeline);
   return [
     PaletteCommand(
       id: 'undo',
@@ -108,15 +121,16 @@ List<PaletteCommand> defaultCommands(WidgetRef ref, BuildContext ctx) {
         }
       },
     ),
-    // TODO(Squad-D0): اربط بمكتبة الوسائط الحقيقية عند توفر مصدر الفيديو الواحد
-    // المستورد (cross-owned: home_screen._pickAndImport) — حالياً v1 معطّل.
     PaletteCommand(
       id: 'auto_edit',
       labelAr: 'مونتاج تلقائي',
       icon: Icons.auto_awesome,
-      enabled: false,
-      disabledReason: 'اختر فيديو أولاً',
-      action: (_) {},
+      enabled: autoEditPath != null,
+      disabledReason: autoEditPath == null ? 'اختر فيديو أولاً' : null,
+      action: (_) {
+        final path = autoEditPath;
+        if (path != null) showAutoEditWizardDialog(ctx, videoPath: path);
+      },
     ),
   ];
 }

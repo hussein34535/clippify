@@ -46,12 +46,31 @@ List<VideoClip> clipsToVideoClips(
 List<VideoClip> mainTrackClipsOf(TimelineStateData data) =>
     data.timeline.tracks.video.isNotEmpty ? data.timeline.tracks.video.first.clips : const [];
 
-/// دمج نقي: ينشر `[...existing, ...clips]` عبر setClips (تدفع undo بنفسها).
+/// دمج بلا تداخل: تُدفع الكليبات الجديدة لتبدأ بعد نهاية آخر كليب موجود
+/// عندما يتداخل موضع الإدراج مع الموجود — وبذلك يظل عدم التداخل invariant
+/// محفوظًا (نفس سلوك الحل المغناطيسي في السحب).
 int appendMergedClips(
     TimelineNotifier notifier, List<VideoClip> existing, List<VideoClip> clips) {
   if (clips.isEmpty) return 0;
-  notifier.setClips([...existing, ...clips]);
-  return clips.length;
+  double maxEnd = 0;
+  for (final c in existing) {
+    if (c.endTimeInTimeline > maxEnd) maxEnd = c.endTimeInTimeline;
+  }
+  double firstStart = clips.first.startTimeInTimeline;
+  for (final c in clips) {
+    if (c.startTimeInTimeline < firstStart) firstStart = c.startTimeInTimeline;
+  }
+  final delta = maxEnd - firstStart;
+  final shifted = delta > 0
+      ? clips
+          .map((c) => c.copyWith(
+                startTimeInTimeline: c.startTimeInTimeline + delta,
+                endTimeInTimeline: c.endTimeInTimeline + delta,
+              ))
+          .toList()
+      : clips;
+  notifier.setClips([...existing, ...shifted]);
+  return shifted.length;
 }
 
 /// واجهة الـ UI — تعمل من أي ConsumerWidget/ConsumerState مع الحفاظ

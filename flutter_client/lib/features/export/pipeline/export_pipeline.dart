@@ -4,8 +4,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import '../../../core/export/timeline_exporter.dart';
+import '../../../core/models/timeline_models.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/export_presets.dart';
+import '../data/export_settings.dart';
 
 // ─────────────────────────────────────────────
 // HardwareEncoderDetector
@@ -442,6 +447,9 @@ class BatchProcessor {
   bool _isProcessing = false;
   bool _cancelled = false;
 
+  /// مصدر التايملاين الحالي — كل مهمة طابور تُصدِّر التايملاين كاملاً محليًا.
+  TimelineState Function()? timelineSource;
+
   final StreamController<ExportJob> _onJobProgress = StreamController<ExportJob>.broadcast();
   final StreamController<double> _onOverallProgress = StreamController<double>.broadcast();
   final StreamController<String> _onJobComplete = StreamController<String>.broadcast();
@@ -535,99 +543,58 @@ class BatchProcessor {
   }
 
   Future<void> _processJob(ExportJob job) async {
-    final p = job.preset;
-    final encoder = p.encoder;
-    final container = p.container;
+    final timeline = timelineSource?.call();
+    if (timeline == null ||
+        timeline.tracks.video.isEmpty ||
+        timeline.tracks.video.first.clips.isEmpty) {
+      throw Exception('لا توجد مقاطع على التايملاين للتصدير.');
+    }
 
-    final outputExt = container.extension;
-    final outputName = p.name.toLowerCase().replaceAll(' ', '_');
+    final preset = job.preset;
+    final outputName = preset.name.toLowerCase().replaceAll(' ', '_');
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    job.outputPath = '${outputName}_$timestamp$outputExt';
+    final outputPath = p.join(await _exportOutputDir(),
+        '${outputName}_$timestamp${preset.container.extension}');
 
-    final baseArgs = <String>['-y'];
+    final settings = ExportSettings(
+      type: 'video',
+      outputFilename: outputPath,
+      exportQuality: 'High',
+      xmlFormat: '',
+      includeSubtitles: true,
+      xmlOutputPath: '',
+      presetName: preset.name,
+      codec: preset.encoder.ffmpegCodec,
+      pixelFormat: preset.encoder.pixelFormat,
+      presetPro: preset,
+      twoPass: preset.twoPass,
+      includeMetadata: preset.includeMetadata,
+      watermarkPath: preset.watermarkPath,
+      watermarkPosition: preset.watermarkPosition,
+    );
 
-    if (p.watermarkPath != null && p.watermarkPosition != null) {
-      final posMap = <String, String>{
-        'top-left': '10:10',
-        'top-right': 'W-w-10:10',
-        'bottom-left': '10:H-h-10',
-        'bottom-right': 'W-w-10:H-h-10',
-        'center': '(W-w)/2:(H-h)/2',
-      };
-      final overlayPos = posMap[p.watermarkPosition] ?? 'W-w-10:10';
-      baseArgs.addAll([
-        '-i', p.watermarkPath!,
-        '-filter_complex', '[0:v][1:v]overlay=$overlayPos',
-      ]);
-    }
-
-    final codecArgs = <String>[
-      '-c:v', encoder.ffmpegCodec,
-      '-pix_fmt', encoder.pixelFormat,
-      '-b:v', '${encoder.bitrateMbps}M',
-      '-maxrate', '${p.maxBitrateMbps}M',
-      '-bufsize', '${p.maxBitrateMbps * 2}M',
-      '-r', p.fps.toString(),
-      '-preset', encoder.preset,
-    ];
-
-    final nullOutput = Platform.isWindows ? 'NUL' : '/dev/null';
-
-    if (p.twoPass) {
-      final pass1 = [...baseArgs, ...codecArgs,
-        '-pass', '1',
-        '-f', container.ffmpegFormat,
-        '-y', nullOutput,
-      ];
-      final r1 = await Process.run('ffmpeg', pass1,
-          runInShell: true, stderrEncoding: utf8, stdoutEncoding: utf8);
-      if (r1.exitCode != 0) {
-        throw Exception('Two-pass (first pass) failed with exit ${r1.exitCode}');
-      }
-    }
-
-    final passArgs = p.twoPass
-        ? ['-pass', '2']
-        : <String>[];
-
-    final args = [...baseArgs, ...codecArgs, ...passArgs,
-      '-f', container.ffmpegFormat,
-      job.outputPath!,
-    ];
-
-    final process = await Process.start('ffmpeg', args,
-        runInShell: true);
-
-    final lines = <String>[];
-    process.stderr
-        .transform(const SystemEncoding().decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-      lines.add(line);
-      final progress = _parseFfmpegProgress(line, totalSec: job.totalDurationSec.toDouble());
-      if (progress != null) {
+    final result = await const TimelineExporter().render(
+      timeline: timeline,
+      settings: settings,
+      outputPath: outputPath,
+      onProgress: (progress, status) {
         job.progress = progress;
         _onJobProgress.add(job);
         _onOverallProgress.add(overallProgress);
-      }
-    });
-
-    final exitCode = await process.exitCode;
-    if (exitCode != 0) {
-      final errorText = lines.isNotEmpty ? lines.last : 'Unknown error';
-      throw Exception('FFmpeg exit code $exitCode: $errorText');
+      },
+      isCancelled: () => _cancelled,
+    );
+    if (!result.success) {
+      throw Exception(result.error ?? 'فشل التصدير.');
     }
+    job.outputPath = outputPath;
   }
 
-  double? _parseFfmpegProgress(String line, {double totalSec = 60.0}) {
-    final regex = RegExp(r'time=(\d+):(\d+):(\d+)\.(\d+)');
-    final match = regex.firstMatch(line);
-    if (match == null) return null;
-    final hours = int.parse(match.group(1)!);
-    final minutes = int.parse(match.group(2)!);
-    final seconds = int.parse(match.group(3)!);
-    final current = hours * 3600 + minutes * 60 + seconds.toDouble();
-    return (current / totalSec).clamp(0.0, 1.0);
+  Future<String> _exportOutputDir() async {
+    final docs = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(docs.path, 'Clippify', 'exports'));
+    await dir.create(recursive: true);
+    return dir.path;
   }
 
   void cancel() {
@@ -655,12 +622,14 @@ class ExportPipelinePanel extends StatefulWidget {
   final ExportPreset? initialPreset;
   final ValueChanged<ExportPresetPro>? onEnqueue;
   final VoidCallback? onStartBatch;
+  final TimelineState Function()? timelineSource;
 
   const ExportPipelinePanel({
     super.key,
     this.initialPreset,
     this.onEnqueue,
     this.onStartBatch,
+    this.timelineSource,
   });
 
   @override
@@ -696,6 +665,7 @@ class _ExportPipelinePanelState extends State<ExportPipelinePanel> {
     _selectedPreset = widget.initialPreset ?? ExportPreset.available[0];
     _selectedFormat = _availableFormats[0];
 
+    _batchProcessor.timelineSource = widget.timelineSource;
     _batchProcessor.onJobProgress.listen(_onJobProgress);
     _batchProcessor.onOverallProgress.listen((_) {
       if (mounted) setState(() {});

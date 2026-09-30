@@ -307,10 +307,10 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
 
   /// تحديث نص
   void updateTextClip(String clipId, TextClip Function(TextClip) updater) {
-    _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final textTracks = List<TextTrack>.from(currentTracks.text);
 
+    bool found = false;
     for (int i = 0; i < textTracks.length; i++) {
       final track = textTracks[i];
       final clipIndex = track.clips.indexWhere((c) => c.id == clipId);
@@ -318,9 +318,12 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
         final updatedClips = List<TextClip>.from(track.clips);
         updatedClips[clipIndex] = updater(updatedClips[clipIndex]);
         textTracks[i] = track.copyWith(clips: updatedClips);
+        found = true;
         break;
       }
     }
+    if (!found) return;
+    _saveToUndoStack();
 
     state = state.copyWith(
       timeline: state.timeline.copyWith(
@@ -331,18 +334,21 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
 
   /// حذف نص
   void removeTextClip(String clipId) {
-    _saveToUndoStack();
     final currentTracks = state.timeline.tracks;
     final textTracks = List<TextTrack>.from(currentTracks.text);
 
+    bool found = false;
     for (int i = 0; i < textTracks.length; i++) {
       final track = textTracks[i];
       final updatedClips = track.clips.where((c) => c.id != clipId).toList();
       if (updatedClips.length != track.clips.length) {
         textTracks[i] = track.copyWith(clips: updatedClips);
+        found = true;
         break;
       }
     }
+    if (!found) return;
+    _saveToUndoStack();
 
     state = state.copyWith(
       timeline: state.timeline.copyWith(
@@ -364,30 +370,47 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     );
   }
 
-  void removeVideoClip(String clipId, {int trackIndex = 0}) {
+  /// المسار الذي يحوي [clipId] ضمن قائمة مسارات [getTracks] (‎-1 إذا لم يُوجد).
+  /// يمنع الفشل الصامت عندما يكون الكليب على مسارٍ غير الصفر — مثل
+  /// [moveVideoClip] يُستنتج تلقائيًا عندما لا يُمرَّر [trackIndex].
+  int _locateClipTrack(
+      String clipId, List<dynamic> Function(Tracks) getTracks) {
+    final tracks = getTracks(state.timeline.tracks);
+    return tracks.indexWhere((t) => t.clips.any((c) => c.id == clipId));
+  }
+
+  void removeVideoClip(String clipId, {int? trackIndex}) {
+    final ti = trackIndex ?? _locateClipTrack(clipId, (t) => t.video);
+    if (ti < 0) return;
     _saveToUndoStack();
-    _removeClipFromTrack(clipId, trackIndex,
+    _removeClipFromTrack(clipId, ti,
       (t) => t.video,
       (t, l) => t.copyWith(video: l.cast<VideoTrack>()));
   }
 
-  void removeAudioClip(String clipId, {int trackIndex = 0}) {
+  void removeAudioClip(String clipId, {int? trackIndex}) {
+    final ti = trackIndex ?? _locateClipTrack(clipId, (t) => t.audio);
+    if (ti < 0) return;
     _saveToUndoStack();
-    _removeClipFromTrack(clipId, trackIndex,
+    _removeClipFromTrack(clipId, ti,
       (t) => t.audio,
       (t, l) => t.copyWith(audio: l.cast<AudioTrack>()));
   }
 
-  void removeOverlayClip(String clipId, {int trackIndex = 0}) {
+  void removeOverlayClip(String clipId, {int? trackIndex}) {
+    final ti = trackIndex ?? _locateClipTrack(clipId, (t) => t.overlays);
+    if (ti < 0) return;
     _saveToUndoStack();
-    _removeClipFromTrack(clipId, trackIndex,
+    _removeClipFromTrack(clipId, ti,
       (t) => t.overlays,
       (t, l) => t.copyWith(overlays: l.cast<OverlayTrack>()));
   }
 
-  void removeSubtitleClip(String clipId, {int trackIndex = 0}) {
+  void removeSubtitleClip(String clipId, {int? trackIndex}) {
+    final ti = trackIndex ?? _locateClipTrack(clipId, (t) => t.subtitles);
+    if (ti < 0) return;
     _saveToUndoStack();
-    _removeClipFromTrack(clipId, trackIndex,
+    _removeClipFromTrack(clipId, ti,
       (t) => t.subtitles,
       (t, l) => t.copyWith(subtitles: l.cast<SubtitleTrack>()));
   }
@@ -431,33 +454,41 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     );
   }
 
-  void updateVideoClip(String clipId, VideoClip Function(VideoClip) updateFn, {int trackIndex = 0}) {
+  void updateVideoClip(String clipId, VideoClip Function(VideoClip) updateFn, {int? trackIndex}) {
+    final ti = trackIndex ?? _locateClipTrack(clipId, (t) => t.video);
+    if (ti < 0) return;
     _saveToUndoStack();
-    _updateClipInTrack<VideoClip>(clipId, trackIndex,
+    _updateClipInTrack<VideoClip>(clipId, ti,
       (t) => t.video,
       (t, l) => t.copyWith(video: l.cast<VideoTrack>()),
       (c) => updateFn(c as VideoClip));
   }
 
-  void updateSubtitleClip(String clipId, SubtitleClip Function(SubtitleClip) updateFn, {int trackIndex = 0}) {
+  void updateSubtitleClip(String clipId, SubtitleClip Function(SubtitleClip) updateFn, {int? trackIndex}) {
+    final ti = trackIndex ?? _locateClipTrack(clipId, (t) => t.subtitles);
+    if (ti < 0) return;
     _saveToUndoStack();
-    _updateClipInTrack<SubtitleClip>(clipId, trackIndex,
+    _updateClipInTrack<SubtitleClip>(clipId, ti,
       (t) => t.subtitles,
       (t, l) => t.copyWith(subtitles: l.cast<SubtitleTrack>()),
       (c) => updateFn(c as SubtitleClip));
   }
 
-  void updateAudioClip(String clipId, AudioClip Function(AudioClip) updateFn, {int trackIndex = 0}) {
+  void updateAudioClip(String clipId, AudioClip Function(AudioClip) updateFn, {int? trackIndex}) {
+    final ti = trackIndex ?? _locateClipTrack(clipId, (t) => t.audio);
+    if (ti < 0) return;
     _saveToUndoStack();
-    _updateClipInTrack<AudioClip>(clipId, trackIndex,
+    _updateClipInTrack<AudioClip>(clipId, ti,
       (t) => t.audio,
       (t, l) => t.copyWith(audio: l.cast<AudioTrack>()),
       (c) => updateFn(c as AudioClip));
   }
 
-  void updateOverlayClip(String clipId, OverlayClip Function(OverlayClip) updateFn, {int trackIndex = 0}) {
+  void updateOverlayClip(String clipId, OverlayClip Function(OverlayClip) updateFn, {int? trackIndex}) {
+    final ti = trackIndex ?? _locateClipTrack(clipId, (t) => t.overlays);
+    if (ti < 0) return;
     _saveToUndoStack();
-    _updateClipInTrack<OverlayClip>(clipId, trackIndex,
+    _updateClipInTrack<OverlayClip>(clipId, ti,
       (t) => t.overlays,
       (t, l) => t.copyWith(overlays: l.cast<OverlayTrack>()),
       (c) => updateFn(c as OverlayClip));
@@ -1356,6 +1387,19 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
         if (timeSec > clip.startTime && timeSec < clip.endTime) return true;
       }
     }
+    for (final track in tracks.overlays) {
+      for (final clip in track.clips) {
+        if (timeSec > clip.startTimeInTimeline &&
+            timeSec < clip.endTimeInTimeline) {
+          return true;
+        }
+      }
+    }
+    for (final track in tracks.text) {
+      for (final clip in track.clips) {
+        if (timeSec > clip.startTime && timeSec < clip.endTime) return true;
+      }
+    }
     return false;
   }
 
@@ -1368,7 +1412,7 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
     
     // 1. تقسيم كليب الفيديو
     final videoTracks = List<VideoTrack>.from(currentTracks.video);
-    bool splitDone = false;
+    bool didSplit = false;
     for (int i = 0; i < videoTracks.length; i++) {
       final track = videoTracks[i];
       final clips = List<VideoClip>.from(track.clips);
@@ -1397,16 +1441,13 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
           clips.insert(j + 1, clip2);
           
           videoTracks[i] = track.copyWith(clips: clips);
-          splitDone = true;
-          break;
+          didSplit = true;
         }
       }
-      if (splitDone) break;
     }
 
     // 2. تقسيم كليب الصوت
     final audioTracks = List<AudioTrack>.from(currentTracks.audio);
-    splitDone = false;
     for (int i = 0; i < audioTracks.length; i++) {
       final track = audioTracks[i];
       final clips = List<AudioClip>.from(track.clips);
@@ -1434,16 +1475,13 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
           clips.insert(j + 1, clip2);
           
           audioTracks[i] = track.copyWith(clips: clips);
-          splitDone = true;
-          break;
+          didSplit = true;
         }
       }
-      if (splitDone) break;
     }
 
     // 3. تقسيم كليبات الترجمة
     final subtitleTracks = List<SubtitleTrack>.from(currentTracks.subtitles);
-    splitDone = false;
     for (int i = 0; i < subtitleTracks.length; i++) {
       final track = subtitleTracks[i];
       final clips = List<SubtitleClip>.from(track.clips);
@@ -1466,11 +1504,72 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
           clips.insert(j + 1, clip2);
           
           subtitleTracks[i] = track.copyWith(clips: clips);
-          splitDone = true;
-          break;
+          didSplit = true;
         }
       }
-      if (splitDone) break;
+    }
+
+    // 4. تقسيم كليبات التراكبات (B-roll/صور) — قص مطابق للفيديو بلا تسريع
+    final overlayTracks = List<OverlayTrack>.from(currentTracks.overlays);
+    for (int i = 0; i < overlayTracks.length; i++) {
+      final track = overlayTracks[i];
+      final clips = List<OverlayClip>.from(track.clips);
+      for (int j = 0; j < clips.length; j++) {
+        final clip = clips[j];
+        if (timeSec > clip.startTimeInTimeline && timeSec < clip.endTimeInTimeline) {
+          final double splitOffset = timeSec - clip.startTimeInTimeline;
+          final originalEnd = clip.endTimeInTimeline;
+          final originalTrimEnd = clip.sourceTrimEnd;
+          
+          final clip1 = clip.copyWith(
+            endTimeInTimeline: timeSec,
+            sourceTrimEnd: clip.sourceTrimStart + splitOffset,
+          );
+          
+          final clip2 = clip.copyWith(
+            id: 'ovl_split_${DateTime.now().millisecondsSinceEpoch}_${j + 1}',
+            startTimeInTimeline: timeSec,
+            endTimeInTimeline: originalEnd,
+            sourceTrimStart: clip.sourceTrimStart + splitOffset,
+            sourceTrimEnd: originalTrimEnd,
+          );
+          
+          clips[j] = clip1;
+          clips.insert(j + 1, clip2);
+          
+          overlayTracks[i] = track.copyWith(clips: clips);
+          didSplit = true;
+        }
+      }
+    }
+
+    // 5. تقسيم كليبات النص
+    final textTracks = List<TextTrack>.from(currentTracks.text);
+    for (int i = 0; i < textTracks.length; i++) {
+      final track = textTracks[i];
+      final clips = List<TextClip>.from(track.clips);
+      for (int j = 0; j < clips.length; j++) {
+        final clip = clips[j];
+        if (timeSec > clip.startTime && timeSec < clip.endTime) {
+          final originalEnd = clip.endTime;
+          
+          final clip1 = clip.copyWith(
+            endTime: timeSec,
+          );
+          
+          final clip2 = clip.copyWith(
+            id: 'txt_split_${DateTime.now().millisecondsSinceEpoch}_${j + 1}',
+            startTime: timeSec,
+            endTime: originalEnd,
+          );
+          
+          clips[j] = clip1;
+          clips.insert(j + 1, clip2);
+          
+          textTracks[i] = track.copyWith(clips: clips);
+          didSplit = true;
+        }
+      }
     }
 
     state = state.copyWith(
@@ -1479,10 +1578,12 @@ class TimelineNotifier extends StateNotifier<TimelineStateData> {
           video: videoTracks,
           audio: audioTracks,
           subtitles: subtitleTracks,
+          overlays: overlayTracks,
+          text: textTracks,
         ),
       ),
     );
-    return true;
+    return didSplit;
   }
 
   /// تجميع الكليبات المحددة في تسلسل متداخل

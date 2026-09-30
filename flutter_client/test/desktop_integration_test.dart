@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_client/core/backend/auth_store.dart';
+import 'package:flutter_client/core/backend/backend_service.dart';
 import 'package:flutter_client/features/auth/auth_screen.dart';
 import 'package:flutter_client/features/layout/widgets/account_sheet.dart';
 import 'package:flutter_client/features/layout/widgets/header.dart';

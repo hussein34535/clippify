@@ -3,23 +3,57 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum BackendMode { local, cloud }
+
+/// تخزين وضع التشغيل (محلي/سحابي) في SharedPreferences.
+///
+/// القيم: `'local'` | `'cloud'` — مفتاح: [BackendModePref.key].
+/// المالك هنا (core) عن قصد: الإعدادات تُقرأ عند الإقلاع قبل أي ودجت.
+class BackendModePref {
+  static const String key = 'clippify_backend_mode';
+
+  /// يقرأ الوضع المحفوظ؛ يعيد null إن كان غائباً أو قيمة غير معروفة.
+  static Future<String?> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getString(key);
+      return (v == 'local' || v == 'cloud') ? v : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> save(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, mode);
+  }
+}
 
 /// عقود docs/CONTRACTS.md — قسم Base.
 abstract class BackendService {
   bool get isCloud;
   String get baseUrl;
 
-  /// اختيار نقي قابل للاختبار:
-  /// محلي فقط عند isWindows && (localMode ?? 'local') != 'cloud'.
+  /// اختيار نقي قابل للاختبار.
+  ///
+  /// الأسبقية: `localMode` (إعداد النشر `LOCAL_MODE`) ثم `savedMode`
+  /// (اختيار المستخدم المحفوظ عند الإقلاع) ثم الافتراضي `'local'`.
+  /// محلي فقط عند isWindows && الوضع الفعّال != 'cloud'.
   static BackendMode chooseBackend({
     required bool isWindows,
     required String? localMode,
+    String? savedMode,
   }) {
-    final forcedCloud = (localMode ?? 'local') == 'cloud';
-    return (!forcedCloud && isWindows) ? BackendMode.local : BackendMode.cloud;
+    final effective = localMode ?? savedMode ?? 'local';
+    return (effective != 'cloud' && isWindows)
+        ? BackendMode.local
+        : BackendMode.cloud;
   }
+
+  /// اختيار المستخدم المحمَّل في main() قبل أول استخدام لـ [service].
+  static String? bootSavedMode;
 }
 
 class LocalBackendService implements BackendService {
@@ -53,6 +87,7 @@ BackendService get service => switch (BackendService.chooseBackend(
       // على الويب لا يوجد dart:io — التطبيق دسكتوب/موبايل فقط، kIsWeb حارس شكلي
       isWindows: kIsWeb ? false : Platform.isWindows,
       localMode: dotenv.maybeGet('LOCAL_MODE'),
+      savedMode: BackendService.bootSavedMode,
     )) {
       BackendMode.local => LocalBackendService(),
       BackendMode.cloud => CloudBackendService(),

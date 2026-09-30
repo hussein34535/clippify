@@ -10,6 +10,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 // ignore_for_file: deprecated_member_use
 
 import '../../timeline/providers/timeline_provider.dart';
+import '../logic/playhead_mapping.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/models/timeline_models.dart';
 import '../../../core/models/pro_color_models.dart';
@@ -94,40 +95,31 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     return null;
   }
 
+  /// كل كليبات الفيديو بترتيب المسارات (نفس أولوية [_findClipAtPlayhead]).
+  List<VideoClip> _allVideoClips() {
+    final state = ref.read(timelineProvider).timeline;
+    return [for (final t in state.tracks.video) ...t.clips];
+  }
+
   /// Timeline → media-file position for the clip under [timelineSec].
   /// Falls back to identity when over a gap (preserves old behaviour).
-  /// Uses the constant clip speed; variable speed-ramps are approximated.
   double _timelineToMediaSec(double timelineSec) {
-    final clip = _findClipAtPlayhead(timelineSec);
-    if (clip == null) return timelineSec;
-    final speed = clip.speed == 0 ? 1.0 : clip.speed;
-    final clipLen = (clip.endTimeInTimeline - clip.startTimeInTimeline)
-        .clamp(0.0, double.infinity)
-        .toDouble();
-    final timeInClip = (timelineSec - clip.startTimeInTimeline)
-        .clamp(0.0, clipLen)
-        .toDouble();
-    final lo = math.min(clip.sourceTrimStart, clip.sourceTrimEnd);
-    final hi = math.max(clip.sourceTrimStart, clip.sourceTrimEnd);
-    return (clip.sourceTrimStart + timeInClip * speed).clamp(lo, hi).toDouble();
+    return timelineToMediaSec(timelineSec, _allVideoClips()) ?? timelineSec;
   }
 
   /// Media-file → timeline position. Null when the media position lies outside
   /// every clip's trim range (gap/past end) — the caller then skips the update
   /// instead of letting the playhead run away into unmapped territory.
+  ///
+  /// التعيين يفضّل الكليب تحت المؤشر ثم الأقرب إليه — راجع
+  /// [mediaToTimelineSec] لشرح قفزة المؤشر مع تكرار المصدر.
   double? _mediaToTimelineSec(double mediaSec) {
-    final state = ref.read(timelineProvider).timeline;
-    for (final track in state.tracks.video) {
-      for (final clip in track.clips) {
-        if (mediaSec >= clip.sourceTrimStart &&
-            mediaSec < clip.sourceTrimEnd) {
-          final speed = clip.speed == 0 ? 1.0 : clip.speed;
-          return clip.startTimeInTimeline +
-              (mediaSec - clip.sourceTrimStart) / speed;
-        }
-      }
-    }
-    return null;
+    return mediaToTimelineSec(
+      mediaSec: mediaSec,
+      clipsInOrder: _allVideoClips(),
+      currentClipId: _currentClip?.id,
+      playheadSec: ref.read(timelineProvider).timeline.playheadSec,
+    );
   }
 
   double _getTransitionProgress() {
@@ -254,10 +246,12 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
       _player.setRate(clip.speed);
     }
 
-    // Apply EQ-based volume: bass/mid/treble averaged then scaled by volume
-    final eqMultiplier = (clip.bass + clip.mid + clip.treble) / 3.0;
+    // الصوت = حجم الكليب × حجم المشغّل فقط. كان المتوسط (bass+mid+treble)/3
+    // يجعل خفض أي شريط EQ يخفض الصوت الكلي — منطق غير صحيح. EQ فعلية
+    // يحتاج فلاتر صوتية لا يوفّرها media_kit اليوم، والمنطق الصحيح أن لا
+    // تغيّر الأشرطة مستوى الصوت حتى تصل فلاتر حقيقية.
     _player.setVolume(
-      (eqMultiplier * clip.volume * _volume * (_isMuted ? 0.0 : 1.0)).clamp(
+      (clip.volume * _volume * (_isMuted ? 0.0 : 1.0)).clamp(
         0.0,
         100.0,
       ),
@@ -670,8 +664,21 @@ class _VideoPlayerWidgetState extends ConsumerState<VideoPlayerWidget> {
     if (widget.videoPath != null && widget.videoPath!.isNotEmpty) {
       final file = File(widget.videoPath!);
       if (file.existsSync()) {
+        // تبديل مصدر عند حدود كليب من ملف آخر: استمر بنفس حالة التشغيل بدل
+        // open+pause الصريح الذي كان يجمّد الفيديو عند كل تبديل ملف،
+        // واضبط موضع الملف على ما يقابل المؤشر في الملف الجديد بدل
+        // الانطلاق من صفر (محتوى مقصوص كان يظهر حتى يصل المقطع المقصوص).
+        final wasPlaying = ref.read(isPlayingProvider);
         _player.open(Media(file.path));
-        _player.pause();
+        final mappedMs =
+            (_timelineToMediaSec(ref.read(timelineProvider).timeline.playheadSec) * 1000)
+                .round();
+        if (mappedMs > 0) _safeSeek(mappedMs);
+        if (wasPlaying) {
+          _player.play();
+        } else {
+          _player.pause();
+        }
       }
     }
   }

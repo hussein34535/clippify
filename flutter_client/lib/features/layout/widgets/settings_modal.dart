@@ -16,35 +16,6 @@ import '../../../shared/widgets/ios_kit.dart';
 import '../../onboarding/first_run_gate.dart';
 import '../../onboarding/onboarding_overlay.dart' show onboardingReplayProvider;
 
-/// ☁️ تخزين وضع التشغيل (محلي/سحابي) في SharedPreferences.
-///
-/// القيم: `'local'` | `'cloud'` — مفتاح: [BackendModePref.key].
-/// لا provider هنا عن قصد: المالك هو core/backend/backend_service.dart.
-///
-/// TODO(owner: core/backend/backend_service.dart): عند الإقلاع اقرأ هذا المفتاح
-/// (SharedPreferences) وادمجه مع dotenv `LOCAL_MODE` داخل
-/// `BackendService.chooseBackend` حتى يُطبَّق اختيار المستخدم فعلياً
-/// بعد إعادة تشغيل التطبيق.
-class BackendModePref {
-  static const String key = 'clippify_backend_mode';
-
-  /// يقرأ الوضع المحفوظ؛ يعيد null إن كان غائباً أو قيمة غير معروفة.
-  static Future<String?> load() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final v = prefs.getString(key);
-      return (v == 'local' || v == 'cloud') ? v : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static Future<void> save(String mode) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(key, mode);
-  }
-}
-
 class SettingsModal extends ConsumerStatefulWidget {
   const SettingsModal({super.key});
 

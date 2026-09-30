@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'app.dart';
+import 'core/backend/backend_service.dart';
 import 'launch/backend_controller.dart';
 
 void main() async {
@@ -22,6 +23,10 @@ void main() async {
     debugPrint("Failed to load assets/.env, falling back to assets/.env.example: $e");
     await dotenv.load(fileName: "assets/.env.example");
   }
+
+  // وضع التشغيل المحفوظ من الإعدادات — يغلب عليه LOCAL_MODE عند وجوده
+  // (انظر BackendService.chooseBackend).
+  BackendService.bootSavedMode = await BackendModePref.load();
 
   // تشغيل خادم الباك إند (بايثون) قبل تحميل واجهة المستخدم
   final backendController = BackendController();

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_client/features/command_palette/palette.dart';
 import 'package:flutter_client/features/command_palette/registry.dart';
+import 'package:flutter_client/core/models/timeline_models.dart';
 import 'package:flutter_client/shared/widgets/keyboard_shortcuts.dart';
 
 PaletteCommand _fakeCmd(String id, List<String> calls) {
@@ -185,5 +186,46 @@ void main() {
     expect(find.text('تراجع'), findsOneWidget);
     expect(find.text('الإعدادات'), findsOneWidget);
     expect(find.text('اختر فيديو أولاً'), findsOneWidget);
+  });
+
+  group('firstVideoSourcePath (pure)', () {
+    TimelineState stateWith(List<VideoTrack> video) => TimelineState(
+          projectId: 'p',
+          projectName: 'p',
+          settings: TimelineSettings(),
+          tracks: Tracks(
+            video: video,
+            audio: const [],
+            subtitles: const [],
+            overlays: const [],
+            text: const [],
+          ),
+        );
+
+    VideoClip vclip(String id, String path) => VideoClip(
+          id: id,
+          sourcePath: path,
+          startTimeInTimeline: 0,
+          endTimeInTimeline: 5,
+          sourceTrimStart: 0,
+          sourceTrimEnd: 5,
+          transform: TransformState.defaultState(),
+          colorGrading: ColorGradingState(),
+          filters: const [],
+          aiFeatures: AIFeatures(),
+        );
+
+    test('empty timeline → null', () {
+      expect(firstVideoSourcePath(TimelineState.empty()), isNull);
+    });
+
+    test('returns first clip of first non-empty track', () {
+      final state = stateWith([
+        VideoTrack(id: 'v0', name: 'V0', index: 0, clips: const []),
+        VideoTrack(
+            id: 'v1', name: 'V1', index: 1, clips: [vclip('c1', 'b.mp4')]),
+      ]);
+      expect(firstVideoSourcePath(state), 'b.mp4');
+    });
   });
 }

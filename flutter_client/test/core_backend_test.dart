@@ -158,6 +158,32 @@ void main() {
         BackendMode.cloud,
       );
     });
+
+    test('الوضع المحفوظ يُطبَّق عند غياب LOCAL_MODE', () {
+      expect(
+        BackendService.chooseBackend(
+            isWindows: true, localMode: null, savedMode: 'cloud'),
+        BackendMode.cloud,
+      );
+      expect(
+        BackendService.chooseBackend(
+            isWindows: true, localMode: null, savedMode: 'local'),
+        BackendMode.local,
+      );
+    });
+
+    test('LOCAL_MODE يغلب الوضع المحفوظ', () {
+      expect(
+        BackendService.chooseBackend(
+            isWindows: true, localMode: 'local', savedMode: 'cloud'),
+        BackendMode.local,
+      );
+      expect(
+        BackendService.chooseBackend(
+            isWindows: true, localMode: 'cloud', savedMode: 'local'),
+        BackendMode.cloud,
+      );
+    });
   });
 
   group('AuthInterceptor.onRequest (استدعاء مباشر)', () {

@@ -26,14 +26,27 @@ class LocalStorage {
   }
 
   /// حفظ حالة المشروع تلقائياً في ملف محلي (تضمين ملفات الميديا)
+  ///
+  /// حفظ جزئي (بدون [mediaFiles]) **لا يمسح المكتبة**: يُقرأ الملف القائم
+  /// ويُحتفظ بمفتاح mediaFiles. رايتر الـ debounce بعد كل تعديل لا يملك
+  /// قائمة الملفات ولا يحق له حذفها — وإلا اختفت المكتبة بعد إعادة التشغيل.
   Future<void> saveAutosave(Map<String, dynamic> projectData, {List<Map<String, dynamic>>? mediaFiles}) async {
     try {
       final dir = await _storageDir;
+      final file = File(p.join(dir, _autosaveFileName));
+      dynamic preserved = mediaFiles;
+      if (preserved == null && await file.exists()) {
+        try {
+          final existing = jsonDecode(await file.readAsString());
+          if (existing is Map<String, dynamic>) preserved = existing['mediaFiles'];
+        } catch (_) {
+          // ملف تالف — نكتبه من جديد من دون إسقاط البيانات الجديدة.
+        }
+      }
       final Map<String, dynamic> payload = {
         'timeline': projectData,
-        if (mediaFiles != null) 'mediaFiles': mediaFiles,
+        if (preserved != null) 'mediaFiles': preserved,
       };
-      final file = File(p.join(dir, _autosaveFileName));
       await file.writeAsString(jsonEncode(payload));
       debugPrint('[LocalStorage] Autosave saved.');
     } catch (e) {

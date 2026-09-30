@@ -18,6 +18,9 @@ import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/models/timeline_models.dart';
 import '../../../core/storage/local_storage.dart';
+import '../../../core/services/project_file_service.dart';
+import '../../../core/export/timeline_exporter.dart';
+import '../../../core/export/fcp_xml_exporter.dart';
 import '../../../core/plugins/plugin_system.dart';
 import '../../layout/widgets/header.dart';
 import '../../../shared/providers/toast_provider.dart';
@@ -54,8 +57,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   double _exportProgress = 0.0;
   String _exportStatus = '';
 
-  Timer? _autosaveTimer;
-
   bool _backendLoading = true;
   bool? _backendConnected;
   List<RecentProject> _recentProjects = const [];
@@ -66,9 +67,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     PluginManager();
-    ServiceLocator()
-      ..register<AutosaveService>(AutosaveService())
-      ..register<ExportService>(ExportService());
+    ServiceLocator().register<AutosaveService>(AutosaveService());
     _loadAutosave();
     _startAutosaveTimer();
     Future.delayed(const Duration(milliseconds: 1500), _checkBackendHealth);
@@ -83,27 +82,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() {
       _backendConnected = result is Success;
     });
-    if (result is Success) _loadRecentProjects();
+    // آخر المشاريع محلية (ProjectFileService) — لا تنتظر صحة الباك إند.
+    _loadRecentProjects();
   }
 
   Future<void> _loadRecentProjects() async {
-    final result = await ApiClient().getRecentProjects();
+    final projects = await ProjectFileService().recentProjects();
     if (!mounted) return;
-    switch (result) {
-      case Success(data: final entries):
-        final projects = <RecentProject>[];
-        for (final entry in entries) {
-          if (entry is Map<String, dynamic>) {
-            final path = entry['path'] as String?;
-            if (path == null || path.isEmpty) continue;
-            final name = (entry['project_name'] ?? entry['name'] ?? path.split(Platform.pathSeparator).last) as String;
-            projects.add(RecentProject(name: name, path: path));
-          }
-        }
-        setState(() => _recentProjects = projects);
-      case Failure():
-        break;
-    }
+    setState(() => _recentProjects = projects);
   }
 
   Future<void> _loadAutosave() async {
@@ -135,7 +121,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKeyEvent);
-    _autosaveTimer?.cancel();
     if (ServiceLocator().has<AutosaveService>()) {
       ServiceLocator().get<AutosaveService>().stop();
     }
@@ -211,14 +196,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _startAutosaveTimer() {
     if (!ServiceLocator().has<AutosaveService>()) return;
-    final autosave = ServiceLocator().get<AutosaveService>();
-    autosave.start(() => ref.read(timelineProvider).timeline, interval: const Duration(minutes: 5));
-    _autosaveTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
-      final timelineState = ref.read(timelineProvider).timeline;
-      if (timelineState.projectId.isNotEmpty && timelineState.projectId != 'project_new') {
-        await autosave.saveNow(timelineState, mediaFiles: _importedFiles.map((f) => f.toJson()).toList());
-      }
-    });
+    // كاتب وحيد: خدمة autosave الدورية. (كان هناك مؤقت Timer.periodic ثانٍ
+    // في هذه الصفحة يكرر الكتابة كل 5 دقائق، ويتسرّب عند إعادة التشغيل بعد
+    // فتح الإعدادات لأن الحقل يُستبدل بدون cancel للمؤقت القديم.)
+    ServiceLocator().get<AutosaveService>().start(
+          () => ref.read(timelineProvider).timeline,
+          getMediaFiles: () => _importedFiles.map((f) => f.toJson()).toList(),
+          interval: const Duration(minutes: 5),
+        );
+  }
+
+  /// حفظ فوري لقائمة المكتبة عند الإضافة/الإزالة — لا ننتظر النبضة الدورية.
+  void _persistMediaFiles() {
+    if (!ServiceLocator().has<AutosaveService>()) return;
+    ServiceLocator().get<AutosaveService>().saveNow(
+          ref.read(timelineProvider).timeline,
+          mediaFiles: _importedFiles.map((f) => f.toJson()).toList(),
+        );
   }
 
   /// The backend only accepts project saves inside the project
@@ -247,21 +241,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     if (outputFile == null) return;
     if (!outputFile.endsWith('.clippify')) outputFile += '.clippify';
-    final res = await ApiClient().saveProject(timelineState.toJson(), outputPath: outputFile);
-    switch (res) {
-      case Success(data: final data):
-        if (data['status'] == 'success') {
-          ref.read(timelineProvider.notifier).markSaved();
-          ref.read(toastProvider.notifier).success('تم حفظ المشروع!');
-        } else {
-          ref.read(toastProvider.notifier).error('فشل حفظ المشروع.');
-        }
-      case Failure(:final statusCode):
-        if (statusCode == 403) {
-          ref.read(toastProvider.notifier).error('الحفظ مسموح فقط داخل مجلد المشروع');
-        } else {
-          ref.read(toastProvider.notifier).error('فشل حفظ المشروع.');
-        }
+    try {
+      await ProjectFileService().saveProject(timelineState, outputFile);
+      ref.read(timelineProvider.notifier).markSaved();
+      ref.read(toastProvider.notifier).success('تم حفظ المشروع!');
+      _loadRecentProjects();
+    } catch (e) {
+      ref.read(toastProvider.notifier).error('فشل حفظ المشروع: $e');
     }
   }
 
@@ -274,22 +260,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _loadProjectFrom(String path) async {
-    final loadResult = await ApiClient().loadProject(path);
-    switch (loadResult) {
-      case Success(data: final data):
-        if (data['status'] == 'success' && data['timeline'] != null) {
-          final newProject = TimelineState.fromJson(data['timeline'] as Map<String, dynamic>);
-          ref.read(timelineProvider.notifier).loadProject(newProject);
-          ref.read(toastProvider.notifier).success('تم تحميل المشروع!');
-          final videoClips = newProject.tracks.video.isNotEmpty ? newProject.tracks.video[0].clips : [];
-          if (videoClips.isNotEmpty && videoClips[0].sourcePath.isNotEmpty) {
-            _onSelectVideo(videoClips[0].sourcePath);
-          }
-        } else {
-          ref.read(toastProvider.notifier).error('فشل تحميل المشروع.');
-        }
-      case Failure():
-        ref.read(toastProvider.notifier).error('فشل تحميل المشروع.');
+    try {
+      final newProject = await ProjectFileService().loadProject(path);
+      ref.read(timelineProvider.notifier).loadProject(newProject);
+      ref.read(toastProvider.notifier).success('تم تحميل المشروع!');
+      final videoClips = newProject.tracks.video.isNotEmpty ? newProject.tracks.video[0].clips : [];
+      if (videoClips.isNotEmpty && videoClips[0].sourcePath.isNotEmpty) {
+        _onSelectVideo(videoClips[0].sourcePath);
+      }
+    } catch (e) {
+      ref.read(toastProvider.notifier).error('فشل تحميل المشروع.');
     }
   }
 
@@ -415,8 +395,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _importedFiles.add(file);
       _currentPreviewVideo = file.path;
     });
+    _persistMediaFiles();
   }
-  void _onFileRemoved(int index) { setState(() { _importedFiles.removeAt(index); }); }
+
+  void _onFileRemoved(int index) {
+    setState(() {
+      _importedFiles.removeAt(index);
+    });
+    _persistMediaFiles();
+  }
   void _onSelectVideo(String path) {
     setState(() => _currentPreviewVideo = path);
     final state = ref.read(timelineProvider);
@@ -549,121 +536,80 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final clips = timelineState.tracks.video.isNotEmpty ? timelineState.tracks.video[0].clips : [];
     if (clips.isEmpty) { ref.read(toastProvider.notifier).error('لا توجد مقاطع على التايملاين.'); return; }
 
-    final settings = await showDialog<ExportSettings>(context: context, builder: (context) => const ExportModal());
+    final settings = await showDialog<ExportSettings>(context: context, builder: (context) =>
+        ExportModal(timelineSource: () => ref.read(timelineProvider).timeline));
     if (settings == null) return;
 
     if (settings.type == 'xml') {
-      setState(() { _isExporting = true; _exportProgress = 0.5; _exportStatus = 'Generating XML...'; });
-      final Map<String, dynamic> timelineData = timelineState.toJson();
-      if (!settings.includeSubtitles) timelineData['tracks']['subtitles'] = [];
-      final apiClient = ApiClient();
-      final res = await apiClient.exportXml(timelineData, outputPath: settings.xmlOutputPath, format: settings.xmlFormat);
+      setState(() { _isExporting = true; _exportProgress = 0.3; _exportStatus = 'Generating XML...'; });
+      final outPath = await _resolveExportPath(settings.xmlOutputPath, '.xml');
+      final result = await writeFcpXml(
+        timeline: timelineState,
+        outputPath: outPath,
+        includeMarkers: settings.includeSubtitles,
+      );
       setState(() { _isExporting = false; _exportStatus = ''; });
       if (!mounted) return;
-      switch (res) {
-        case Success(data: final data):
-          if (data['status'] == 'success') {
-            await showIOSDialog(
-              context: context,
-              title: 'تم تصدير XML!',
-              contentWidget: SelectableText('تم الحفظ في:\n${data['output_path']}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-              actions: const [IOSDialogAction('حسناً', isDefault: true)],
-            );
-            ref.read(toastProvider.notifier).success('تم تصدير XML!');
-          } else { ref.read(toastProvider.notifier).error('فشل تصدير XML.'); }
-        case Failure():
-          ref.read(toastProvider.notifier).error('فشل تصدير XML.');
+      if (result.success) {
+        await showIOSDialog(
+          context: context,
+          title: 'تم تصدير XML!',
+          contentWidget: SelectableText('تم الحفظ في:\n${result.outputPath}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+          actions: const [IOSDialogAction('حسناً', isDefault: true)],
+        );
+        ref.read(toastProvider.notifier).success('تم تصدير XML!');
+      } else {
+        ref.read(toastProvider.notifier).error(result.error ?? 'فشل تصدير XML.');
       }
       return;
     }
 
     setState(() { _isExporting = true; _exportProgress = 0.0; _exportStatus = 'Starting export...'; });
-    final List<Map<String, dynamic>> clipJsonList = [];
-    for (var c in clips) {
-      clipJsonList.add({
-        'index': clips.indexOf(c), 'start_sec': c.startTimeInTimeline, 'end_sec': c.endTimeInTimeline,
-        'hook': '', 'reason': '', 'caption_theme': 'TikTok', 'zoom_style': 'none',
-        'color_grade': c.colorGrading.brightness != 0 ? 'custom' : 'original',
-        'emphasis_words': [], 'sfx_queries': [], 'planned_brolls': [],
-        'slow_motion_start': 0.0, 'slow_motion_end': 0.0, 'slow_motion_speed': 1.0,
-      });
-    }
-    final exportService = ServiceLocator().has<ExportService>() ? ServiceLocator().get<ExportService>() : null;
-    if (exportService != null) {
-      final result = await exportService.exportVideo(
-        videoPath: _currentPreviewVideo ?? clips[0].sourcePath, clips: clipJsonList,
-        quality: settings.exportQuality, presetName: settings.presetName,
-        codec: settings.codec, pixelFormat: settings.pixelFormat,
-      );
-      if (!result.success) {
-        setState(() { _isExporting = false; _exportStatus = 'Export failed.'; });
-        ref.read(toastProvider.notifier).error(result.error ?? 'Export failed.');
-        return;
-      }
-      if (result.sessionId != null) { _pollExportStatus(result.sessionId!); }
-      else {
-        ref.read(toastProvider.notifier).success('اكتمل التصدير!');
-        setState(() { _isExporting = false; _exportStatus = ''; });
-      }
-      return;
-    }
-    final apiClient = ApiClient();
-    final sidResult = await apiClient.renderPlan(
-      videoPath: _currentPreviewVideo ?? clips[0].sourcePath, clips: clipJsonList,
-      exportQuality: settings.exportQuality, exportMode: 'ffmpeg',
-      presetName: settings.presetName, codec: settings.codec, pixelFormat: settings.pixelFormat,
+    final ext = settings.presetPro?.container.extension ?? '.mp4';
+    final outPath = await _resolveExportPath(settings.outputFilename, ext);
+    final result = await const TimelineExporter().render(
+      timeline: timelineState,
+      settings: settings,
+      outputPath: outPath,
+      onProgress: (progress, status) {
+        if (!mounted) return;
+        setState(() { _exportProgress = progress; _exportStatus = status; });
+      },
+      isCancelled: () => !mounted || !_isExporting,
     );
-    switch (sidResult) {
-      case Success(data: final sessionId):
-        _pollExportStatus(sessionId);
-      case Failure():
-        setState(() { _isExporting = false; _exportStatus = 'Export failed.'; });
-        ref.read(toastProvider.notifier).error('فشل بدء التصدير.');
+    if (!mounted) return;
+    setState(() { _isExporting = false; _exportStatus = ''; });
+    if (result.success) {
+      await showIOSDialog(
+        context: context,
+        title: 'اكتمل التصدير!',
+        contentWidget: SelectableText('تم حفظ الفيديو في:\n${result.outputPath}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+        actions: const [IOSDialogAction('حسناً', isDefault: true)],
+      );
+      ref.read(toastProvider.notifier).success('اكتمل التصدير!');
+    } else {
+      await showIOSDialog(
+        context: context,
+        title: 'خطأ في التصدير',
+        contentWidget: SelectableText(result.error ?? 'خطأ في معالجة FFmpeg.', style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+        actions: const [IOSDialogAction('حسناً', isDefault: true)],
+      );
     }
   }
 
-  void _pollExportStatus(String sessionId) async {
-    final apiClient = ApiClient();
-    int failedAttempts = 0;
-    while (_isExporting) {
-      await Future.delayed(const Duration(seconds: 1));
-      if (!mounted) return;
-      final statusData = await apiClient.getSessionStatus(sessionId);
-      switch (statusData) {
-        case Success(data: final data):
-          failedAttempts = 0;
-          final progress = (data['progress'] as num?)?.toDouble() ?? 0.0;
-          final status = data['status'] as String? ?? '';
-          final results = data['results'] as List<dynamic>? ?? [];
-          final errors = data['errors'] as List<dynamic>? ?? [];
-          setState(() { _exportProgress = progress; _exportStatus = status; });
-          if (status.toLowerCase().startsWith('done') && results.isNotEmpty) {
-            setState(() { _isExporting = false; _exportStatus = ''; });
-            if (!mounted) return;
-            await showIOSDialog(
-              context: context,
-              title: 'اكتمل التصدير!',
-              contentWidget: SelectableText('تم حفظ الفيديو في:\n${results.first}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-              actions: const [IOSDialogAction('حسناً', isDefault: true)],
-            );
-            return;
-          }
-          if (status.toLowerCase() == 'failed' || errors.isNotEmpty) {
-            setState(() { _isExporting = false; _exportStatus = ''; });
-            if (!mounted) return;
-            await showIOSDialog(
-              context: context,
-              title: 'خطأ في التصدير',
-              content: errors.isNotEmpty ? errors.join('\n') : 'خطأ في معالجة FFmpeg.',
-              actions: const [IOSDialogAction('حسناً', isDefault: true)],
-            );
-            return;
-          }
-        case Failure():
-          failedAttempts++;
-          if (failedAttempts > 10) { setState(() { _isExporting = false; _exportStatus = ''; }); return; }
-      }
+  /// اسم ملف عادي → مسار مطلق داخل Documents/Clippify/exports.
+  Future<String> _resolveExportPath(String filename, String extension) async {
+    final name = filename.trim();
+    if (name.isEmpty) return '';
+    String path;
+    if (p.isAbsolute(name)) {
+      path = name;
+    } else {
+      final docs = await getApplicationDocumentsDirectory();
+      path = p.join(docs.path, 'Clippify', 'exports', p.basename(name));
     }
+    if (p.extension(path).isEmpty) path = '$path$extension';
+    return path;
   }
 
   void _handleSettings() async {

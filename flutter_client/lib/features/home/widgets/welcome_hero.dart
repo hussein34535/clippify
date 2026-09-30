@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/models/recent_project.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/ios_kit.dart';
+
+export '../../../core/models/recent_project.dart';
 
 /// iOS-style welcome hero shown in the viewer when the project is
 /// still empty. Fully local — never blocks on backend availability.
@@ -66,12 +69,6 @@ class WelcomeHero extends StatelessWidget {
       ),
     );
   }
-}
-
-class RecentProject {
-  final String name;
-  final String path;
-  const RecentProject({required this.name, required this.path});
 }
 
 class _ImportButton extends StatefulWidget {

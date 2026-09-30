@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/timeline_models.dart';
 import '../storage/local_storage.dart';
-import '../api/api_client.dart';
 
 class ServiceLocator {
   static final ServiceLocator _instance = ServiceLocator._internal();
@@ -38,12 +37,14 @@ class AutosaveService {
 
   bool get enabled => _enabled;
 
-  void start(TimelineState Function() getState, {Duration interval = const Duration(minutes: 5)}) {
+  void start(TimelineState Function() getState, {
+    Duration interval = const Duration(minutes: 5),
+    List<Map<String, dynamic>> Function()? getMediaFiles,
+  }) {
     _timer?.cancel();
     _timer = Timer.periodic(interval, (_) {
       try {
-        final state = getState();
-        saveNow(state);
+        saveNow(getState(), mediaFiles: getMediaFiles?.call());
       } catch (e) {
         debugPrint('[AutosaveService] Error: $e');
       }
@@ -91,74 +92,4 @@ class ExportResult {
   final String? sessionId;
 
   ExportResult({required this.success, this.outputPath, this.error, this.sessionId});
-}
-
-class ExportService {
-  final ApiClient _api = ApiClient();
-  ExportResult? _lastResult;
-
-  ExportResult? get lastResult => _lastResult;
-
-  Future<ExportResult> exportXml(Map<String, dynamic> timelineData, {
-    required String outputPath,
-    String format = 'premiere',
-    bool includeSubtitles = true,
-  }) async {
-    try {
-      final res = await _api.exportXml(timelineData, outputPath: outputPath, format: format);
-      switch (res) {
-        case Success(data: final data):
-          _lastResult = ExportResult(
-            success: data['status'] == 'success',
-            outputPath: outputPath,
-            error: data['error'] as String?,
-          );
-        case Failure():
-          _lastResult = ExportResult(success: false, error: 'Export XML failed');
-      }
-      return _lastResult!;
-    } catch (e) {
-      _lastResult = ExportResult(success: false, error: e.toString());
-      return _lastResult!;
-    }
-  }
-
-  Future<ExportResult> exportVideo({
-    required String videoPath,
-    required List<Map<String, dynamic>> clips,
-    String? outputPath,
-    String quality = 'high',
-    String? presetName,
-    String? codec,
-    String? pixelFormat,
-  }) async {
-    try {
-      if (videoPath.isEmpty) {
-        return ExportResult(success: false, error: 'Video path is required');
-      }
-      final sid = await _api.renderPlan(
-        videoPath: videoPath,
-        clips: clips,
-        exportQuality: quality,
-        presetName: presetName,
-        codec: codec,
-        pixelFormat: pixelFormat,
-      );
-      switch (sid) {
-        case Success(data: final sessionId):
-          _lastResult = ExportResult(
-            success: true,
-            outputPath: outputPath,
-            sessionId: sessionId,
-            error: null,
-          );
-        case Failure():
-          _lastResult = ExportResult(success: false, outputPath: outputPath, error: 'Render plan failed');
-      }
-      return _lastResult!;
-    } catch (e) {
-      _lastResult = ExportResult(success: false, error: e.toString());
-      return _lastResult!;
-    }
-  }
 }

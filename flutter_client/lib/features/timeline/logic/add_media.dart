@@ -5,6 +5,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/models/timeline_models.dart';
 import '../../../core/native/ffmpeg_service.dart';
 import '../../../shared/providers/toast_provider.dart';
+import '../../../shared/utils/duration_utils.dart';
 import '../providers/timeline_provider.dart';
 
 /// Resolves media info (duration, etc.) for a file path.
@@ -106,11 +107,8 @@ Future<AddMediaResult?> addMediaFromPath(
     } catch (_) {}
   }
 
-  // Unit sanity: some backends report milliseconds. Anything above 6h for a
-  // single imported clip is almost certainly ms — convert. Hard-cap at 6h
-  // regardless so a poisoned value can never stretch the timeline again.
-  if (mediaDuration > 6 * 3600) mediaDuration = mediaDuration / 1000.0;
-  mediaDuration = mediaDuration.clamp(0.1, 6 * 3600.0);
+  // توحيد الوحدات (ms مقابل s) مع سقف صلب — انظر duration_utils.
+  mediaDuration = normalizeProbeDurationSeconds(mediaDuration);
 
   // Use the REAL media duration for both the on-timeline span and the source
   // trim; fall back to a sensible default only when unknown.
