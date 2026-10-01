@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod auto_edit;
 pub mod features;
+pub mod files;
 pub mod health;
 pub mod legacy_endpoints;
 pub mod media_endpoints;
@@ -16,6 +17,7 @@ pub fn api_router() -> axum::Router {
         .merge(auto_edit::router(auto_edit_state.clone()))
         .merge(legacy_endpoints::router(auto_edit_state))
         .merge(features::router())
+        .merge(files::router())
         .merge(system::router())
         .merge(health::router())
         .merge(providers::router())

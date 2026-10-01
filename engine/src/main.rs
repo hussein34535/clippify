@@ -218,6 +218,15 @@ async fn main() -> anyhow::Result<()> {
 
             let app = axum::Router::new()
                 .nest("/api", api_routes)
+                // ملفات الموبايل: مخرجات الجلسات + المرفوعات (للتحميل/المشاركة).
+                .nest_service(
+                    "/api/files/output",
+                    tower_http::services::ServeDir::new("output"),
+                )
+                .nest_service(
+                    "/api/files/uploads",
+                    tower_http::services::ServeDir::new("uploads"),
+                )
                 .layer(tower_http::cors::CorsLayer::permissive());
 
             let addr = format!("0.0.0.0:{port}");

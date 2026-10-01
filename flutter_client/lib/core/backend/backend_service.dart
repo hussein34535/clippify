@@ -54,6 +54,21 @@ abstract class BackendService {
 
   /// اختيار المستخدم المحمَّل في main() قبل أول استخدام لـ [service].
   static String? bootSavedMode;
+
+  static bool _isWindowsHost() => kIsWeb ? false : Platform.isWindows;
+
+  /// الوضع الحالي (يُستخدم أيضًا خارج الـ provider).
+  static BackendMode currentMode() => BackendService.chooseBackend(
+        // على الويب لا يوجد dart:io — التطبيق دسكتوب/موبايل فقط، kIsWeb حارس شكلي
+        isWindows: _isWindowsHost(),
+        localMode: dotenv.maybeGet('LOCAL_MODE'),
+        savedMode: BackendService.bootSavedMode,
+      );
+
+  /// العنوان الحالي — نسخة الموبايل الخفيفة ترفع عبر Dio مباشرة.
+  static String currentBaseUrl() => currentMode() == BackendMode.local
+      ? (dotenv.maybeGet('API_BASE_URL') ?? 'http://localhost:8000')
+      : (dotenv.maybeGet('CLOUD_API_URL') ?? 'https://api.clippify.app');
 }
 
 class LocalBackendService implements BackendService {
@@ -83,14 +98,9 @@ class CloudBackendService implements BackendService {
 
 /// نقطة الالتقاء الوحيدة لبقية التطبيق.
 // ignore: avoid_redundant_argument_values
-BackendService get service => switch (BackendService.chooseBackend(
-      // على الويب لا يوجد dart:io — التطبيق دسكتوب/موبايل فقط، kIsWeb حارس شكلي
-      isWindows: kIsWeb ? false : Platform.isWindows,
-      localMode: dotenv.maybeGet('LOCAL_MODE'),
-      savedMode: BackendService.bootSavedMode,
-    )) {
-      BackendMode.local => LocalBackendService(),
-      BackendMode.cloud => CloudBackendService(),
-    };
+BackendService get service =>
+    BackendService.currentMode() == BackendMode.local
+        ? LocalBackendService()
+        : CloudBackendService();
 
 final backendServiceProvider = Provider<BackendService>((ref) => service);

@@ -32,12 +32,17 @@ class AutoEditProgressScreen extends StatefulWidget {
   final AutoEditAnswers? answers;
   final AutoEditApi api;
 
+  /// عند توفره يُستدعى بالمقاطع بدل الانتقال لشاشة النتائج الكاملة —
+  /// للتدفقات المستقلة (نسخة الموبايل الخفيفة) بشاشة نهاية خاصة بها.
+  final void Function(List<RenderedClipData> clips)? onDone;
+
   const AutoEditProgressScreen({
     super.key,
     required this.sessionId,
     required this.videoPath,
     this.answers,
     required this.api,
+    this.onDone,
   });
 
   @override
@@ -122,6 +127,11 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
         .map((c) => RenderedClipData.fromJson(c.cast<String, dynamic>()))
         .toList();
     if (!mounted) return;
+    final onDone = widget.onDone;
+    if (onDone != null) {
+      onDone(clips);
+      return;
+    }
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => AutoEditResultsScreen(
         clips: clips,
