@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/backend/auto_edit_api.dart';
 import '../../core/backend/backend_service.dart';
 import '../../features/mobile/wizard_mobile_page.dart' show answersFromMap;
 import '../../features/results/rendered_clip.dart';
@@ -11,16 +12,25 @@ import 'models.dart';
 ///
 /// الهاتف لا يستطيع إعطاء مسار محلي للسيرفر — الرفع عبر POST /api/upload
 /// إلزامي قبل start (انظر engine/src/api/files.rs).
+///
+/// الحقن الثلاثي ([checkHealth]/[uploadFile]/[apiFactory]) للاختبارات —
+/// الافتراضي هو التنفيذ الحقيقي.
 class LiteRunScreen extends StatefulWidget {
   final LiteAnswers answers;
   final String localVideoPath;
   final void Function(List<RenderedClipData> clips) onDone;
+  final Future<bool> Function()? checkHealth;
+  final Future<String?> Function(String localPath)? uploadFile;
+  final AutoEditApi Function()? apiFactory;
 
   const LiteRunScreen({
     super.key,
     required this.answers,
     required this.localVideoPath,
     required this.onDone,
+    this.checkHealth,
+    this.uploadFile,
+    this.apiFactory,
   });
 
   @override
@@ -40,7 +50,7 @@ class _LiteRunScreenState extends State<LiteRunScreen> {
     _prepare();
   }
 
-  Future<bool> _checkHealth() async {
+  Future<bool> _defaultCheckHealth() async {
     try {
       final r = await Dio(BaseOptions(
         connectTimeout: const Duration(seconds: 6),
@@ -52,11 +62,10 @@ class _LiteRunScreenState extends State<LiteRunScreen> {
     }
   }
 
-  Future<String?> _upload() async {
-    final name = widget.localVideoPath.split(RegExp(r'[\\/]')).last;
+  Future<String?> _defaultUpload(String localPath) async {
+    final name = localPath.split(RegExp(r'[\\/]')).last;
     final form = FormData.fromMap({
-      'file': await MultipartFile.fromFile(widget.localVideoPath,
-          filename: name),
+      'file': await MultipartFile.fromFile(localPath, filename: name),
     });
     final r = await Dio().post<Map<String, dynamic>>(
       '$_base/api/upload',
@@ -89,7 +98,8 @@ class _LiteRunScreenState extends State<LiteRunScreen> {
       _status = 'بنتصل بالخدمة...';
       _error = null;
     });
-    if (!await _checkHealth()) {
+    final healthy = await (widget.checkHealth ?? _defaultCheckHealth)();
+    if (!healthy) {
       if (!mounted) return;
       setState(() {
         _error = 'تعذر الوصول لخدمة المونتاج.\n'
@@ -99,7 +109,8 @@ class _LiteRunScreenState extends State<LiteRunScreen> {
     }
     String? serverPath;
     try {
-      serverPath = await _upload();
+      serverPath = await (widget.uploadFile ?? _defaultUpload)(
+          widget.localVideoPath);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'فشل الرفع: $e');
@@ -113,7 +124,7 @@ class _LiteRunScreenState extends State<LiteRunScreen> {
       _status = 'بنبدأ المونتاج...';
       _progress = 0.65;
     });
-    final api = defaultAutoEditApi();
+    final api = (widget.apiFactory ?? defaultAutoEditApi)();
     final answers =
         answersFromMap(liteAnswersToMap(widget.answers));
     String? sid;

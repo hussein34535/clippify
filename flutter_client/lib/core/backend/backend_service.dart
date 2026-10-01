@@ -57,18 +57,27 @@ abstract class BackendService {
 
   static bool _isWindowsHost() => kIsWeb ? false : Platform.isWindows;
 
+  /// قراءة آمنة: dotenv غير مهيأ (مدخل بديل/اختبار) = null لا رمي.
+  static String? _maybeEnv(String name) {
+    try {
+      return dotenv.maybeGet(name);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// الوضع الحالي (يُستخدم أيضًا خارج الـ provider).
   static BackendMode currentMode() => BackendService.chooseBackend(
         // على الويب لا يوجد dart:io — التطبيق دسكتوب/موبايل فقط، kIsWeb حارس شكلي
         isWindows: _isWindowsHost(),
-        localMode: dotenv.maybeGet('LOCAL_MODE'),
+        localMode: _maybeEnv('LOCAL_MODE'),
         savedMode: BackendService.bootSavedMode,
       );
 
   /// العنوان الحالي — نسخة الموبايل الخفيفة ترفع عبر Dio مباشرة.
   static String currentBaseUrl() => currentMode() == BackendMode.local
-      ? (dotenv.maybeGet('API_BASE_URL') ?? 'http://localhost:8000')
-      : (dotenv.maybeGet('CLOUD_API_URL') ?? 'https://api.clippify.app');
+      ? (_maybeEnv('API_BASE_URL') ?? 'http://localhost:8000')
+      : (_maybeEnv('CLOUD_API_URL') ?? 'https://api.clippify.app');
 }
 
 class LocalBackendService implements BackendService {
