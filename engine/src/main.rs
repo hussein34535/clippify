@@ -227,6 +227,9 @@ async fn main() -> anyhow::Result<()> {
                     "/api/files/uploads",
                     tower_http::services::ServeDir::new("uploads"),
                 )
+                // حد axum الافتراضي (2MB) كان يقطع اتصال الرفع بلا رد —
+                // السقف الحقيقي (2GB) يُفرض أثناء التدفق في files.rs.
+                .layer(axum::extract::DefaultBodyLimit::disable())
                 .layer(tower_http::cors::CorsLayer::permissive());
 
             let addr = format!("0.0.0.0:{port}");

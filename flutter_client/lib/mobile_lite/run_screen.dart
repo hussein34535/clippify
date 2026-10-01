@@ -113,7 +113,16 @@ class _LiteRunScreenState extends State<LiteRunScreen> {
           widget.localVideoPath);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'فشل الرفع: $e');
+      final msg = '$e';
+      // قطع الاتصال أثناء الرفع (سيرفر قديم/شبكة/حجم) — رسالة بشرية.
+      if (msg.contains('SocketException') ||
+          msg.contains('aborted') ||
+          msg.contains('Connection')) {
+        setState(() => _error =
+            'انقطع الاتصال أثناء الرفع.\nتأكد أن المحرك محدث ثم حاول مجددًا.');
+      } else {
+        setState(() => _error = 'فشل الرفع: $e');
+      }
       return;
     }
     if (serverPath == null || !mounted) {
