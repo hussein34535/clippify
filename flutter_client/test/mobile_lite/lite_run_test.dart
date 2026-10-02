@@ -12,6 +12,8 @@ class _FakeLiteApi implements AutoEditApi {
   final controller = StreamController<AutoEditEvent>.broadcast();
   int startCalls = 0;
   String? seenVideoPath;
+  Map<String, dynamic>? statusResult;
+  bool _closed = false;
 
   @override
   Future<String?> start(String videoPath, AutoEditAnswers answers) async {
@@ -25,12 +27,25 @@ class _FakeLiteApi implements AutoEditApi {
       controller.stream;
 
   @override
-  Future<Map<String, dynamic>?> status(String sessionId) async => null;
+  Future<Map<String, dynamic>?> status(String sessionId) async =>
+      statusResult;
 
   @override
   Future<bool> cancel(String sessionId) async => true;
 
-  void dispose() => controller.close();
+  /// إغلاق آمن متكرر — الإغلاق الثاني لـ broadcast controller كان يعلّق
+  /// الـ tearDown للأبد (سبب تعليق هذا الملف 10 دقائق).
+  void dispose() {
+    if (_closed) return;
+    _closed = true;
+    unawaited(controller.close());
+  }
+
+  Future<void> closeForTest() async {
+    if (_closed) return;
+    _closed = true;
+    await controller.close();
+  }
 }
 
 const _clipJson = {
@@ -108,8 +123,7 @@ void main() {
       expect(find.textContaining('تعذر الوصول'), findsOneWidget);
     });
 
-    testWidgets('null session shows retryable error', (tester) async {
-      await tester.pumpWidget(
+    testWidgets('null session shows retryable error', (tester) async {      await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
             home: LiteRunScreen(
@@ -127,6 +141,44 @@ void main() {
 
       expect(find.textContaining('فشل رفع'), findsOneWidget);
       expect(find.text('حاول مجددًا'), findsOneWidget);
+    });
+
+    testWidgets('closed stream without done recovers via status poll',
+        (tester) async {
+      final api = _FakeLiteApi();
+      addTearDown(api.dispose);
+      api.statusResult = {
+        'status': 'done',
+        'result': {
+          'clips': [_clipJson],
+        },
+      };
+      List<RenderedClipData>? done;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: LiteRunScreen(
+              answers: const LiteAnswers(),
+              localVideoPath: '/tmp/in.mp4',
+              onDone: (clips) => done = clips,
+              checkHealth: () async => true,
+              uploadFile: (_) async => 'uploads/x.mp4',
+              apiFactory: () => api,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(api.startCalls, 1);
+
+      // البث يُغلق بلا حدث done (الحالة العالقة عند 100%) — الاستكمال
+      // عبر polling يجب أن ينقل للنتيجة بدل التعليق.
+      await api.closeForTest();
+      await tester.pumpAndSettle();
+
+      expect(done, hasLength(1));
+      expect(done!.first.fileUrl, 'output/sid-lite/clip_000.mp4');
     });
   });
 }

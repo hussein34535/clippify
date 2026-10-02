@@ -82,9 +82,10 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
             setState(() => _errorDetail = '$e');
           },
           onDone: () {
-            if (!_finished && mounted) {
-              _showTimeoutSnack(context.l10n.t('progress_disconnect'));
-            }
+            // البث اتقفل من غير حدث done (اشتراك متأخر/شبكة) — التقدم واقف
+            // عند 100% بلا انتقال. الاستكمال عبر polling بدل التعليق.
+            if (_finished || !mounted) return;
+            _recoverViaStatus();
           },
         );
     _resetIdleTimer();
@@ -94,9 +95,34 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
     _idleTimer?.cancel();
     _idleTimer = Timer(const Duration(seconds: 90), () {
       if (!_finished && mounted) {
-        _showTimeoutSnack(context.l10n.t('progress_stalled'));
+        _recoverViaStatus();
+        if (!_finished && mounted && _errorDetail == null) {
+          _showTimeoutSnack(context.l10n.t('progress_stalled'));
+        }
       }
     });
+  }
+
+  /// استكمال عبر polling: لو الجلسة done فعلًا ننتقل بالـ clips، ولو
+  /// فاشلة نعرض السبب — بدل الوقوف الأبدي عند آخر نسبة.
+  Future<void> _recoverViaStatus() async {
+    if (_finished || !mounted) return;
+    try {
+      final st = await widget.api.status(_sessionId);
+      final status = st?['status'] as String?;
+      if (status == 'done') {
+        final result =
+            ((st?['result'] as Map?) ?? const {}).cast<String, dynamic>();
+        final clips = (result['clips'] as List?) ?? const [];
+        if (!mounted || _finished) return;
+        _finished = true;
+        _goResults(clips);
+      } else if (status == 'error' || status == 'failed') {
+        if (!mounted) return;
+        final err = (st?['error'] ?? st?['message'] ?? 'فشل المعالجة').toString();
+        setState(() => _errorDetail = err);
+      }
+    } catch (_) {}
   }
 
   void _showTimeoutSnack(String msg) {
