@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
@@ -7,9 +9,15 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'app.dart';
 import 'core/backend/backend_service.dart';
 import 'launch/backend_controller.dart';
+import 'mobile_lite_main.dart' as mobile;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isAndroid || Platform.isIOS) {
+    await mobile.main();
+    return;
+  }
 
   // تهيئة مشغل الفيديو media_kit
   MediaKit.ensureInitialized();
@@ -18,21 +26,21 @@ void main() async {
   await windowManager.ensureInitialized();
 
   try {
-    await dotenv.load(fileName: "assets/.env");
+    await dotenv.load(fileName: 'assets/.env');
   } catch (e) {
-    debugPrint("Failed to load assets/.env, falling back to assets/.env.example: $e");
-    await dotenv.load(fileName: "assets/.env.example");
+    debugPrint('Failed to load assets/.env, falling back to assets/.env.example: $e');
+    await dotenv.load(fileName: 'assets/.env.example');
   }
 
   // وضع التشغيل المحفوظ من الإعدادات — يغلب عليه LOCAL_MODE عند وجوده
   // (انظر BackendService.chooseBackend).
   BackendService.bootSavedMode = await BackendModePref.load();
 
-  // تشغيل خادم الباك إند (بايثون) قبل تحميل واجهة المستخدم
-  final backendController = BackendController();
-  await backendController.startBackend();
+  if (!Platform.isWindows) {
+    await BackendController().startBackend();
+  }
 
-  WindowOptions windowOptions = const WindowOptions(
+  const windowOptions = WindowOptions(
     size: Size(1280, 720),
     minimumSize: Size(960, 540),
     center: true,

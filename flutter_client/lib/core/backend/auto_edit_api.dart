@@ -11,6 +11,14 @@ import 'backend_service.dart' show service;
 /// عقود docs/CONTRACTS.md — قسم Auto-Edit.
 
 class AutoEditAnswers {
+  final String? mode;
+  final String? shortDirector;
+  final String? editBrief;
+  final String? zoomPolicy;
+  final String? creativeStyle;
+  final String? creativeTitle;
+  final bool? creativeMusic;
+  final bool? creativeEffects;
   final String contentType;
   final String platform;
   final int nClips;
@@ -22,6 +30,14 @@ class AutoEditAnswers {
   final String customInstructions;
 
   const AutoEditAnswers({
+    this.mode,
+    this.shortDirector,
+    this.editBrief,
+    this.zoomPolicy,
+    this.creativeStyle,
+    this.creativeTitle,
+    this.creativeMusic,
+    this.creativeEffects,
     this.contentType = 'auto',
     this.platform = 'tiktok',
     this.nClips = 5,
@@ -34,6 +50,14 @@ class AutoEditAnswers {
   });
 
   Map<String, dynamic> toJson() => {
+        if (mode != null) 'mode': mode,
+        if (shortDirector != null) 'short_director': shortDirector,
+        if (editBrief != null && editBrief!.isNotEmpty) 'edit_brief': editBrief,
+        if (zoomPolicy != null) 'zoom_policy': zoomPolicy,
+        if (creativeStyle != null) 'creative_style': creativeStyle,
+        if (creativeTitle != null) 'creative_title': creativeTitle,
+        if (creativeMusic != null) 'creative_music': creativeMusic,
+        if (creativeEffects != null) 'creative_effects': creativeEffects,
         'content_type': contentType,
         'platform': platform,
         'n_clips': nClips,
@@ -80,9 +104,11 @@ String buildWsUri(String httpBase) {
 class AutoEditApi {
   final Dio _dio;
   final String _baseUrl;
+  final bool _allowWsOverride;
 
-  AutoEditApi({Dio? dio, String? baseUrl})
-      : _dio = dio ??
+  AutoEditApi({Dio? dio, String? baseUrl, bool allowWsOverride = true})
+      : _allowWsOverride = allowWsOverride,
+        _dio = dio ??
             Dio(BaseOptions(
               baseUrl: baseUrl ?? service.baseUrl,
               connectTimeout: const Duration(seconds: 10),
@@ -135,14 +161,26 @@ class AutoEditApi {
     Future<void> connect() async {
       if (disposed) return;
       try {
-        ws = await WebSocket.connect(
-            '${buildWsUri(_baseUrl)}/api/ws/progress/$sessionId');
-        attempts = 0;
-        wsSub = ws!.listen(
+        final baseUri = Uri.parse(_baseUrl);
+        final endpoint = _allowWsOverride
+            ? buildWsUri(_baseUrl)
+            : baseUri.replace(scheme: baseUri.scheme == 'https' ? 'wss' : 'ws');
+        final connected = await WebSocket.connect('$endpoint/api/ws/progress/$sessionId');
+        if (disposed) {
+          await connected.close();
+          return;
+        }
+        ws = connected;
+        wsSub = connected.listen(
           (data) {
             if (disposed || controller.isClosed) return;
             try {
-              controller.add(decodeEvent(data.toString()));
+              final event = decodeEvent(data.toString());
+              controller.add(event);
+              if (event.type == 'done' || event.type == 'error') {
+                controller.close();
+                ws?.close();
+              }
             } catch (e) {
               debugPrint('[AutoEditApi] bad frame: $e');
             }
@@ -158,7 +196,7 @@ class AutoEditApi {
     }
 
     scheduleRetry = () {
-      if (disposed) return;
+      if (disposed || controller.isClosed || retryTimer?.isActive == true) return;
       if (attempts >= 3) {
         emitErrorAndClose(
             'انقطع الاتصال بخادم المعالجة — أعد المحاولة لاحقاً',
@@ -202,7 +240,11 @@ class AutoEditApi {
         );
       case 'error':
         final detail = (map['detail'] ?? 'خطأ غير معروف').toString();
-        return AutoEditEvent(type: 'error', messageAr: detail, messageEn: detail);
+        return AutoEditEvent(
+          type: 'error',
+          messageAr: (map['message_ar'] ?? detail).toString(),
+          messageEn: (map['message_en'] ?? detail).toString(),
+        );
       default:
         return AutoEditEvent(
           type: (map['type'] ?? 'progress').toString(),

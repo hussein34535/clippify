@@ -10,6 +10,8 @@ import 'launch/backend_controller.dart';
 import 'features/home/screens/home_screen.dart';
 // MOBILE-SHELL-SWITCH imports
 import 'features/shell/mobile_home_shell.dart';
+import 'mobile_lite/app.dart';
+import 'mobile_lite/short_sidecar.dart';
 import 'shared/widgets/toast_overlay.dart';
 import 'shared/providers/theme_provider.dart';
 // L10N-PLUMBING (additive): locale provider + supported locales below.
@@ -24,6 +26,8 @@ class ClippifyApp extends ConsumerStatefulWidget {
 }
 
 class _ClippifyAppState extends ConsumerState<ClippifyApp> with WindowListener {
+  final _shortSidecar = ShortSidecar();
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +42,7 @@ class _ClippifyAppState extends ConsumerState<ClippifyApp> with WindowListener {
 
   @override
   void onWindowClose() async {
+    await _shortSidecar.stop().catchError((Object _) {});
     await BackendController().stopBackend();
     await windowManager.destroy();
   }
@@ -90,8 +95,77 @@ class _ClippifyAppState extends ConsumerState<ClippifyApp> with WindowListener {
                   !kIsWeb && (Platform.isAndroid || Platform.isIOS);
               return isTouchPlatform
                   ? const MobileHomeShell()
-                  : const HomeScreen();
+                  : !kIsWeb && Platform.isWindows
+                      ? _WorkflowPicker(shortSidecar: _shortSidecar)
+                      : const HomeScreen();
             },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkflowPicker extends StatefulWidget {
+  const _WorkflowPicker({required this.shortSidecar});
+
+  final ShortSidecar shortSidecar;
+
+  @override
+  State<_WorkflowPicker> createState() => _WorkflowPickerState();
+}
+
+class _WorkflowPickerState extends State<_WorkflowPicker> {
+  bool _openingEditor = false;
+
+  Future<void> _openLongEditor() async {
+    setState(() => _openingEditor = true);
+    try {
+      await BackendController().startBackend();
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+      );
+    } finally {
+      if (mounted) setState(() => _openingEditor = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Clippify', style: theme.textTheme.headlineLarge),
+                const SizedBox(height: 12),
+                Text('اختار طريقة المونتاج', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 28),
+                FilledButton.icon(
+                  onPressed: _openingEditor
+                      ? null
+                      : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => LiteWorkspace(sidecar: widget.shortSidecar),
+                            ),
+                          ),
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: const Text('فيديو قصير تلقائي'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _openingEditor ? null : _openLongEditor,
+                  icon: const Icon(Icons.video_library_outlined),
+                  label: Text(_openingEditor ? 'بنفتح المحرر…' : 'محرر الفيديوهات الطويلة'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

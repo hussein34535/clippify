@@ -41,6 +41,7 @@ bcrypt = "0.15"
 
 # Async utilities
 futures = "0.3"
+base64 = "0.22"
 
 [profile.release]
 opt-level = 3

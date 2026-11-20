@@ -4,6 +4,11 @@ mod db;
 mod llm;
 mod media;
 mod render;
+mod short_ai_director;
+mod short_creative;
+mod short_edit;
+mod short_plan;
+mod short_render;
 mod transcribe;
 mod types;
 
@@ -120,17 +125,36 @@ enum Commands {
     Serve {
         #[arg(long, default_value_t = 8000)]
         port: u16,
+        #[arg(long)]
+        local_short: bool,
+        #[arg(long, requires = "local_short")]
+        mobile_upload: bool,
     },
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     suppress_crash_dialogs();
     let cli = Cli::parse();
+    let short_provider = if matches!(cli.command, Some(Commands::Serve { local_short: true, .. })) {
+        short_edit::ShortProvider::take_from_environment()
+    } else {
+        None
+    };
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run(cli, short_provider))
+}
+
+async fn run(cli: Cli, short_provider: Option<short_edit::ShortProvider>) -> anyhow::Result<()> {
     let media = media::MediaEngine::new();
 
     // Default: serve on cli.port when no subcommand given (standalone mode)
-    let command = cli.command.unwrap_or(Commands::Serve { port: cli.port });
+    let command = cli.command.unwrap_or(Commands::Serve {
+        port: cli.port,
+        local_short: false,
+        mobile_upload: false,
+    });
 
     match command {
         Commands::Duration { path } => {
@@ -209,7 +233,22 @@ async fn main() -> anyhow::Result<()> {
             let segments = t.transcribe(&path).await?;
             println!("{}", json!({"status": "ok", "segments": segments}));
         }
-        Commands::Serve { port } => {
+        Commands::Serve { port, local_short, mobile_upload } => {
+            if local_short {
+                let mut routes = api::auto_edit::router(api::auto_edit::AutoEditState::local_short(short_provider, mobile_upload))
+                    .merge(api::health::router());
+                if mobile_upload {
+                    routes = routes.merge(api::files::router());
+                }
+                let app = axum::Router::new().nest("/api", routes).nest_service(
+                    "/api/files/output",
+                    tower_http::services::ServeDir::new("output"),
+                );
+                let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
+                println!("{}", json!({"status": "ok", "listening": listener.local_addr()?.to_string()}));
+                axum::serve(listener, app).await?;
+                return Ok(());
+            }
             // Initialize the global sqlite db (auth/sessions storage).
             let _ = db::global_db();
 

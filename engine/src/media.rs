@@ -69,7 +69,8 @@ impl MediaEngine {
         // frame. (A full `-f null -` decode pegs the CPU for hours on long
         // AV1 files and has crashed the bundled build mid-decode.)
         let output = tokio::process::Command::new(&self.ffmpeg_path)
-            .args(["-hide_banner", "-i", media_path])
+            .args(["-hide_banner", "-nostdin", "-protocol_whitelist", "file", "-i", media_path])
+            .kill_on_drop(true)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -113,7 +114,8 @@ impl MediaEngine {
         let output = tokio::process::Command::new(&self.ffmpeg_path)
             // -vn: silencedetect is audio-only; skipping video decode avoids
             // the (flaky, on huge AV1 files) video decoder entirely.
-            .args(["-hide_banner", "-vn", "-i", media_path, "-af", &filter, "-f", "null", "-"])
+            .args(["-hide_banner", "-nostdin", "-vn", "-protocol_whitelist", "file", "-i", media_path, "-af", &filter, "-f", "null", "-"])
+            .kill_on_drop(true)
             .output()
             .await
             .context("silencedetect failed")?;

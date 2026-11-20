@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/backend/auto_edit_api.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart' as tokens;
+import '../../mobile_lite/studio_theme.dart';
 import '../../shared/l10n/context_l10n.dart';
 import '../results/auto_edit_results_screen.dart';
 import '../results/rendered_clip.dart';
@@ -31,6 +32,7 @@ class AutoEditProgressScreen extends StatefulWidget {
   final String videoPath;
   final AutoEditAnswers? answers;
   final AutoEditApi api;
+  final bool studioMode;
 
   /// عند توفره يُستدعى بالمقاطع بدل الانتقال لشاشة النتائج الكاملة —
   /// للتدفقات المستقلة (نسخة الموبايل الخفيفة) بشاشة نهاية خاصة بها.
@@ -42,6 +44,7 @@ class AutoEditProgressScreen extends StatefulWidget {
     required this.videoPath,
     this.answers,
     required this.api,
+    this.studioMode = false,
     this.onDone,
   });
 
@@ -55,6 +58,8 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
   String? _errorDetail;
   bool _finished = false;
   bool _restarting = false;
+  bool _confirmingCancel = false;
+  List<RenderedClipData>? _pendingStudioClips;
   StreamSubscription<AutoEditEvent>? _sub;
   Timer? _idleTimer;
 
@@ -155,6 +160,10 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
     if (!mounted) return;
     final onDone = widget.onDone;
     if (onDone != null) {
+      if (widget.studioMode && _confirmingCancel) {
+        _pendingStudioClips = clips;
+        return;
+      }
       onDone(clips);
       return;
     }
@@ -167,6 +176,8 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
   }
 
   Future<void> _confirmCancel() async {
+    if (_confirmingCancel || _finished) return;
+    _confirmingCancel = true;
     final l10n = context.l10n; // captured before async gap
     final confirmed = await showDialog<bool>(
       context: context,
@@ -188,7 +199,14 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    _confirmingCancel = false;
+    final ready = _pendingStudioClips;
+    _pendingStudioClips = null;
+    if (mounted && ready != null) {
+      widget.onDone?.call(ready);
+      return;
+    }
+    if (confirmed != true || !mounted || _finished) return;
     await performCancel();
   }
 
@@ -242,6 +260,7 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.studioMode) return _buildStudio();
     final progressPct = (_last?.progress ?? 0).clamp(0.0, 100.0);
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -289,6 +308,59 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
               _buildBottomBar(),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStudio() {
+    final detail = switch (_last?.stage) {
+      'transcribing' || 'understanding' => 'بنحلل الكلام والصوت في الفيديو.',
+      'selecting' || 'hooks' => 'بندور على لقطة ليها بداية ونهاية واضحة.',
+      'effects' => 'بنجهز اللمسات الأخيرة للمقطع.',
+      'rendering' || 'compiling' || 'done' => 'بنجهز ملف الفيديو للمعاينة والحفظ.',
+      _ => 'الفيديو وصل. بنجهّزه للمعالجة.',
+    };
+    final failed = _errorDetail != null;
+    return PopScope(
+      canPop: _finished || failed,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && !_finished && !failed) _confirmCancel();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('استوديو الريلز'),
+          automaticallyImplyLeading: false,
+        ),
+        body: StudioLayout(
+          footer: failed
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FilledButton(
+                      key: const ValueKey('wizard_retry'),
+                      onPressed: _retry,
+                      child: const Text('حاول مجددًا'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('رجوع'),
+                    ),
+                  ],
+                )
+              : OutlinedButton(
+                  onPressed: _restarting ? null : _confirmCancel,
+                  child: const Text('إلغاء المونتاج'),
+                ),
+          children: [
+            StudioProgress(
+              title: failed ? 'المونتاج ما كملش' : 'بنجهّز الريل',
+              detail: _errorDetail ?? detail,
+              icon: failed ? Icons.error_outline_rounded : Icons.movie_filter_outlined,
+              progress: _restarting || _last == null ? null : _progress,
+              failed: failed,
+            ),
+          ],
         ),
       ),
     );

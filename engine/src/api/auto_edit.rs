@@ -25,6 +25,9 @@ use crate::director;
 use crate::llm::LlmBridge;
 use crate::media::MediaEngine;
 use crate::render::RenderPipeline;
+use crate::{short_ai_director, short_edit, short_render};
+use crate::short_plan::{self, Treatment, ZoomPolicy};
+use crate::short_creative::{self, Style};
 use crate::transcribe::Transcriber;
 use crate::types::{ClipSpec, RenderRequest};
 
@@ -37,12 +40,29 @@ const WS_MAX_LIFETIME_SECS: u64 = 1800;
 #[derive(Clone)]
 pub struct AutoEditState {
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
+    local_short: bool,
+    mobile_upload: bool,
+    short_provider: Option<Arc<short_edit::ShortProvider>>,
+    short_tasks: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
 }
 
 impl AutoEditState {
     pub fn new() -> Self {
         AutoEditState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            local_short: false,
+            mobile_upload: false,
+            short_provider: None,
+            short_tasks: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn local_short(short_provider: Option<short_edit::ShortProvider>, mobile_upload: bool) -> Self {
+        Self {
+            local_short: true,
+            mobile_upload,
+            short_provider: short_provider.map(Arc::new),
+            ..Self::new()
         }
     }
 
@@ -130,21 +150,41 @@ pub struct AutoEditRequest {
 #[derive(Deserialize, Debug, Default)]
 #[serde(default)]
 pub struct Answers {
+    pub mode: Option<String>,
     pub content_type: Option<String>,
     pub platform: Option<String>,
     pub n_clips: Option<usize>,
     pub clip_duration_sec: Option<f64>,
     pub caption_theme: Option<String>,
     pub zoom_style: Option<String>,
+    pub zoom_policy: Option<ZoomPolicy>,
+    pub edit_brief: Option<String>,
+    pub creative_style: Option<Style>,
+    pub creative_title: Option<String>,
+    pub creative_music: Option<bool>,
+    pub creative_effects: Option<bool>,
+    pub short_director: ShortDirector,
     pub language: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ShortDirector {
+    #[default]
+    Hybrid,
+    Ai,
+    Local,
+}
+
 pub fn router(state: AutoEditState) -> Router {
-    Router::new()
+    let mut routes = Router::new()
         .route("/auto-edit", post(post_auto_edit))
         .route("/auto-edit/status/:session_id", get(get_status))
-        .route("/ws/progress/:session_id", get(ws_progress))
-        .with_state(state)
+        .route("/ws/progress/:session_id", get(ws_progress));
+    if state.local_short {
+        routes = routes.route("/auto-edit/cancel/:session_id", post(cancel_short));
+    }
+    routes.with_state(state)
 }
 
 // ── handlers ─────────────────────────────────────────────────────────────────
@@ -153,12 +193,23 @@ async fn post_auto_edit(
     State(state): State<AutoEditState>,
     Json(req): Json<AutoEditRequest>,
 ) -> Response {
-    if req.video_path.trim().is_empty()
-        || !std::path::Path::new(&req.video_path).exists()
-    {
+    let short = req.answers.mode.as_deref() == Some("short_auto");
+    if short != state.local_short {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": format!("video_path not found: {}", req.video_path)})),
+            Json(json!({"error": "Short Auto requires a supported local engine"})),
+        )
+            .into_response();
+    }
+    let valid_input = if state.mobile_upload {
+        super::files::is_uploaded_media(&req.video_path).await
+    } else {
+        !req.video_path.trim().is_empty() && std::path::Path::new(&req.video_path).is_file()
+    };
+    if !valid_input {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Video file not found. Upload the video before starting."})),
         )
             .into_response();
     }
@@ -175,13 +226,67 @@ async fn post_auto_edit(
         error: None,
     });
 
-    tokio::spawn(run_pipeline(state.clone(), session_id.clone(), req));
+    if short {
+        let mut tasks = state.short_tasks.lock().expect("short tasks lock");
+        if !tasks.is_empty() {
+            if let Ok(mut sessions) = state.sessions.lock() {
+                sessions.remove(&session_id);
+            }
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({"error": "A Short Auto job is already running"})),
+            )
+                .into_response();
+        }
+        let task_state = state.clone();
+        let id = session_id.clone();
+        let upload = state.mobile_upload.then(|| req.video_path.clone());
+        let handle = tokio::spawn(async move {
+            run_short_pipeline(&task_state, &id, &req).await;
+        });
+        tasks.insert(session_id.clone(), handle.abort_handle());
+        let cleanup_state = state.clone();
+        let cleanup_id = session_id.clone();
+        tokio::spawn(async move {
+            let _ = handle.await;
+            if let Some(path) = upload.filter(|_| {
+                cleanup_state.get(&cleanup_id).is_some_and(|session| session.status == "done")
+            }) {
+                let _ = tokio::fs::remove_file(path).await;
+            }
+            if let Ok(mut tasks) = cleanup_state.short_tasks.lock() {
+                tasks.remove(&cleanup_id);
+            }
+        });
+    } else {
+        tokio::spawn(run_pipeline(state.clone(), session_id.clone(), req));
+    }
 
     (
         StatusCode::ACCEPTED,
         Json(json!({"session_id": session_id})),
     )
         .into_response()
+}
+
+async fn cancel_short(
+    State(state): State<AutoEditState>,
+    Path(session_id): Path<String>,
+) -> Response {
+    let task = state.short_tasks.lock().ok().and_then(|tasks| tasks.get(&session_id).cloned());
+    if let Some(task) = task {
+        state.update(&session_id, |session| {
+            if session.status == "queued" || session.status == "running" {
+                session.status = "error".into();
+                session.stage = "error".into();
+                session.error = Some("تم إلغاء المونتاج.".into());
+                task.abort();
+            }
+        });
+    } else if state.get(&session_id).is_none() {
+        return (StatusCode::NOT_FOUND, Json(json!({"error": "unknown session"}))).into_response();
+    }
+    Json(json!({"status": "ok"})).into_response()
 }
 
 async fn get_status(
@@ -276,6 +381,9 @@ fn report(state: &AutoEditState, session_id: &str, stage: &str, progress: f32, m
         message_en: message.to_string(),
     };
     state.update(session_id, |s| {
+        if s.status == "error" {
+            return;
+        }
         s.status = "running".to_string();
         s.stage = mapped.to_string();
         s.progress = progress;
@@ -285,19 +393,246 @@ fn report(state: &AutoEditState, session_id: &str, stage: &str, progress: f32, m
 
 fn fail(state: &AutoEditState, session_id: &str, err: String) {
     state.update(session_id, |s| {
+        if s.status == "error" {
+            return;
+        }
         s.status = "error".to_string();
         s.stage = "error".to_string();
-        s.error = Some(err.clone());
-        s.events.push(ProgressEvent {
-            ts: chrono::Utc::now().to_rfc3339(),
-            stage: "error".to_string(),
-            progress: s.progress,
-            message: err.clone(),
-            event_type: "error".to_string(),
-            message_ar: err.clone(),
-            message_en: err,
-        });
+        s.error = Some(err);
     });
+}
+
+fn finish(state: &AutoEditState, session_id: &str, result: Value) {
+    state.update(session_id, |session| {
+        if session.status == "error" {
+            return;
+        }
+        session.result = Some(result);
+        session.status = "done".into();
+        session.stage = "done".into();
+        session.progress = 100.0;
+    });
+}
+
+async fn run_short_pipeline(state: &AutoEditState, session_id: &str, req: &AutoEditRequest) {
+    let media = MediaEngine::new();
+    let ai_only = req.answers.short_director == ShortDirector::Ai;
+    if ai_only {
+        match state.short_provider.as_deref() {
+            Some(provider) if provider.vision() => {}
+            Some(_) => {
+                fail(
+                    state,
+                    session_id,
+                    short_ai_director::DirectorError::Vision.message().into(),
+                );
+                return;
+            }
+            None => {
+                fail(state, session_id, "المخرج الذكي محتاج مزوّد بيدعم الصور. فعّل المزوّد من إعدادات الذكاء الاصطناعي أو اختار المونتاج المحلي.".into());
+                return;
+            }
+        }
+    }
+    report(state, session_id, "probe", 5.0, "بنفحص الفيديو");
+    let duration = match media.probe_duration(&req.video_path).await {
+        Ok(value) if value.is_finite() && value > 0.0 && value <= 900.0 => value,
+        _ => {
+            fail(state, session_id, "اختار فيديو صالح مدته 15 دقيقة أو أقل.".into());
+            return;
+        }
+    };
+
+    report(state, session_id, "transcribe", 20.0, "بنحلل الكلام والصوت");
+    let transcriber = Transcriber::new();
+    let (transcript, silences) = tokio::join!(
+        transcriber.transcribe_short(&media, &req.video_path),
+        async {
+            if ai_only { Ok(Vec::new()) } else {
+                media.detect_silences(&req.video_path, -35.0, 0.6).await
+            }
+        },
+    );
+    let transcript_available = transcript.as_ref().is_ok_and(|segments| !segments.is_empty());
+    let transcript = transcript.unwrap_or_default();
+    let silences = silences.unwrap_or_default();
+    let target = req.answers.clip_duration_sec.filter(|value| value.is_finite()).unwrap_or(45.0);
+    let brief: String = req.answers.edit_brief.as_deref().unwrap_or("").chars().take(500).collect();
+    let zoom_policy = req.answers.zoom_policy.unwrap_or_default();
+    let platform = req.answers.platform.as_deref().unwrap_or("tiktok");
+    if ai_only {
+        let provider = state.short_provider.as_deref().unwrap();
+        report(state, session_id, "direct", 58.0, "المخرج الذكي بيفهم المشهد وبيحدد الهدف وخطة المونتاج");
+        let plan = short_ai_director::direct(provider, &media, short_ai_director::Input {
+            video: &req.video_path, transcript: &transcript, duration, target, platform, brief: &brief, zoom_policy,
+        }).await;
+        let plan = match plan {
+            Ok(plan) => plan,
+            Err(problem) => {
+                eprintln!("[short-director] {problem:?}");
+                fail(state, session_id, problem.message().into());
+                return;
+            }
+        };
+        let description = json!({
+            "understanding": plan.understanding,
+            "purpose": plan.purpose,
+            "strategy": plan.strategy,
+            "evidence_frames": plan.evidence_frames
+        });
+        let mut treatment = plan.treatment;
+        let effects = req.answers.creative_effects != Some(false)
+            && (treatment.sound != short_plan::Accent::Off || !plan.design.sound_cues.is_empty());
+        if !effects {
+            treatment.sound = short_plan::Accent::Off;
+        }
+        let hook = plan.title.clone();
+        let design = short_creative::Options {
+            style: plan.style,
+            title: plan.title,
+            music: plan.music && req.answers.creative_music != Some(false),
+            effects,
+            brief,
+            focus_source_sec: None,
+            directed: Some(plan.design),
+        };
+        render_short_result(state, session_id, req, &media, &transcript, ShortRenderPlan {
+            ranges: plan.ranges, treatment, design, hook, source: provider.name(),
+            provider_status: "applied", description: Some(description),
+        }).await;
+        return;
+    }
+
+    let options = short_edit::candidates(&transcript, &silences, duration, target);
+    report(state, session_id, "direct", 62.0, "بنختار المقطع ونجهّز الألوان والمؤثرات");
+    let creative_style = req.answers.creative_style.unwrap_or_default();
+    let provider = state.short_provider.as_deref().filter(|_| req.answers.short_director != ShortDirector::Local);
+    let direction = match provider {
+        Some(provider) => short_edit::direct_with_provider(
+            provider, &options, &brief, platform, zoom_policy, creative_style,
+            &media, &req.video_path,
+        ).await,
+        None => None,
+    };
+    let chosen = &options[direction.as_ref().map_or(0, |plan| plan.candidate_id)];
+    let used_provider = direction.is_some();
+    let provider_name = provider.map(|provider| provider.name());
+    let focus_source_sec = direction.as_ref().and_then(|plan| plan.focus_sec);
+    let style = creative_style.resolve(
+        direction.as_ref().and_then(|plan| plan.creative_style),
+        req.answers.content_type.as_deref().unwrap_or("auto"),
+        transcript_available,
+        &brief,
+    );
+    let provider_status = if used_provider {
+        "applied"
+    } else if provider.is_some() {
+        "local_fallback"
+    } else {
+        "disabled"
+    };
+    let mut treatment = direction.map_or_else(
+        || Treatment::local(&brief, zoom_policy),
+        |plan| plan.treatment.respect(&brief, zoom_policy),
+    );
+    if req.answers.creative_effects == Some(false) {
+        treatment.sound = short_plan::Accent::Off;
+    }
+    let mut start = chosen.start;
+    if start < 4.0 && chosen.end - start >= 5.0 && treatment.trim_pauses {
+        let visually_ready = short_edit::usable_opening(&media, &req.video_path).await;
+        let first_speech = transcript.iter().find(|segment| segment.end > start)
+            .map_or(chosen.end, |segment| segment.start - 0.18);
+        // Missing pictures can be cut only up to the first usable dialogue.
+        if visually_ready <= first_speech && visually_ready <= chosen.end - 3.0 {
+            start = start.max(visually_ready);
+        }
+    }
+    let ranges = short_plan::keep_ranges(start, chosen.end, &silences, &transcript, &treatment, &brief);
+    let design = short_creative::Options {
+        style,
+        title: req.answers.creative_title.as_deref().unwrap_or("").chars().take(35).collect(),
+        music: req.answers.creative_music.unwrap_or(style != Style::Clean),
+        effects: req.answers.creative_effects.unwrap_or(style != Style::Clean),
+        brief,
+        focus_source_sec,
+        directed: None,
+    };
+    render_short_result(state, session_id, req, &media, &transcript, ShortRenderPlan {
+        ranges, treatment, design, hook: chosen.opening.clone(),
+        source: if used_provider { provider_name.unwrap_or("ai_provider") } else if transcript_available { "local_transcript" } else { "local_audio" },
+        provider_status, description: None,
+    }).await;
+}
+
+struct ShortRenderPlan {
+    ranges: Vec<(f64, f64)>,
+    treatment: Treatment,
+    design: short_creative::Options,
+    hook: String,
+    source: &'static str,
+    provider_status: &'static str,
+    description: Option<Value>,
+}
+
+async fn render_short_result(
+    state: &AutoEditState,
+    session_id: &str,
+    req: &AutoEditRequest,
+    media: &MediaEngine,
+    transcript: &[crate::types::TranscribedSegment],
+    plan: ShortRenderPlan,
+) {
+    let ShortRenderPlan { ranges, treatment, design, hook, source, provider_status, description } = plan;
+    let start = ranges[0].0;
+    let end = ranges.last().unwrap().1;
+    let has_visual_focus = design.focus_source_sec.is_some() || design.directed.as_ref().is_some_and(|design| !design.focus_source_secs.is_empty());
+    let render_request = RenderRequest {
+        video_path: req.video_path.clone(),
+        output_dir: format!("output/{session_id}"),
+        clips: vec![ClipSpec {
+            index: 0,
+            start_sec: start,
+            end_sec: end,
+            hook: hook.clone(),
+            caption_theme: req.answers.caption_theme.clone().unwrap_or_default(),
+            zoom_style: String::new(),
+        }],
+        width: 1080,
+        height: 1920,
+        fps: 30,
+    };
+    report(state, session_id, "render", 78.0, "بنجهز النسخة العمودية");
+    match short_render::render_short(media, &render_request, transcript, &treatment, &ranges, &design).await {
+        Ok(rendered) => finish(state, session_id, json!({
+            "source": source,
+            "provider_status": provider_status,
+            "transcript_available": !transcript.is_empty(),
+            "edit_plan": treatment,
+            "source_ranges": ranges,
+            "creative": {
+                "style": rendered.creative.style,
+                "title": rendered.creative.title,
+                "accent_times": rendered.creative.beats,
+                "original_music": rendered.creative.music,
+                "designed_effects": rendered.creative.effects,
+                "slow_motion": rendered.creative.slow_motion,
+                "visual_provider_focus": has_visual_focus
+            },
+            "cuts": ranges.len().saturating_sub(1),
+            "clips": [{
+                "index": 0, "file_url": rendered.path, "duration_sec": rendered.duration_sec,
+                "hook_text": hook,
+                "has_captions": rendered.has_captions,
+                "start_sec": start, "end_sec": end,
+                "director": description
+            }]
+        })),
+        Err(err) => {
+            eprintln!("[short-render] {err:#}");
+            fail(state, session_id, "تعذّر تصدير الفيديو. تأكد من صيغة الملف ومساحة التخزين.".into());
+        }
+    }
 }
 
 fn speech_segments(silences: &[crate::types::Silence]) -> Vec<(f64, f64)> {
@@ -418,21 +753,31 @@ async fn run_pipeline(state: AutoEditState, session_id: String, req: AutoEditReq
         fps: 30,
     };
     let pipeline = RenderPipeline::new();
-    let rendered = pipeline.render(&render_req).await.unwrap_or_default();
-    let compiled = if rendered.is_empty() {
-        None
+    let rendered = match pipeline.render(&render_req).await {
+        Ok(paths) if !paths.is_empty() && paths.len() == render_req.clips.len()
+            && paths.iter().all(|path| std::fs::metadata(path).is_ok_and(|entry| entry.is_file() && entry.len() > 0)) => paths,
+        _ => {
+            fail(&state, &session_id, "Could not render the requested clips".into());
+            return;
+        }
+    };
+    let compiled = if rendered.len() == 1 {
+        rendered.first().cloned()
     } else {
         let path = format!("{}/compiled_final.mp4", render_req.output_dir);
         pipeline.compile(&rendered, &path).await.ok()
     };
 
-    // 7) done
-    report(&state, &session_id, "done", 100.0, "pipeline finished");
+    let clips = plan.clips.iter().zip(&rendered).map(|(clip, path)| {
+        let mut result = json!(clip);
+        result["file_url"] = json!(path);
+        result
+    }).collect::<Vec<_>>();
     let result = json!({
         "video_duration_sec": duration,
         "source": source,
         "reasoning": plan.reasoning,
-        "clips": plan.clips,
+        "clips": clips,
         "critic": {
             "score": verdict.score,
             "feedback": verdict.feedback,
@@ -441,10 +786,5 @@ async fn run_pipeline(state: AutoEditState, session_id: String, req: AutoEditReq
         "rendered": rendered,
         "compiled": compiled,
     });
-    state.update(&session_id, |s| {
-        s.status = "done".to_string();
-        s.stage = "done".to_string();
-        s.progress = 100.0;
-        s.result = Some(result);
-    });
+    finish(&state, &session_id, result);
 }

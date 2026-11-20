@@ -1,3 +1,5 @@
+import com.android.build.api.variant.LibraryAndroidComponentsExtension
+
 allprojects {
     repositories {
         google()
@@ -16,6 +18,13 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
+    if (name == "file_picker") {
+        pluginManager.withPlugin("com.android.library") {
+            extensions.getByType<LibraryAndroidComponentsExtension>().finalizeDsl { library ->
+                library.compileSdk = maxOf(library.compileSdk ?: 0, 36)
+            }
+        }
+    }
     project.evaluationDependsOn(":app")
 }
 

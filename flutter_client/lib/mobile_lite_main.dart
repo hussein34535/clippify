@@ -8,7 +8,7 @@ import 'mobile_lite/app.dart';
 ///
 /// التشغيل على جهاز: `flutter run -t lib/mobile_lite_main.dart`
 /// بناء أندرويد: `flutter build apk --release -t lib/mobile_lite_main.dart`
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // إعدادات الاتصال (LOCAL_MODE/API_BASE_URL) — بدونها يرمي dotenv
   // NotInitializedError عند أول currentBaseUrl (شاشة خطأ دائمة).

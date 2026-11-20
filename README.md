@@ -106,6 +106,8 @@ means no mandatory subscription. Your keys stay encrypted on your machine.
 
 ## 🚀 Quick Start
 
+**Windows Short Auto:** افتح «فيديو قصير تلقائي» من شاشة اختيار طريقة المونتاج. للاستخدام المحلي بدون مفتاح، إعداد TeamSocLo، بناء الحزمة، وتكامل الـAPI، راجع [خطة الفيديو القصير والطويل](docs/SHORT_AND_LONG_ROADMAP.md).
+
 ### 🇸🇦 بالعربية — 3 خطوات
 
 1. **دبل-كليك على `run.bat`** — سيكتشف بايثون المشروع الصحيح تلقائياً، يشغّل سيرفر الـ API، ثم يفتح واجهة Flutter Desktop لوحدها.

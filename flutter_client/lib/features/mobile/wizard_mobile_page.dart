@@ -10,6 +10,14 @@ import 'library_mobile_page.dart' show defaultPickVideos;
 /// body.answers) into the typed [AutoEditAnswers]. Built field-by-field
 /// because the class intentionally has no fromJson.
 AutoEditAnswers answersFromMap(Map<String, dynamic> m) => AutoEditAnswers(
+      mode: m['mode'] as String?,
+      shortDirector: m['short_director'] as String?,
+      editBrief: m['edit_brief'] as String?,
+      zoomPolicy: m['zoom_policy'] as String?,
+      creativeStyle: m['creative_style'] as String?,
+      creativeTitle: m['creative_title'] as String?,
+      creativeMusic: m['creative_music'] as bool?,
+      creativeEffects: m['creative_effects'] as bool?,
       contentType: (m['content_type'] ?? 'auto') as String,
       platform: (m['platform'] ?? 'tiktok') as String,
       nClips: ((m['n_clips'] ?? 5) as num).toInt(),

@@ -335,6 +335,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
  "bcrypt",
  "chrono",
  "clap",

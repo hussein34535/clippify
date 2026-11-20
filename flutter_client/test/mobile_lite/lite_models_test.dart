@@ -2,52 +2,101 @@ import 'package:flutter_client/mobile_lite/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('liteAnswersToMap (backend contract)', () {
-    test('default answers → valid auto-edit body', () {
-      final m = liteAnswersToMap(const LiteAnswers());
-      expect(m['content_type'], 'auto');
-      expect(m['platform'], 'tiktok');
-      expect(m['n_clips'], 5);
-      expect(m['clip_duration_sec'], 60.0);
-      expect(m['caption_theme'], isNull);
-      expect(m['music'], isFalse);
-      expect(m['broll'], isTrue);
-      expect(m['translate_arabic'], isFalse);
-      expect(m['custom_instructions'], isNotEmpty);
+  group('liteAnswersToMap', () {
+    test('defaults request one 45-second Short Auto clip', () {
+      final map = liteAnswersToMap(const LiteAnswers());
+
+      expect(map['mode'], 'short_auto');
+      expect(map['n_clips'], 1);
+      expect(map['clip_duration_sec'], 45.0);
+      expect(map['platform'], 'tiktok');
+      expect(map['content_type'], 'auto');
+      expect(map['caption_theme'], isNull);
+      expect(map['music'], isFalse);
+      expect(map['broll'], isTrue);
+      expect(map['translate_arabic'], isFalse);
+      expect(map['custom_instructions'], contains('مقطع واحد'));
+      expect(map['custom_instructions'], contains('45 ثانية'));
     });
 
-    test('length tiers map to clip counts', () {
-      expect(
-          liteAnswersToMap(const LiteAnswers(length: LiteLength.short))['n_clips'],
-          3);
-      expect(
-          liteAnswersToMap(const LiteAnswers(length: LiteLength.long))['n_clips'],
-          8);
+    test('each duration requests a single clip', () {
+      const durations = {
+        LiteLength.short: 30.0,
+        LiteLength.medium: 45.0,
+        LiteLength.long: 60.0,
+      };
+
+      for (final entry in durations.entries) {
+        final answers = const LiteAnswers().copyWith(length: entry.key);
+        final map = liteAnswersToMap(answers);
+
+        expect(map['mode'], 'short_auto');
+        expect(map['n_clips'], 1);
+        expect(map['clip_duration_sec'], entry.value);
+      }
+    });
+
+    test('AI direction delegates the creative choices', () {
+      final map = liteAnswersToMap(
+        const LiteAnswers(director: LiteDirector.ai),
+      );
+      expect(map['short_director'], 'ai');
+      expect(map.containsKey('creative_style'), isFalse);
+      expect(map.containsKey('creative_music'), isFalse);
+      expect(map.containsKey('creative_effects'), isFalse);
+      final local = liteAnswersToMap(
+        const LiteAnswers(director: LiteDirector.local),
+      );
+      expect(local['short_director'], 'local');
+      expect(local['creative_style'], 'auto');
+    });
+
+    test('platforms use their backend names', () {
+      const platforms = {
+        LitePlatform.reels: 'reels',
+        LitePlatform.tiktok: 'tiktok',
+        LitePlatform.shorts: 'shorts',
+      };
+
+      for (final entry in platforms.entries) {
+        final answers = const LiteAnswers().copyWith(platform: entry.key);
+        expect(liteAnswersToMap(answers)['platform'], entry.value);
+      }
     });
 
     test('caption themes use backend names', () {
       expect(
-          liteAnswersToMap(const LiteAnswers(captions: LiteCaptions.yellow))['caption_theme'],
-          'TikTok Yellow');
+        liteAnswersToMap(
+          const LiteAnswers(captions: LiteCaptions.yellow),
+        )['caption_theme'],
+        'TikTok Yellow',
+      );
       expect(
-          liteAnswersToMap(const LiteAnswers(captions: LiteCaptions.neon))['caption_theme'],
-          'Neon');
+        liteAnswersToMap(
+          const LiteAnswers(captions: LiteCaptions.neon),
+        )['caption_theme'],
+        'Neon',
+      );
     });
 
     test('music flag and brief follow answers', () {
-      final m = liteAnswersToMap(
-          const LiteAnswers(music: true, content: LiteContent.comedy));
-      expect(m['music'], isTrue);
-      expect(m['custom_instructions'], contains('كوميدي'));
-      expect(m['custom_instructions'], contains('موسيقى'));
+      final map = liteAnswersToMap(
+        const LiteAnswers(music: true, content: LiteContent.comedy),
+      );
+
+      expect(map['music'], isTrue);
+      expect(map['custom_instructions'], contains('كوميدي'));
+      expect(map['custom_instructions'], contains('موسيقى'));
     });
   });
 
-  group('liteSummaryAr', () {
-    test('summarizes the plan in one line', () {
-      final s = liteSummaryAr(const LiteAnswers());
-      expect(s, contains('5 مقاطع'));
-      expect(s, contains('تيك توك'));
-    });
+  test('Arabic summary reflects the single clip, platform and duration', () {
+    final summary = liteSummaryAr(
+      const LiteAnswers(platform: LitePlatform.reels, length: LiteLength.short),
+    );
+
+    expect(summary, contains('مقطع واحد'));
+    expect(summary, contains('ريلز'));
+    expect(summary, contains('30 ثانية'));
   });
 }

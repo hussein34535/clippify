@@ -5,7 +5,7 @@
 /// → `{path}` نسبي → يُمرَّر لـ /api/auto-edit → النواتج تُجلب من
 /// /api/files/output/* (تُركَّب في main.rs عبر ServeDir).
 use axum::{
-    extract::Multipart,
+    extract::{DefaultBodyLimit, Multipart},
     response::Json,
     routing::post,
 };
@@ -20,6 +20,35 @@ const ALLOWED_EXT: &[&str] = &[
 
 pub fn router() -> axum::Router {
     axum::Router::new().route("/upload", post(upload))
+        .layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES as usize + 64 * 1024))
+}
+
+pub async fn is_uploaded_media(path: &str) -> bool {
+    if !valid_upload_path(path) {
+        return false;
+    }
+    let Ok(resolved) = tokio::fs::canonicalize(path).await else {
+        return false;
+    };
+    let Ok(cwd) = std::env::current_dir() else {
+        return false;
+    };
+    let Ok(root) = tokio::fs::canonicalize(cwd).await else {
+        return false;
+    };
+    resolved.parent() == Some(root.join("uploads").as_path())
+        && tokio::fs::metadata(resolved).await.is_ok_and(|entry| entry.is_file() && entry.len() > 0)
+}
+
+fn valid_upload_path(path: &str) -> bool {
+    let Some(name) = path.strip_prefix("uploads/") else {
+        return false;
+    };
+    let Some((id, _)) = name.rsplit_once('.') else {
+        return false;
+    };
+    uuid::Uuid::parse_str(id).is_ok_and(|parsed| parsed.hyphenated().to_string() == id)
+        && safe_ext(name).is_some()
 }
 
 fn safe_ext(name: &str) -> Option<String> {
@@ -44,18 +73,19 @@ async fn upload(mut multipart: Multipart) -> Json<Value> {
             let rel = format!("uploads/{id}.{ext}");
             let mut out = tokio::fs::File::create(&rel).await.ok()?;
             let mut written: u64 = 0;
-            let mut stream_ok = true;
-            while let Ok(Some(chunk)) = field.chunk().await {
-                written += chunk.len() as u64;
-                if written > MAX_UPLOAD_BYTES {
-                    stream_ok = false;
-                    break;
+            let stream_ok = loop {
+                match field.chunk().await {
+                    Ok(Some(chunk)) => {
+                        written += chunk.len() as u64;
+                        if written > MAX_UPLOAD_BYTES || out.write_all(&chunk).await.is_err() {
+                            break false;
+                        }
+                    }
+                    Ok(None) => break written > 0,
+                    Err(_) => break false,
                 }
-                if out.write_all(&chunk).await.is_err() {
-                    stream_ok = false;
-                    break;
-                }
-            }
+            };
+            drop(out);
             if !stream_ok {
                 let _ = tokio::fs::remove_file(&rel).await;
                 return None;
@@ -85,5 +115,14 @@ mod tests {
         // traversal stays inside uploads/: only the extension is reused,
         // the stored name is always a fresh uuid.
         assert_eq!(safe_ext("../../etc/passwd.mp4"), Some("mp4".to_string()));
+    }
+
+    #[test]
+    fn accepts_only_generated_upload_paths() {
+        let name = "4717c58a-d756-4b02-a754-7d9ad56c7706.mp4";
+        assert!(valid_upload_path(&format!("uploads/{name}")));
+        assert!(!valid_upload_path(&format!("uploads/../{name}")));
+        assert!(!valid_upload_path(&format!("C:/uploads/{name}")));
+        assert!(!valid_upload_path("uploads/other.mp4"));
     }
 }

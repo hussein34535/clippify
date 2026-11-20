@@ -12,6 +12,7 @@ class _FakeLiteApi implements AutoEditApi {
   final controller = StreamController<AutoEditEvent>.broadcast();
   int startCalls = 0;
   String? seenVideoPath;
+  AutoEditAnswers? seenAnswers;
   Map<String, dynamic>? statusResult;
   bool _closed = false;
 
@@ -19,6 +20,7 @@ class _FakeLiteApi implements AutoEditApi {
   Future<String?> start(String videoPath, AutoEditAnswers answers) async {
     startCalls++;
     seenVideoPath = videoPath;
+    seenAnswers = answers;
     return 'sid-lite';
   }
 
@@ -59,6 +61,64 @@ const _clipJson = {
 
 void main() {
   group('LiteRunScreen full loop (injected fakes)', () {
+    testWidgets('Android debug bridge uploads then uses Short Auto', (tester) async {
+      final api = _FakeLiteApi();
+      addTearDown(api.dispose);
+      String? uploaded;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LiteRunScreen(
+            answers: const LiteAnswers(),
+            localVideoPath: '/sdcard/Download/source.mp4',
+            onDone: (_) {},
+            bridgeBaseUrl: 'http://127.0.0.1:8768',
+            checkHealth: () async => true,
+            uploadFile: (path) async {
+              uploaded = path;
+              return 'uploads/source.mp4';
+            },
+            apiFactory: () => api,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(uploaded, '/sdcard/Download/source.mp4');
+      expect(api.seenVideoPath, 'uploads/source.mp4');
+      expect(api.seenAnswers?.mode, 'short_auto');
+    });
+
+    testWidgets('Windows workflow sends short mode with no upload', (tester) async {
+      final api = _FakeLiteApi();
+      addTearDown(api.dispose);
+      var uploads = 0;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: LiteRunScreen(
+              answers: const LiteAnswers(),
+              localVideoPath: 'source.mp4',
+              onDone: (_) {},
+              checkHealth: () async => true,
+              startLocalEngine: () async => 'http://127.0.0.1:8594',
+              uploadFile: (_) async {
+                uploads++;
+                return null;
+              },
+              apiFactory: () => api,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(uploads, 0);
+      expect(api.seenVideoPath, endsWith('source.mp4'));
+      expect(api.seenAnswers?.mode, 'short_auto');
+      expect(api.seenAnswers?.nClips, 1);
+    });
+
     testWidgets('health → upload → start → progress → onDone',
         (tester) async {
       final api = _FakeLiteApi();
@@ -79,13 +139,13 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
       // الرفع تم بمسار الهاتف، والبدء تم بمسار السيرفر.
       expect(api.startCalls, 1);
       expect(api.seenVideoPath, 'uploads/x.mp4');
-      // انتقلنا لشاشة التقدم المعاد استخدامها.
-      expect(find.textContaining(''), findsWidgets);
+      expect(find.text('بنجهّز الريل'), findsOneWidget);
 
       api.controller.add(const AutoEditEvent(
           type: 'progress', progress: 0.5, messageAr: 'شغال'));
@@ -169,7 +229,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       expect(api.startCalls, 1);
 
       // البث يُغلق بلا حدث done (الحالة العالقة عند 100%) — الاستكمال

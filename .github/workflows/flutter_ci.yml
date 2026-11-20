@@ -38,6 +38,10 @@ jobs:
       - name: pub get
         run: flutter pub get
 
+      - name: Prepare non-secret app configuration
+        shell: pwsh
+        run: Copy-Item -LiteralPath assets/.env.example -Destination assets/.env
+
       - name: Analyze
         run: flutter analyze
 
