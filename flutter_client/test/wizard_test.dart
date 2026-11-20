@@ -29,12 +29,29 @@ class FakeAutoEditApi implements AutoEditApi {
   Stream<AutoEditEvent> subscribeProgress(String sessionId) =>
       controller.stream;
 
+  Map<String, dynamic>? statusResult;
+  int statusCalls = 0;
+
   @override
-  Future<Map<String, dynamic>?> status(String sessionId) async => null;
+  Future<Map<String, dynamic>?> status(String sessionId) async {
+    statusCalls++;
+    return statusResult;
+  }
 
   @override
   Future<bool> cancel(String sessionId) async {
     cancelCalls++;
+    return true;
+  }
+
+  List<AutoEditQuestionAnswer>? submittedAnswers;
+
+  @override
+  Future<bool> answerQuestions(
+    String sessionId,
+    List<AutoEditQuestionAnswer> answers,
+  ) async {
+    submittedAnswers = answers;
     return true;
   }
 
@@ -269,6 +286,86 @@ void main() {
       expect(find.byType(AutoEditResultsScreen), findsOneWidget);
       expect(find.textContaining('هوك أول'), findsWidgets);
 
+      await _unmount(tester);
+    });
+
+    testWidgets('questions event shows the optional director choices',
+        (tester) async {
+      final api = FakeAutoEditApi();
+      await _pushProgress(tester, api,
+          sessionId: 'sid-q', answers: const AutoEditAnswers());
+
+      api.controller.add(const AutoEditEvent(
+        type: 'questions',
+        stage: 'selecting',
+        progress: 64,
+        questions: [
+          AutoEditQuestion(
+            id: 'q1',
+            question: 'لمين الفيديو؟',
+            options: [
+              AutoEditQuestionOption(id: 'a', label: 'جمهور عام'),
+              AutoEditQuestionOption(id: 'b', label: 'متابعيني'),
+            ],
+            recommended: 'b',
+          ),
+        ],
+      ));
+      await tester.idle();
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('director_questions')), findsOneWidget);
+      expect(find.text('لمين الفيديو؟'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('ابدأ المونتاج'));
+      await tester.tap(find.text('ابدأ المونتاج'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(api.submittedAnswers, hasLength(1));
+      expect(api.submittedAnswers!.first.optionId, 'b');
+      expect(find.byKey(const ValueKey('director_questions')), findsNothing);
+
+      await _unmount(tester);
+    });
+
+    testWidgets('status recovery restores an unanswered director question',
+        (tester) async {
+      final api = FakeAutoEditApi()
+        ..statusResult = {
+          'status': 'awaiting_answers',
+          'events': [
+            {
+              'type': 'questions',
+              'stage': 'selecting',
+              'progress': 64,
+              'questions': [
+                {
+                  'id': 'q1',
+                  'question': 'لمين الفيديو؟',
+                  'options': [
+                    {'id': 'a', 'label': 'جمهور عام'},
+                    {'id': 'b', 'label': 'متابعيني'},
+                  ],
+                  'recommended': 'b',
+                },
+              ],
+            },
+          ],
+        };
+      await _pushProgress(tester, api, sessionId: 'sid-recover');
+
+      // Simulate a reconnect after the question was broadcast but before it
+      // reached this client.
+      final recovery =
+          (tester.state(find.byType(AutoEditProgressScreen)) as dynamic)
+              .recoverForTest() as Future<void>;
+      await tester.pump();
+      await recovery;
+      await tester.pump();
+
+      expect(find.text('لمين الفيديو؟'), findsOneWidget);
+      expect(api.statusCalls, 1);
       await _unmount(tester);
     });
 

@@ -105,6 +105,12 @@ try {
     });
     const health = await request('/api/health');
     assert.equal((await health.json()).engine, 'rust');
+    const unknownQuestions = await request('/api/auto-edit/questions/smoke-unknown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: [] }),
+    });
+    assert.equal(unknownQuestions.status, 404, 'questions need a live session');
     const response = await request('/api/auto-edit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

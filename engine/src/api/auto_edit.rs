@@ -7,6 +7,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use tokio::sync::oneshot;
+
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -25,11 +27,11 @@ use crate::director;
 use crate::llm::LlmBridge;
 use crate::media::MediaEngine;
 use crate::render::RenderPipeline;
-use crate::{short_ai_director, short_edit, short_render};
-use crate::short_plan::{self, Treatment, ZoomPolicy};
 use crate::short_creative::{self, Style};
+use crate::short_plan::{self, Treatment, ZoomPolicy};
 use crate::transcribe::Transcriber;
 use crate::types::{ClipSpec, RenderRequest};
+use crate::{short_ai_director, short_edit, short_render};
 
 const APPROVAL_THRESHOLD: f64 = 0.6;
 const WS_POLL_MS: u64 = 500;
@@ -44,6 +46,8 @@ pub struct AutoEditState {
     mobile_upload: bool,
     short_provider: Option<Arc<short_edit::ShortProvider>>,
     short_tasks: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+    question_answers: Arc<Mutex<HashMap<String, oneshot::Sender<Vec<short_ai_director::Answer>>>>>,
+    pending_questions: Arc<Mutex<HashMap<String, Vec<short_ai_director::Question>>>>,
 }
 
 impl AutoEditState {
@@ -54,10 +58,15 @@ impl AutoEditState {
             mobile_upload: false,
             short_provider: None,
             short_tasks: Arc::new(Mutex::new(HashMap::new())),
+            question_answers: Arc::new(Mutex::new(HashMap::new())),
+            pending_questions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub fn local_short(short_provider: Option<short_edit::ShortProvider>, mobile_upload: bool) -> Self {
+    pub fn local_short(
+        short_provider: Option<short_edit::ShortProvider>,
+        mobile_upload: bool,
+    ) -> Self {
         Self {
             local_short: true,
             mobile_upload,
@@ -107,6 +116,8 @@ pub struct ProgressEvent {
     pub message_ar: String,
     #[serde(rename = "message_en")]
     pub message_en: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub questions: Option<Vec<short_ai_director::Question>>,
 }
 
 /// Map Rust pipeline stage names → Flutter-expected stage names
@@ -163,6 +174,7 @@ pub struct Answers {
     pub creative_title: Option<String>,
     pub creative_music: Option<bool>,
     pub creative_effects: Option<bool>,
+    pub question_answers: Vec<short_ai_director::Answer>,
     pub short_director: ShortDirector,
     pub language: Option<String>,
 }
@@ -179,6 +191,7 @@ pub enum ShortDirector {
 pub fn router(state: AutoEditState) -> Router {
     let mut routes = Router::new()
         .route("/auto-edit", post(post_auto_edit))
+        .route("/auto-edit/questions/:session_id", post(answer_questions))
         .route("/auto-edit/status/:session_id", get(get_status))
         .route("/ws/progress/:session_id", get(ws_progress));
     if state.local_short {
@@ -250,7 +263,9 @@ async fn post_auto_edit(
         tokio::spawn(async move {
             let _ = handle.await;
             if let Some(path) = upload.filter(|_| {
-                cleanup_state.get(&cleanup_id).is_some_and(|session| session.status == "done")
+                cleanup_state
+                    .get(&cleanup_id)
+                    .is_some_and(|session| session.status == "done")
             }) {
                 let _ = tokio::fs::remove_file(path).await;
             }
@@ -273,18 +288,35 @@ async fn cancel_short(
     State(state): State<AutoEditState>,
     Path(session_id): Path<String>,
 ) -> Response {
-    let task = state.short_tasks.lock().ok().and_then(|tasks| tasks.get(&session_id).cloned());
+    let task = state
+        .short_tasks
+        .lock()
+        .ok()
+        .and_then(|tasks| tasks.get(&session_id).cloned());
     if let Some(task) = task {
         state.update(&session_id, |session| {
-            if session.status == "queued" || session.status == "running" {
+            if session.status == "queued"
+                || session.status == "running"
+                || session.status == "awaiting_answers"
+            {
                 session.status = "error".into();
                 session.stage = "error".into();
                 session.error = Some("تم إلغاء المونتاج.".into());
                 task.abort();
             }
         });
+        if let Ok(mut pending) = state.pending_questions.lock() {
+            pending.remove(&session_id);
+        }
+        if let Ok(mut senders) = state.question_answers.lock() {
+            senders.remove(&session_id);
+        }
     } else if state.get(&session_id).is_none() {
-        return (StatusCode::NOT_FOUND, Json(json!({"error": "unknown session"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "unknown session"})),
+        )
+            .into_response();
     }
     Json(json!({"status": "ok"})).into_response()
 }
@@ -325,12 +357,16 @@ async fn progress_socket(mut socket: WebSocket, session_id: String, state: AutoE
         }
         let Some(session) = state.get(&session_id) else {
             let _ = socket
-                .send(Message::Text(json!({"error": "unknown session"}).to_string()))
+                .send(Message::Text(
+                    json!({"error": "unknown session"}).to_string(),
+                ))
                 .await;
             return;
         };
         for ev in session.events.iter().skip(sent) {
-            let Ok(text) = serde_json::to_string(ev) else { return };
+            let Ok(text) = serde_json::to_string(ev) else {
+                return;
+            };
             if socket.send(Message::Text(text)).await.is_err() {
                 return;
             }
@@ -379,9 +415,10 @@ fn report(state: &AutoEditState, session_id: &str, stage: &str, progress: f32, m
         event_type: "progress".to_string(),
         message_ar: message.to_string(),
         message_en: message.to_string(),
+        questions: None,
     };
     state.update(session_id, |s| {
-        if s.status == "error" {
+        if s.status == "error" || s.status == "awaiting_answers" {
             return;
         }
         s.status = "running".to_string();
@@ -389,6 +426,88 @@ fn report(state: &AutoEditState, session_id: &str, stage: &str, progress: f32, m
         s.progress = progress;
         s.events.push(ev);
     });
+}
+
+#[derive(Deserialize)]
+struct QuestionAnswerRequest {
+    #[serde(default)]
+    answers: Vec<short_ai_director::Answer>,
+}
+
+async fn answer_questions(
+    State(state): State<AutoEditState>,
+    Path(session_id): Path<String>,
+    Json(request): Json<QuestionAnswerRequest>,
+) -> Response {
+    let Some(session) = state.get(&session_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error":"unknown session"})),
+        )
+            .into_response();
+    };
+    if session.status != "awaiting_answers" {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error":"session is not awaiting answers"})),
+        )
+            .into_response();
+    }
+    let questions = state
+        .pending_questions
+        .lock()
+        .ok()
+        .and_then(|questions| questions.get(&session_id).cloned());
+    let Some(questions) = questions else {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error":"questions expired"})),
+        )
+            .into_response();
+    };
+    let mut sanitized = Vec::new();
+    for answer in request.answers {
+        let Some(question) = questions
+            .iter()
+            .find(|question| question.id == answer.question_id)
+        else {
+            continue;
+        };
+        if question
+            .options
+            .iter()
+            .any(|option| option.id == answer.option_id)
+        {
+            sanitized.push(answer);
+        }
+    }
+    let sender = state
+        .question_answers
+        .lock()
+        .ok()
+        .and_then(|mut senders| senders.remove(&session_id));
+    if let Some(sender) = sender {
+        if sender.send(sanitized).is_err() {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({"error":"session no longer accepts answers"})),
+            )
+                .into_response();
+        }
+        state.update(&session_id, |session| {
+            if session.status == "awaiting_answers" {
+                session.status = "running".into();
+                session.stage = "selecting".into();
+            }
+        });
+        Json(json!({"status":"ok"})).into_response()
+    } else {
+        (
+            StatusCode::CONFLICT,
+            Json(json!({"error":"session no longer accepts answers"})),
+        )
+            .into_response()
+    }
 }
 
 fn fail(state: &AutoEditState, session_id: &str, err: String) {
@@ -438,7 +557,11 @@ async fn run_short_pipeline(state: &AutoEditState, session_id: &str, req: &AutoE
     let duration = match media.probe_duration(&req.video_path).await {
         Ok(value) if value.is_finite() && value > 0.0 && value <= 900.0 => value,
         _ => {
-            fail(state, session_id, "اختار فيديو صالح مدته 15 دقيقة أو أقل.".into());
+            fail(
+                state,
+                session_id,
+                "اختار فيديو صالح مدته 15 دقيقة أو أقل.".into(),
+            );
             return;
         }
     };
@@ -448,24 +571,97 @@ async fn run_short_pipeline(state: &AutoEditState, session_id: &str, req: &AutoE
     let (transcript, silences) = tokio::join!(
         transcriber.transcribe_short(&media, &req.video_path),
         async {
-            if ai_only { Ok(Vec::new()) } else {
+            if ai_only {
+                Ok(Vec::new())
+            } else {
                 media.detect_silences(&req.video_path, -35.0, 0.6).await
             }
         },
     );
-    let transcript_available = transcript.as_ref().is_ok_and(|segments| !segments.is_empty());
+    let transcript_available = transcript
+        .as_ref()
+        .is_ok_and(|segments| !segments.is_empty());
     let transcript = transcript.unwrap_or_default();
     let silences = silences.unwrap_or_default();
-    let target = req.answers.clip_duration_sec.filter(|value| value.is_finite()).unwrap_or(45.0);
-    let brief: String = req.answers.edit_brief.as_deref().unwrap_or("").chars().take(500).collect();
+    let target = req
+        .answers
+        .clip_duration_sec
+        .filter(|value| value.is_finite())
+        .unwrap_or(45.0);
+    let brief: String = req
+        .answers
+        .edit_brief
+        .as_deref()
+        .unwrap_or("")
+        .chars()
+        .take(500)
+        .collect();
     let zoom_policy = req.answers.zoom_policy.unwrap_or_default();
     let platform = req.answers.platform.as_deref().unwrap_or("tiktok");
     if ai_only {
         let provider = state.short_provider.as_deref().unwrap();
-        report(state, session_id, "direct", 58.0, "المخرج الذكي بيفهم المشهد وبيحدد الهدف وخطة المونتاج");
-        let plan = short_ai_director::direct(provider, &media, short_ai_director::Input {
-            video: &req.video_path, transcript: &transcript, duration, target, platform, brief: &brief, zoom_policy,
-        }).await;
+        report(
+            state,
+            session_id,
+            "direct",
+            58.0,
+            "المخرج الذكي بيفهم المشهد وبيحدد الهدف وخطة المونتاج",
+        );
+        let initial = short_ai_director::direct(
+            provider,
+            &media,
+            short_ai_director::Input {
+                video: &req.video_path,
+                transcript: &transcript,
+                duration,
+                target,
+                platform,
+                brief: &brief,
+                zoom_policy,
+                questions: &[],
+                answers: &req.answers.question_answers,
+            },
+        )
+        .await;
+        let asked = match &initial {
+            Ok(plan) if req.answers.question_answers.is_empty() && !plan.questions.is_empty() => {
+                Some(plan.questions.clone())
+            }
+            _ => None,
+        };
+        let plan = if let Some(questions) = asked {
+            report(state, session_id, "direct", 64.0, "بنفهم أكتر قبل المونتاج");
+            let answered = ask_questions(state, session_id, &questions).await;
+            if answered.is_empty() {
+                initial
+            } else {
+                report(
+                    state,
+                    session_id,
+                    "direct",
+                    70.0,
+                    "بنظبط المونتاج على إجاباتك",
+                );
+                short_ai_director::direct(
+                    provider,
+                    &media,
+                    short_ai_director::Input {
+                        video: &req.video_path,
+                        transcript: &transcript,
+                        duration,
+                        target,
+                        platform,
+                        brief: &brief,
+                        zoom_policy,
+                        questions: &questions,
+                        answers: &answered,
+                    },
+                )
+                .await
+            }
+        } else {
+            initial
+        };
         let plan = match plan {
             Ok(plan) => plan,
             Err(problem) => {
@@ -474,44 +670,47 @@ async fn run_short_pipeline(state: &AutoEditState, session_id: &str, req: &AutoE
                 return;
             }
         };
-        let description = json!({
-            "understanding": plan.understanding,
-            "purpose": plan.purpose,
-            "strategy": plan.strategy,
-            "evidence_frames": plan.evidence_frames
-        });
-        let mut treatment = plan.treatment;
-        let effects = req.answers.creative_effects != Some(false)
-            && (treatment.sound != short_plan::Accent::Off || !plan.design.sound_cues.is_empty());
-        if !effects {
-            treatment.sound = short_plan::Accent::Off;
-        }
-        let hook = plan.title.clone();
-        let design = short_creative::Options {
-            style: plan.style,
-            title: plan.title,
-            music: plan.music && req.answers.creative_music != Some(false),
-            effects,
+        render_short_plan(
+            state,
+            session_id,
+            req,
+            &media,
+            &transcript,
+            provider,
+            plan,
             brief,
-            focus_source_sec: None,
-            directed: Some(plan.design),
-        };
-        render_short_result(state, session_id, req, &media, &transcript, ShortRenderPlan {
-            ranges: plan.ranges, treatment, design, hook, source: provider.name(),
-            provider_status: "applied", description: Some(description),
-        }).await;
+        )
+        .await;
         return;
     }
 
     let options = short_edit::candidates(&transcript, &silences, duration, target);
-    report(state, session_id, "direct", 62.0, "بنختار المقطع ونجهّز الألوان والمؤثرات");
+    report(
+        state,
+        session_id,
+        "direct",
+        62.0,
+        "بنختار المقطع ونجهّز الألوان والمؤثرات",
+    );
     let creative_style = req.answers.creative_style.unwrap_or_default();
-    let provider = state.short_provider.as_deref().filter(|_| req.answers.short_director != ShortDirector::Local);
+    let provider = state
+        .short_provider
+        .as_deref()
+        .filter(|_| req.answers.short_director != ShortDirector::Local);
     let direction = match provider {
-        Some(provider) => short_edit::direct_with_provider(
-            provider, &options, &brief, platform, zoom_policy, creative_style,
-            &media, &req.video_path,
-        ).await,
+        Some(provider) => {
+            short_edit::direct_with_provider(
+                provider,
+                &options,
+                &brief,
+                platform,
+                zoom_policy,
+                creative_style,
+                &media,
+                &req.video_path,
+            )
+            .await
+        }
         None => None,
     };
     let chosen = &options[direction.as_ref().map_or(0, |plan| plan.candidate_id)];
@@ -541,28 +740,162 @@ async fn run_short_pipeline(state: &AutoEditState, session_id: &str, req: &AutoE
     let mut start = chosen.start;
     if start < 4.0 && chosen.end - start >= 5.0 && treatment.trim_pauses {
         let visually_ready = short_edit::usable_opening(&media, &req.video_path).await;
-        let first_speech = transcript.iter().find(|segment| segment.end > start)
+        let first_speech = transcript
+            .iter()
+            .find(|segment| segment.end > start)
             .map_or(chosen.end, |segment| segment.start - 0.18);
         // Missing pictures can be cut only up to the first usable dialogue.
         if visually_ready <= first_speech && visually_ready <= chosen.end - 3.0 {
             start = start.max(visually_ready);
         }
     }
-    let ranges = short_plan::keep_ranges(start, chosen.end, &silences, &transcript, &treatment, &brief);
+    let ranges = short_plan::keep_ranges(
+        start,
+        chosen.end,
+        &silences,
+        &transcript,
+        &treatment,
+        &brief,
+    );
     let design = short_creative::Options {
         style,
-        title: req.answers.creative_title.as_deref().unwrap_or("").chars().take(35).collect(),
+        title: req
+            .answers
+            .creative_title
+            .as_deref()
+            .unwrap_or("")
+            .chars()
+            .take(35)
+            .collect(),
         music: req.answers.creative_music.unwrap_or(style != Style::Clean),
-        effects: req.answers.creative_effects.unwrap_or(style != Style::Clean),
+        effects: req
+            .answers
+            .creative_effects
+            .unwrap_or(style != Style::Clean),
         brief,
         focus_source_sec,
         directed: None,
     };
-    render_short_result(state, session_id, req, &media, &transcript, ShortRenderPlan {
-        ranges, treatment, design, hook: chosen.opening.clone(),
-        source: if used_provider { provider_name.unwrap_or("ai_provider") } else if transcript_available { "local_transcript" } else { "local_audio" },
-        provider_status, description: None,
-    }).await;
+    render_short_result(
+        state,
+        session_id,
+        req,
+        &media,
+        &transcript,
+        ShortRenderPlan {
+            ranges,
+            treatment,
+            design,
+            hook: chosen.opening.clone(),
+            source: if used_provider {
+                provider_name.unwrap_or("ai_provider")
+            } else if transcript_available {
+                "local_transcript"
+            } else {
+                "local_audio"
+            },
+            provider_status,
+            description: None,
+        },
+    )
+    .await;
+}
+
+/// Publishes the director's optional questions and blocks the pipeline until
+/// the phone answers or the wait expires. Skipping (or timing out) yields an
+/// empty list and lets the original plan render unchanged.
+async fn ask_questions(
+    state: &AutoEditState,
+    session_id: &str,
+    questions: &[short_ai_director::Question],
+) -> Vec<short_ai_director::Answer> {
+    let (sender, receiver) = oneshot::channel();
+    if let Ok(mut pending) = state.pending_questions.lock() {
+        pending.insert(session_id.to_string(), questions.to_vec());
+    }
+    if let Ok(mut senders) = state.question_answers.lock() {
+        senders.insert(session_id.to_string(), sender);
+    }
+    state.update(session_id, |session| {
+        session.status = "awaiting_answers".into();
+        session.events.push(ProgressEvent {
+            ts: chrono::Utc::now().to_rfc3339(),
+            stage: "selecting".into(),
+            progress: 64.0,
+            message: "جاوب على سؤالين سريعًا أو تخطّاهم.".into(),
+            event_type: "questions".into(),
+            message_ar: "جاوب على سؤالين سريعًا أو تخطّاهم.".into(),
+            message_en: "A couple of quick questions".into(),
+            questions: Some(questions.to_vec()),
+        });
+    });
+    let answered = tokio::time::timeout(std::time::Duration::from_secs(240), receiver).await;
+    if let Ok(mut pending) = state.pending_questions.lock() {
+        pending.remove(session_id);
+    }
+    if let Ok(mut senders) = state.question_answers.lock() {
+        senders.remove(session_id);
+    }
+    state.update(session_id, |session| {
+        if session.status == "awaiting_answers" {
+            session.status = "running".into();
+        }
+    });
+    match answered {
+        Ok(Ok(answers)) => answers,
+        _ => Vec::new(),
+    }
+}
+
+async fn render_short_plan(
+    state: &AutoEditState,
+    session_id: &str,
+    req: &AutoEditRequest,
+    media: &MediaEngine,
+    transcript: &[crate::types::TranscribedSegment],
+    provider: &short_edit::ShortProvider,
+    plan: short_ai_director::EditPlan,
+    brief: String,
+) {
+    let description = json!({
+        "understanding": plan.understanding,
+        "purpose": plan.purpose,
+        "strategy": plan.strategy,
+        "evidence_frames": plan.evidence_frames
+    });
+    let mut treatment = plan.treatment;
+    let effects = req.answers.creative_effects != Some(false)
+        && (treatment.sound != short_plan::Accent::Off || !plan.design.sound_cues.is_empty());
+    if !effects {
+        treatment.sound = short_plan::Accent::Off;
+    }
+    let hook = plan.title.clone();
+    let design = short_creative::Options {
+        style: plan.style,
+        title: plan.title,
+        music: plan.music && req.answers.creative_music != Some(false),
+        effects,
+        brief,
+        focus_source_sec: None,
+        directed: Some(plan.design),
+    };
+    render_short_result(
+        state,
+        session_id,
+        req,
+        media,
+        transcript,
+        ShortRenderPlan {
+            ranges: plan.ranges,
+            treatment,
+            design,
+            hook,
+            source: provider.name(),
+            provider_status: "applied",
+            description: Some(description),
+        },
+    )
+    .await;
 }
 
 struct ShortRenderPlan {
@@ -583,10 +916,22 @@ async fn render_short_result(
     transcript: &[crate::types::TranscribedSegment],
     plan: ShortRenderPlan,
 ) {
-    let ShortRenderPlan { ranges, treatment, design, hook, source, provider_status, description } = plan;
+    let ShortRenderPlan {
+        ranges,
+        treatment,
+        design,
+        hook,
+        source,
+        provider_status,
+        description,
+    } = plan;
     let start = ranges[0].0;
     let end = ranges.last().unwrap().1;
-    let has_visual_focus = design.focus_source_sec.is_some() || design.directed.as_ref().is_some_and(|design| !design.focus_source_secs.is_empty());
+    let has_visual_focus = design.focus_source_sec.is_some()
+        || design
+            .directed
+            .as_ref()
+            .is_some_and(|design| !design.focus_source_secs.is_empty());
     let render_request = RenderRequest {
         video_path: req.video_path.clone(),
         output_dir: format!("output/{session_id}"),
@@ -603,34 +948,51 @@ async fn render_short_result(
         fps: 30,
     };
     report(state, session_id, "render", 78.0, "بنجهز النسخة العمودية");
-    match short_render::render_short(media, &render_request, transcript, &treatment, &ranges, &design).await {
-        Ok(rendered) => finish(state, session_id, json!({
-            "source": source,
-            "provider_status": provider_status,
-            "transcript_available": !transcript.is_empty(),
-            "edit_plan": treatment,
-            "source_ranges": ranges,
-            "creative": {
-                "style": rendered.creative.style,
-                "title": rendered.creative.title,
-                "accent_times": rendered.creative.beats,
-                "original_music": rendered.creative.music,
-                "designed_effects": rendered.creative.effects,
-                "slow_motion": rendered.creative.slow_motion,
-                "visual_provider_focus": has_visual_focus
-            },
-            "cuts": ranges.len().saturating_sub(1),
-            "clips": [{
-                "index": 0, "file_url": rendered.path, "duration_sec": rendered.duration_sec,
-                "hook_text": hook,
-                "has_captions": rendered.has_captions,
-                "start_sec": start, "end_sec": end,
-                "director": description
-            }]
-        })),
+    match short_render::render_short(
+        media,
+        &render_request,
+        transcript,
+        &treatment,
+        &ranges,
+        &design,
+    )
+    .await
+    {
+        Ok(rendered) => finish(
+            state,
+            session_id,
+            json!({
+                "source": source,
+                "provider_status": provider_status,
+                "transcript_available": !transcript.is_empty(),
+                "edit_plan": treatment,
+                "source_ranges": ranges,
+                "creative": {
+                    "style": rendered.creative.style,
+                    "title": rendered.creative.title,
+                    "accent_times": rendered.creative.beats,
+                    "original_music": rendered.creative.music,
+                    "designed_effects": rendered.creative.effects,
+                    "slow_motion": rendered.creative.slow_motion,
+                    "visual_provider_focus": has_visual_focus
+                },
+                "cuts": ranges.len().saturating_sub(1),
+                "clips": [{
+                    "index": 0, "file_url": rendered.path, "duration_sec": rendered.duration_sec,
+                    "hook_text": hook,
+                    "has_captions": rendered.has_captions,
+                    "start_sec": start, "end_sec": end,
+                    "director": description
+                }]
+            }),
+        ),
         Err(err) => {
             eprintln!("[short-render] {err:#}");
-            fail(state, session_id, "تعذّر تصدير الفيديو. تأكد من صيغة الملف ومساحة التخزين.".into());
+            fail(
+                state,
+                session_id,
+                "تعذّر تصدير الفيديو. تأكد من صيغة الملف ومساحة التخزين.".into(),
+            );
         }
     }
 }
@@ -664,7 +1026,11 @@ async fn run_pipeline(state: AutoEditState, session_id: String, req: AutoEditReq
     // 1) probe duration
     report(&state, &session_id, "probe", 5.0, "probing duration");
     let Ok(duration) = media.probe_duration(&req.video_path).await else {
-        fail(&state, &session_id, "ffmpeg could not probe video duration".into());
+        fail(
+            &state,
+            &session_id,
+            "ffmpeg could not probe video duration".into(),
+        );
         return;
     };
 
@@ -677,7 +1043,13 @@ async fn run_pipeline(state: AutoEditState, session_id: String, req: AutoEditReq
     let speech = speech_segments(&silences);
 
     // 3) transcribe (best-effort)
-    report(&state, &session_id, "transcribe", 40.0, "building transcript");
+    report(
+        &state,
+        &session_id,
+        "transcribe",
+        40.0,
+        "building transcript",
+    );
     let transcriber = Transcriber::new();
     let summary = if transcriber.is_available() {
         match transcriber.transcribe(&req.video_path).await {
@@ -754,10 +1126,21 @@ async fn run_pipeline(state: AutoEditState, session_id: String, req: AutoEditReq
     };
     let pipeline = RenderPipeline::new();
     let rendered = match pipeline.render(&render_req).await {
-        Ok(paths) if !paths.is_empty() && paths.len() == render_req.clips.len()
-            && paths.iter().all(|path| std::fs::metadata(path).is_ok_and(|entry| entry.is_file() && entry.len() > 0)) => paths,
+        Ok(paths)
+            if !paths.is_empty()
+                && paths.len() == render_req.clips.len()
+                && paths.iter().all(|path| {
+                    std::fs::metadata(path).is_ok_and(|entry| entry.is_file() && entry.len() > 0)
+                }) =>
+        {
+            paths
+        }
         _ => {
-            fail(&state, &session_id, "Could not render the requested clips".into());
+            fail(
+                &state,
+                &session_id,
+                "Could not render the requested clips".into(),
+            );
             return;
         }
     };
@@ -768,11 +1151,16 @@ async fn run_pipeline(state: AutoEditState, session_id: String, req: AutoEditReq
         pipeline.compile(&rendered, &path).await.ok()
     };
 
-    let clips = plan.clips.iter().zip(&rendered).map(|(clip, path)| {
-        let mut result = json!(clip);
-        result["file_url"] = json!(path);
-        result
-    }).collect::<Vec<_>>();
+    let clips = plan
+        .clips
+        .iter()
+        .zip(&rendered)
+        .map(|(clip, path)| {
+            let mut result = json!(clip);
+            result["file_url"] = json!(path);
+            result
+        })
+        .collect::<Vec<_>>();
     let result = json!({
         "video_duration_sec": duration,
         "source": source,
@@ -787,4 +1175,125 @@ async fn run_pipeline(state: AutoEditState, session_id: String, req: AutoEditReq
         "compiled": compiled,
     });
     finish(&state, &session_id, result);
+}
+
+#[cfg(test)]
+mod question_tests {
+    use super::*;
+    use axum::{body::to_bytes, http::StatusCode};
+
+    fn question() -> short_ai_director::Question {
+        short_ai_director::Question {
+            id: "q1".into(),
+            question: "لمين الفيديو؟".into(),
+            options: vec![
+                short_ai_director::QuestionOption {
+                    id: "a".into(),
+                    label: "جمهور عام".into(),
+                },
+                short_ai_director::QuestionOption {
+                    id: "b".into(),
+                    label: "متابعيني".into(),
+                },
+            ],
+            recommended: Some("b".into()),
+        }
+    }
+
+    fn session(state: &AutoEditState, status: &str) {
+        state.insert(SessionState {
+            session_id: "sid-test".into(),
+            status: status.into(),
+            stage: "selecting".into(),
+            progress: 64.0,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            events: vec![ProgressEvent {
+                ts: chrono::Utc::now().to_rfc3339(),
+                stage: "selecting".into(),
+                progress: 64.0,
+                message: "questions".into(),
+                event_type: "questions".into(),
+                message_ar: "questions".into(),
+                message_en: "questions".into(),
+                questions: Some(vec![question()]),
+            }],
+            result: None,
+            error: None,
+        });
+    }
+
+    async fn send(state: AutoEditState, body: Value) -> (StatusCode, Value) {
+        let response = answer_questions(
+            State(state),
+            Path("sid-test".to_string()),
+            Json(serde_json::from_value(body).unwrap()),
+        )
+        .await;
+        let (parts, body) = response.into_parts();
+        let bytes = to_bytes(body, usize::MAX).await.unwrap();
+        let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        (parts.status, value)
+    }
+
+    #[tokio::test]
+    async fn rejects_answer_request_when_not_awaiting() {
+        let state = AutoEditState::new();
+        session(&state, "running");
+        let (status, _) = send(state, json!({"answers":[]})).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn only_accepts_known_question_options_and_resumes_on_answer() {
+        let state = AutoEditState::new();
+        session(&state, "awaiting_answers");
+        state
+            .pending_questions
+            .lock()
+            .unwrap()
+            .insert("sid-test".into(), vec![question()]);
+        let (sender, receiver) = oneshot::channel();
+        state
+            .question_answers
+            .lock()
+            .unwrap()
+            .insert("sid-test".into(), sender);
+        let answers = json!({"answers":[
+            {"question_id":"q1","option_id":"b"},
+            {"question_id":"q1","option_id":"not-an-option"},
+            {"question_id":"unknown","option_id":"a"}
+        ]});
+        let (status, _) = send(state.clone(), answers).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            receiver.await.unwrap(),
+            vec![short_ai_director::Answer {
+                question_id: "q1".into(),
+                option_id: "b".into()
+            }]
+        );
+        assert_eq!(state.get("sid-test").unwrap().status, "running");
+        let (status, _) = send(state, json!({"answers":[]})).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn allows_an_empty_answer_list_to_skip_all_questions() {
+        let state = AutoEditState::new();
+        session(&state, "awaiting_answers");
+        state
+            .pending_questions
+            .lock()
+            .unwrap()
+            .insert("sid-test".into(), vec![question()]);
+        let (sender, receiver) = oneshot::channel();
+        state
+            .question_answers
+            .lock()
+            .unwrap()
+            .insert("sid-test".into(), sender);
+        let (status, _) = send(state, json!({"answers":[]})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(receiver.await.unwrap().is_empty());
+    }
 }

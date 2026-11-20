@@ -70,13 +70,70 @@ class AutoEditAnswers {
       };
 }
 
+class AutoEditQuestionOption {
+  final String id;
+  final String label;
+
+  const AutoEditQuestionOption({required this.id, required this.label});
+
+  factory AutoEditQuestionOption.fromJson(Map<String, dynamic> json) =>
+      AutoEditQuestionOption(
+        id: (json['id'] ?? '').toString(),
+        label: (json['label'] ?? '').toString(),
+      );
+}
+
+class AutoEditQuestionAnswer {
+  final String questionId;
+  final String optionId;
+
+  const AutoEditQuestionAnswer({
+    required this.questionId,
+    required this.optionId,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'question_id': questionId,
+    'option_id': optionId,
+  };
+}
+
+class AutoEditQuestion {
+  final String id;
+  final String question;
+  final List<AutoEditQuestionOption> options;
+  final String? recommended;
+
+  const AutoEditQuestion({
+    required this.id,
+    required this.question,
+    required this.options,
+    this.recommended,
+  });
+
+  factory AutoEditQuestion.fromJson(Map<String, dynamic> json) =>
+      AutoEditQuestion(
+        id: (json['id'] ?? '').toString(),
+        question: (json['question'] ?? '').toString(),
+        options: (json['options'] as List? ?? const [])
+            .whereType<Map>()
+            .map(
+              (option) =>
+                  AutoEditQuestionOption.fromJson(option.cast<String, dynamic>()),
+            )
+            .toList(),
+        recommended: json['recommended']?.toString(),
+      );
+}
+
 class AutoEditEvent {
-  final String type; // progress | done | error
+  final String type; // progress | questions | done | error
   final String stage;
   final double progress;
   final String messageAr;
   final String messageEn;
   final List<dynamic>? clipsJson;
+  final List<AutoEditQuestion>? questions;
 
   const AutoEditEvent({
     this.type = 'progress',
@@ -85,6 +142,7 @@ class AutoEditEvent {
     this.messageAr = '',
     this.messageEn = '',
     this.clipsJson,
+    this.questions,
   });
 }
 
@@ -245,6 +303,21 @@ class AutoEditApi {
           messageAr: (map['message_ar'] ?? detail).toString(),
           messageEn: (map['message_en'] ?? detail).toString(),
         );
+      case 'questions':
+        return AutoEditEvent(
+          type: 'questions',
+          stage: (map['stage'] ?? 'selecting').toString(),
+          progress: ((map['progress'] ?? 64) as num).toDouble(),
+          messageAr: (map['message_ar'] ?? '').toString(),
+          messageEn: (map['message_en'] ?? '').toString(),
+          questions: (map['questions'] as List? ?? const [])
+              .whereType<Map>()
+              .map(
+                (question) =>
+                    AutoEditQuestion.fromJson(question.cast<String, dynamic>()),
+              )
+              .toList(),
+        );
       default:
         return AutoEditEvent(
           type: (map['type'] ?? 'progress').toString(),
@@ -253,6 +326,22 @@ class AutoEditApi {
           messageAr: (map['message_ar'] ?? '').toString(),
           messageEn: (map['message_en'] ?? '').toString(),
         );
+    }
+  }
+
+  Future<bool> answerQuestions(
+    String sessionId,
+    List<AutoEditQuestionAnswer> answers,
+  ) async {
+    try {
+      await _dio.post(
+        '/api/auto-edit/questions/$sessionId',
+        data: {'answers': answers.map((answer) => answer.toJson()).toList()},
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[AutoEditApi] submit questions failed: $e');
+      return false;
     }
   }
 

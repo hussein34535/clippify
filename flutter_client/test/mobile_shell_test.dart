@@ -48,6 +48,17 @@ class FakeAutoEditApi implements AutoEditApi {
     return true;
   }
 
+  List<AutoEditQuestionAnswer>? submittedAnswers;
+
+  @override
+  Future<bool> answerQuestions(
+    String sessionId,
+    List<AutoEditQuestionAnswer> answers,
+  ) async {
+    submittedAnswers = answers;
+    return true;
+  }
+
   void dispose() => controller.close();
 }
 

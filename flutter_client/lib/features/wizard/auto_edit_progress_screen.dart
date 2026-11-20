@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
@@ -60,6 +61,8 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
   bool _restarting = false;
   bool _confirmingCancel = false;
   List<RenderedClipData>? _pendingStudioClips;
+  AutoEditEvent? _pendingQuestions;
+  bool _submittingQuestions = false;
   StreamSubscription<AutoEditEvent>? _sub;
   Timer? _idleTimer;
 
@@ -98,11 +101,12 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
 
   void _resetIdleTimer() {
     _idleTimer?.cancel();
-    _idleTimer = Timer(const Duration(seconds: 90), () {
+    _idleTimer = Timer(const Duration(seconds: 90), () async {
       if (!_finished && mounted) {
-        _recoverViaStatus();
+        await _recoverViaStatus();
         if (!_finished && mounted && _errorDetail == null) {
           _showTimeoutSnack(context.l10n.t('progress_stalled'));
+          if (_pendingQuestions != null) _resetIdleTimer();
         }
       }
     });
@@ -110,6 +114,9 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
 
   /// استكمال عبر polling: لو الجلسة done فعلًا ننتقل بالـ clips، ولو
   /// فاشلة نعرض السبب — بدل الوقوف الأبدي عند آخر نسبة.
+  @visibleForTesting
+  Future<void> recoverForTest() => _recoverViaStatus();
+
   Future<void> _recoverViaStatus() async {
     if (_finished || !mounted) return;
     try {
@@ -122,6 +129,21 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
         if (!mounted || _finished) return;
         _finished = true;
         _goResults(clips);
+      } else if (status == 'awaiting_answers') {
+        final events = (st?['events'] as List?) ?? const [];
+        AutoEditEvent? questionEvent;
+        for (final event in events.whereType<Map>()) {
+          final decoded = AutoEditApi.decodeEvent(jsonEncode(event));
+          if (decoded.type == 'questions') questionEvent = decoded;
+        }
+        if (questionEvent != null && mounted && !_finished) {
+          _idleTimer?.cancel();
+          setState(() {
+            _pendingQuestions = questionEvent;
+            _submittingQuestions = false;
+            _last = questionEvent;
+          });
+        }
       } else if (status == 'error' || status == 'failed') {
         if (!mounted) return;
         final err = (st?['error'] ?? st?['message'] ?? 'فشل المعالجة').toString();
@@ -141,14 +163,42 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
     if (_finished || !mounted) return;
     _resetIdleTimer();
     switch (event.type) {
+      case 'questions':
+        _idleTimer?.cancel();
+        setState(() {
+          _pendingQuestions = event;
+          _submittingQuestions = false;
+          _last = event;
+        });
+        break;
       case 'done':
         _finished = true;
         _goResults(event.clipsJson ?? const []);
+        break;
       case 'error':
-        setState(() => _errorDetail =
-            event.messageAr.isNotEmpty ? event.messageAr : event.messageEn);
+        setState(() {
+          _pendingQuestions = null;
+          _errorDetail =
+              event.messageAr.isNotEmpty ? event.messageAr : event.messageEn;
+        });
+        break;
       default:
         setState(() => _last = event);
+        break;
+    }
+  }
+
+  Future<void> _submitQuestions(List<AutoEditQuestionAnswer> answers) async {
+    if (_submittingQuestions) return;
+    setState(() => _submittingQuestions = true);
+    final ok = await widget.api.answerQuestions(_sessionId, answers);
+    if (!mounted) return;
+    if (_pendingQuestions == null) return;
+    if (ok) {
+      setState(() => _pendingQuestions = null);
+    } else {
+      setState(() => _submittingQuestions = false);
+      _showTimeoutSnack('تعذر إرسال الإجابات. حاول مرة أخرى أو تخطَّ الأسئلة.');
     }
   }
 
@@ -333,8 +383,10 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
           automaticallyImplyLeading: false,
         ),
         body: StudioLayout(
-          footer: failed
-              ? Column(
+          footer: _pendingQuestions != null && !failed
+              ? const SizedBox.shrink()
+              : failed
+                  ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     FilledButton(
@@ -353,13 +405,23 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
                   child: const Text('إلغاء المونتاج'),
                 ),
           children: [
-            StudioProgress(
-              title: failed ? 'المونتاج ما كملش' : 'بنجهّز الريل',
-              detail: _errorDetail ?? detail,
-              icon: failed ? Icons.error_outline_rounded : Icons.movie_filter_outlined,
-              progress: _restarting || _last == null ? null : _progress,
-              failed: failed,
-            ),
+            if (_pendingQuestions != null && !failed)
+              _QuestionCard(
+                key: const ValueKey('director_questions'),
+                event: _pendingQuestions!,
+                busy: _submittingQuestions,
+                onSubmit: _submitQuestions,
+              )
+            else
+              StudioProgress(
+                title: failed ? 'المونتاج ما كملش' : 'بنجهّز الريل',
+                detail: _errorDetail ?? detail,
+                icon: failed
+                    ? Icons.error_outline_rounded
+                    : Icons.movie_filter_outlined,
+                progress: _restarting || _last == null ? null : _progress,
+                failed: failed,
+              ),
           ],
         ),
       ),
@@ -410,6 +472,18 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
   }
 
   Widget _buildBody() {
+    final questions = _pendingQuestions;
+    if (questions != null && _errorDetail == null) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(tokens.Spacing.lg),
+        child: _QuestionCard(
+          key: const ValueKey('director_questions'),
+          event: questions,
+          busy: _submittingQuestions,
+          onSubmit: _submitQuestions,
+        ),
+      );
+    }
     if (_restarting) {
       return const Center(
           child: CircularProgressIndicator(color: AppColors.primary));
@@ -571,6 +645,116 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
         onPressed: _confirmCancel,
         icon: const Icon(Icons.cancel_outlined, size: 16),
         label: Text(context.l10n.t('progress_cancel_button')),
+      ),
+    );
+  }
+}
+
+/// أسئلة اختيارية قصيرة يطرحها المخرج الذكي قبل الرندر. كل سؤال له
+/// اختيارات متعددة، ويمكن إرسال بعض الإجابات أو تخطي الكل.
+class _QuestionCard extends StatefulWidget {
+  const _QuestionCard({
+    super.key,
+    required this.event,
+    required this.busy,
+    required this.onSubmit,
+  });
+
+  final AutoEditEvent event;
+  final bool busy;
+  final Future<void> Function(List<AutoEditQuestionAnswer>) onSubmit;
+
+  @override
+  State<_QuestionCard> createState() => _QuestionCardState();
+}
+
+class _QuestionCardState extends State<_QuestionCard> {
+  final Map<String, String> _selected = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // اختيار التوصية مسبقًا يخلي «ابدأ المونتاج» جاهزًا بضغطة واحدة،
+    // مع إمكانية تغييرها أو تخطي الأسئلة كلها.
+    for (final question in widget.event.questions ?? const <AutoEditQuestion>[]) {
+      final recommended = question.recommended;
+      if (recommended != null &&
+          question.options.any((option) => option.id == recommended)) {
+        _selected[question.id] = recommended;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final questions = widget.event.questions ?? const <AutoEditQuestion>[];
+    return Container(
+      decoration: AppDecorations.card,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Icon(Icons.forum_outlined, size: 30, color: AppColors.primary),
+          const SizedBox(height: 8),
+          const Text(
+            'قبل ما نبدأ المونتاج',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'اختيارات سريعة تساعدنا نطلع أفضل نسخة — أو تخطَّ الأسئلة.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          for (final question in questions) ...[
+            Text(
+              question.question,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 7,
+              runSpacing: 4,
+              children: [
+                for (final option in question.options)
+                  ChoiceChip(
+                    label: Text(option.label),
+                    selected: _selected[question.id] == option.id,
+                    onSelected: widget.busy
+                        ? null
+                        : (_) => setState(
+                            () => _selected[question.id] = option.id,
+                          ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          FilledButton(
+            onPressed: widget.busy || _selected.isEmpty
+                ? null
+                : () => widget.onSubmit([
+                      for (final entry in _selected.entries)
+                        AutoEditQuestionAnswer(
+                          questionId: entry.key,
+                          optionId: entry.value,
+                        ),
+                    ]),
+            child: widget.busy
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('ابدأ المونتاج'),
+          ),
+          TextButton(
+            onPressed: widget.busy ? null : () => widget.onSubmit(const []),
+            child: const Text('تخطَّ الأسئلة'),
+          ),
+        ],
       ),
     );
   }

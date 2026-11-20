@@ -83,8 +83,21 @@ Body: {
 ```
 مراحل ثابتة بالترتيب: `queued → transcribing → understanding → selecting → hooks → effects → rendering → compiling → done`
 
-Fallback polling: `GET /api/auto-edit/status/{session_id}` يعيد آخر رسالة بنفس الشكل.
-إلغاء: `POST /api/auto-edit/cancel/{session_id}`
+Fallback polling: `GET /api/auto-edit/status/{session_id}` يعيد حالة الجلسة والأحداث.
+
+في وضع Short Auto مع مخرج AI، قد يظهر حدث WebSocket إضافي بعد الفهم وقبل الرندر:
+```json
+{"type":"questions","stage":"selecting","progress":64,"questions":[{"id":"q1","question":"لمين الفيديو؟","options":[{"id":"a","label":"جمهور عام"},{"id":"b","label":"متابعيني"}],"recommended":"b"}]}
+```
+الأسئلة اختيارية (حتى 3). أرسل أي إجابات مختارة أو تخطَّها؛ كلاهما يستأنف الجلسة:
+```http
+POST /api/auto-edit/questions/{session_id}
+Content-Type: application/json
+```
+```json
+{"answers":[{"question_id":"q1","option_id":"b"}]}
+```
+للتخطي أو ترك كل الأسئلة دون إجابة: `{"answers":[]}`. الإجابات غير المعروفة أو الخيارات غير الصالحة تُهمل. تنتهي نافذة الإجابة تلقائيًا بعد 240 ثانية ويكمل المحرك بالخطة الأصلية. إلغاء Short Auto: `POST /api/auto-edit/cancel/{session_id}`.
 
 ## LLM Models (موحّد)
 ملف `llm_config.py` في الجذر (موجود):

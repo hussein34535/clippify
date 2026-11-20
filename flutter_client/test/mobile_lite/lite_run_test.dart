@@ -35,6 +35,17 @@ class _FakeLiteApi implements AutoEditApi {
   @override
   Future<bool> cancel(String sessionId) async => true;
 
+  List<AutoEditQuestionAnswer>? submittedAnswers;
+
+  @override
+  Future<bool> answerQuestions(
+    String sessionId,
+    List<AutoEditQuestionAnswer> answers,
+  ) async {
+    submittedAnswers = answers;
+    return true;
+  }
+
   /// إغلاق آمن متكرر — الإغلاق الثاني لـ broadcast controller كان يعلّق
   /// الـ tearDown للأبد (سبب تعليق هذا الملف 10 دقائق).
   void dispose() {
@@ -201,6 +212,109 @@ void main() {
 
       expect(find.textContaining('فشل رفع'), findsOneWidget);
       expect(find.text('حاول مجددًا'), findsOneWidget);
+    });
+
+    testWidgets('answers the director questions before rendering',
+        (tester) async {
+      final api = _FakeLiteApi();
+      addTearDown(api.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: LiteRunScreen(
+              answers: const LiteAnswers(),
+              localVideoPath: '/tmp/in.mp4',
+              onDone: (_) {},
+              checkHealth: () async => true,
+              uploadFile: (_) async => 'uploads/x.mp4',
+              apiFactory: () => api,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      api.controller.add(
+        const AutoEditEvent(
+          type: 'questions',
+          stage: 'selecting',
+          progress: 64,
+          questions: [
+            AutoEditQuestion(
+              id: 'q1',
+              question: 'لمين الفيديو؟',
+              options: [
+                AutoEditQuestionOption(id: 'a', label: 'جمهور عام'),
+                AutoEditQuestionOption(id: 'b', label: 'متابعيني'),
+              ],
+              recommended: 'b',
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('لمين الفيديو؟'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'متابعيني'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'متابعيني'));
+      await tester.pump();
+      await tester.ensureVisible(find.text('ابدأ المونتاج'));
+      await tester.tap(find.text('ابدأ المونتاج'));
+      await tester.pumpAndSettle();
+
+      expect(api.submittedAnswers, hasLength(1));
+      expect(api.submittedAnswers!.first.questionId, 'q1');
+      expect(api.submittedAnswers!.first.optionId, 'b');
+      expect(find.text('لمين الفيديو؟'), findsNothing);
+    });
+
+    testWidgets('skipping the questions resumes the render', (tester) async {
+      final api = _FakeLiteApi();
+      addTearDown(api.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: LiteRunScreen(
+              answers: const LiteAnswers(),
+              localVideoPath: '/tmp/in.mp4',
+              onDone: (_) {},
+              checkHealth: () async => true,
+              uploadFile: (_) async => 'uploads/x.mp4',
+              apiFactory: () => api,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      api.controller.add(
+        const AutoEditEvent(
+          type: 'questions',
+          questions: [
+            AutoEditQuestion(
+              id: 'q1',
+              question: 'لمين الفيديو؟',
+              options: [
+                AutoEditQuestionOption(id: 'a', label: 'جمهور عام'),
+                AutoEditQuestionOption(id: 'b', label: 'متابعيني'),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('تخطَّ الأسئلة'));
+      await tester.tap(find.text('تخطَّ الأسئلة'));
+      await tester.pumpAndSettle();
+
+      expect(api.submittedAnswers, isEmpty);
+      expect(find.text('لمين الفيديو؟'), findsNothing);
     });
 
     testWidgets('closed stream without done recovers via status poll',

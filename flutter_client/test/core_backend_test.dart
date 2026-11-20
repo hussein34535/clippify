@@ -85,6 +85,34 @@ Dio _plainDio(_FakeAdapter adapter) =>
       ..httpClientAdapter = adapter;
 
 void main() {
+  group('AutoEditApi question requests', () {
+    test('answerQuestions sends partial answers to the session endpoint', () async {
+      late RequestOptions request;
+      final adapter = _FakeAdapter((options) {
+        request = options;
+        return _json(200, {'status': 'ok'});
+      });
+      final api = AutoEditApi(
+        dio: _plainDio(adapter),
+        baseUrl: 'http://test.local',
+      );
+
+      expect(
+        await api.answerQuestions('sid-1', const [
+          AutoEditQuestionAnswer(questionId: 'q1', optionId: 'b'),
+        ]),
+        isTrue,
+      );
+      expect(request.method, 'POST');
+      expect(request.path, '/api/auto-edit/questions/sid-1');
+      expect(request.data, {
+        'answers': [
+          {'question_id': 'q1', 'option_id': 'b'},
+        ],
+      });
+    });
+  });
+
   group('AutoEditAnswers.toJson', () {
     test('golden — الافتراضيات snake_case بدون caption_theme', () {
       const a = AutoEditAnswers();
@@ -417,6 +445,35 @@ void main() {
       expect(ev.type, 'error');
       expect(ev.messageAr, 'فشل الرندر');
       expect(ev.messageEn, 'فشل الرندر');
+    });
+
+    test('questions → خيارات وتوصية المخرج', () {
+      final ev = AutoEditApi.decodeEvent(jsonEncode({
+        'type': 'questions',
+        'stage': 'selecting',
+        'progress': 64.0,
+        'questions': [
+          {
+            'id': 'q1',
+            'question': 'لمين الفيديو؟',
+            'options': [
+              {'id': 'a', 'label': 'جمهور عام'},
+              {'id': 'b', 'label': 'متابعيني'},
+            ],
+            'recommended': 'b',
+          },
+        ],
+      }));
+      expect(ev.type, 'questions');
+      expect(ev.questions, hasLength(1));
+      final question = ev.questions!.first;
+      expect(question.id, 'q1');
+      expect(question.question, 'لمين الفيديو؟');
+      expect(question.options.map((option) => option.label), [
+        'جمهور عام',
+        'متابعيني',
+      ]);
+      expect(question.recommended, 'b');
     });
   });
 
