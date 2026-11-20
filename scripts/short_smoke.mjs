@@ -34,6 +34,59 @@ const env = { ...process.env, CLIPPIFY_FFMPEG: ffmpeg };
 delete env.WHISPER_MODEL_PATH;
 delete env.CLIPPIFY_SHORT_TEAMSOCLO_KEY;
 delete env.CLIPPIFY_SHORT_TEAMSOCLO_MODEL;
+
+async function checkVisionGate() {
+  const gateEnv = {
+    ...process.env,
+    CLIPPIFY_FFMPEG: ffmpeg,
+    CLIPPIFY_SHORT_TEAMSOCLO_KEY: 'fixture-key-that-must-not-be-used',
+    CLIPPIFY_SHORT_TEAMSOCLO_MODEL: 'fixture-model',
+    CLIPPIFY_SHORT_AI_BASE_URL: 'https://coarena.ai/api/v1',
+  };
+  delete gateEnv.CLIPPIFY_SHORT_AI_VISION;
+  const gate = spawn(engine, ['serve', '--port', '0', '--local-short'], {
+    cwd: workspace, env: gateEnv, windowsHide: true, stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  const gateExit = new Promise((resolve) => gate.once('close', resolve));
+  const gateTimeout = setTimeout(() => gate.kill(), 10_000);
+  const lines = readline.createInterface({ input: gate.stdout });
+  try {
+    for await (const line of lines) {
+      const { listening } = JSON.parse(line);
+      const gateBase = `http://${listening}`;
+      const response = await fetch(`${gateBase}/api/auto-edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          video_path: fixture,
+          answers: { mode: 'short_auto', short_director: 'ai' },
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      assert.equal(response.status, 202);
+      const { session_id: id } = await response.json();
+      const started = Date.now();
+      let state;
+      do {
+        await sleep(100);
+        state = await (await fetch(`${gateBase}/api/auto-edit/status/${id}`, {
+          signal: AbortSignal.timeout(5_000),
+        })).json();
+      } while (!['done', 'error'].includes(state.status) && Date.now() - started < 5_000);
+      assert.equal(state.status, 'error', 'AI without image consent must not run');
+      assert.match(state.error, /إذن إرسال صور/);
+      assert.ok(Date.now() - started < 5_000, 'the gate must reject before analysis');
+      return;
+    }
+    assert.fail('Vision gate engine exited before listening');
+  } finally {
+    clearTimeout(gateTimeout);
+    lines.close();
+    gate.kill();
+    await gateExit;
+  }
+}
+await checkVisionGate();
 const worker = spawn(engine, ['serve', '--port', '0', '--local-short'], {
   cwd: workspace, env, windowsHide: true, stdio: ['ignore', 'pipe', 'inherit'],
 });
