@@ -15,29 +15,32 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
-  ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const HRESULT com_result = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
-  flutter::DartProject project(L"data");
+  int exit_code = EXIT_FAILURE;
+  {
+    flutter::DartProject project(L"data");
 
-  std::vector<std::string> command_line_arguments =
-      GetCommandLineArguments();
+    project.set_dart_entrypoint_arguments(GetCommandLineArguments());
 
-  project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
+    FlutterWindow window(project);
+    Win32Window::Point origin(10, 10);
+    Win32Window::Size size(1280, 720);
+    if (window.Create(L"flutter_client", origin, size)) {
+      window.SetQuitOnClose(true);
 
-  FlutterWindow window(project);
-  Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"flutter_client", origin, size)) {
-    return EXIT_FAILURE;
+      ::MSG msg;
+      BOOL message_status;
+      while ((message_status = ::GetMessage(&msg, nullptr, 0, 0)) > 0) {
+        ::TranslateMessage(&msg);
+        ::DispatchMessage(&msg);
+      }
+      exit_code = message_status == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
   }
-  window.SetQuitOnClose(true);
 
-  ::MSG msg;
-  while (::GetMessage(&msg, nullptr, 0, 0)) {
-    ::TranslateMessage(&msg);
-    ::DispatchMessage(&msg);
+  if (SUCCEEDED(com_result)) {
+    ::CoUninitialize();
   }
-
-  ::CoUninitialize();
-  return EXIT_SUCCESS;
+  return exit_code;
 }

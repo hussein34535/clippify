@@ -7,7 +7,11 @@
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
 
-FlutterWindow::~FlutterWindow() {}
+FlutterWindow::~FlutterWindow() {
+  // The message loop can stop while the native window still exists. Detach
+  // Flutter before its child window sends messages during destruction.
+  Destroy();
+}
 
 bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
@@ -40,10 +44,8 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
-  if (flutter_controller_) {
-    flutter_controller_ = nullptr;
-  }
-
+  SetChildContent(nullptr);
+  flutter_controller_.reset();
   Win32Window::OnDestroy();
 }
 
@@ -61,10 +63,10 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     }
   }
 
-  switch (message) {
-    case WM_FONTCHANGE:
-      flutter_controller_->engine()->ReloadSystemFonts();
-      break;
+  if (message == WM_FONTCHANGE && flutter_controller_) {
+    if (auto* engine = flutter_controller_->engine()) {
+      engine->ReloadSystemFonts();
+    }
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);

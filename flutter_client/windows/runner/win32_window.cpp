@@ -240,6 +240,9 @@ Win32Window* Win32Window::GetThisFromHandle(HWND const window) noexcept {
 
 void Win32Window::SetChildContent(HWND content) {
   child_content_ = content;
+  if (!content) {
+    return;
+  }
   SetParent(content, window_handle_);
   RECT frame = GetClientArea();
 
