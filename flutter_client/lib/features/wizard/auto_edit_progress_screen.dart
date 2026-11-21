@@ -148,6 +148,14 @@ class _AutoEditProgressScreenState extends State<AutoEditProgressScreen> {
         if (!mounted) return;
         final err = (st?['error'] ?? st?['message'] ?? 'فشل المعالجة').toString();
         setState(() => _errorDetail = err);
+      } else if (_pendingQuestions != null) {
+        // المهلة انتهت على المحرك أو تمت الإجابة من جهاز آخر؛ البطاقة القديمة
+        // لازم تختفي بدل ما تحجب التقدم لباقي الجلسة.
+        setState(() {
+          _pendingQuestions = null;
+          _submittingQuestions = false;
+        });
+        _resetIdleTimer();
       }
     } catch (_) {}
   }

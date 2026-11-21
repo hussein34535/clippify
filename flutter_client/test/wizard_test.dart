@@ -366,6 +366,21 @@ void main() {
 
       expect(find.text('لمين الفيديو؟'), findsOneWidget);
       expect(api.statusCalls, 1);
+
+      // The engine's question timeout expired (or another device answered):
+      // the next poll reports a running session, so the stale card must go.
+      api.statusResult = {'status': 'running', 'events': <Object>[]};
+      final stale =
+          (tester.state(find.byType(AutoEditProgressScreen)) as dynamic)
+              .recoverForTest() as Future<void>;
+      await tester.pump();
+      await stale;
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('director_questions')), findsNothing);
+      expect(find.text('لمين الفيديو؟'), findsNothing);
+      expect(api.statusCalls, 2);
+
       await _unmount(tester);
     });
 
