@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_client/mobile_lite/flow_screen.dart';
 import 'package:flutter_client/mobile_lite/models.dart';
+import 'package:flutter_client/mobile_lite/short_provider_settings.dart';
 import 'package:flutter_client/mobile_lite/studio_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -193,5 +194,110 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.tap(start.hitTestable());
     expect(picked, '/tmp/الفيديو الطويل للتجربة.mp4');
+  });
+
+  group('AI frame-sharing consent', () {
+    const aiStart = 'ابدأ التحليل والمونتاج بالـAI';
+
+    Future<void> openAiFlow(
+      WidgetTester tester, {
+      required ShortAiAccess access,
+      required void Function(LiteAnswers answers) onReady,
+      VoidCallback? onProviderSettings,
+      VoidCallback? onGrant,
+    }) async {
+      stubPicker(() async => ['/tmp/clip.mp4']);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LiteFlowScreen(
+            supportsAiDirector: true,
+            readProviderAccess: () async => access,
+            grantVisionConsent: () async => onGrant?.call(),
+            onProviderSettings: onProviderSettings,
+            onReady: (answers, _) => onReady(answers),
+          ),
+        ),
+      );
+      await tester.tap(videoPicker);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, aiStart));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('asks before the first AI run and starts after approval', (
+      tester,
+    ) async {
+      LiteAnswers? result;
+      var granted = 0;
+      await openAiFlow(
+        tester,
+        access: ShortAiAccess.needsVisionConsent,
+        onGrant: () => granted++,
+        onReady: (answers) => result = answers,
+      );
+
+      expect(find.text('إذن إرسال صور من الفيديو'), findsOneWidget);
+      expect(result, isNull);
+
+      await tester.tap(find.text('أوافق وأكمل'));
+      await tester.pumpAndSettle();
+
+      expect(granted, 1);
+      expect(result?.director, LiteDirector.ai);
+    });
+
+    testWidgets('declining keeps the run local and sends no frames', (
+      tester,
+    ) async {
+      LiteAnswers? result;
+      var granted = 0;
+      await openAiFlow(
+        tester,
+        access: ShortAiAccess.needsVisionConsent,
+        onGrant: () => granted++,
+        onReady: (answers) => result = answers,
+      );
+
+      await tester.tap(find.widgetWithText(TextButton, 'مونتاج محلي'));
+      await tester.pumpAndSettle();
+
+      expect(granted, 0);
+      expect(result?.director, LiteDirector.local);
+    });
+
+    testWidgets('cancelling the consent dialog does not start', (tester) async {
+      LiteAnswers? result;
+      await openAiFlow(
+        tester,
+        access: ShortAiAccess.needsVisionConsent,
+        onReady: (answers) => result = answers,
+      );
+
+      await tester.tap(find.text('إلغاء'));
+      await tester.pumpAndSettle();
+
+      expect(result, isNull);
+      expect(find.byType(LiteFlowScreen), findsOneWidget);
+    });
+
+    testWidgets('an unconfigured provider routes to AI settings', (
+      tester,
+    ) async {
+      LiteAnswers? result;
+      var opened = false;
+      await openAiFlow(
+        tester,
+        access: ShortAiAccess.unconfigured,
+        onProviderSettings: () => opened = true,
+        onReady: (answers) => result = answers,
+      );
+
+      expect(find.text('مخرج AI محتاج مزوّد'), findsOneWidget);
+      await tester.tap(find.text('افتح الإعدادات'));
+      await tester.pumpAndSettle();
+
+      expect(opened, isTrue);
+      expect(result, isNull);
+    });
   });
 }

@@ -5,6 +5,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+/// What an AI-directed run still needs before it can start.
+///
+/// A cloud provider must be configured first, then the owner must explicitly
+/// allow sharing video frames. Both live in [ShortProviderSettings].
+enum ShortAiAccess { unconfigured, needsVisionConsent, ready }
+
 abstract final class ShortProviderSettings {
   static const baseUrl = 'https://coarena.ai/api/v1';
   static const defaultModel = 'deepseek-v4-1-flash-1017';
@@ -33,6 +39,36 @@ abstract final class ShortProviderSettings {
     } on Exception {
       return const {};
     }
+  }
+
+  /// Reads what an AI run needs without exposing the saved key.
+  static Future<ShortAiAccess> access() async {
+    try {
+      final settings = await _readLatest();
+      if (!settings.cloudEnabled || settings.apiKey == null) {
+        return ShortAiAccess.unconfigured;
+      }
+      return settings.vision
+          ? ShortAiAccess.ready
+          : ShortAiAccess.needsVisionConsent;
+    } on Exception {
+      return ShortAiAccess.unconfigured;
+    }
+  }
+
+  /// Stores an explicit yes to sharing video frames with the configured
+  /// provider. Does nothing when no cloud provider is configured.
+  static Future<void> grantVision() async {
+    await _update((current) {
+      if (!current.cloudEnabled || current.apiKey == null) return current;
+      return _SavedSettings(
+        apiKey: current.apiKey,
+        model: current.model,
+        cloudEnabled: true,
+        endpoint: current.endpoint,
+        vision: true,
+      );
+    });
   }
 
   static Future<_SavedSettings> _readLatest() async {

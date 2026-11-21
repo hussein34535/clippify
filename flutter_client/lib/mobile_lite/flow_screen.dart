@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'models.dart';
 import 'reel_art.dart';
+import 'short_provider_settings.dart';
 import 'studio_theme.dart';
 
 /// شاشة واحدة لاختيار فيديو وتجهيز مقطع قصير تلقائيًا.
@@ -19,7 +20,15 @@ class LiteFlowScreen extends StatefulWidget {
     this.onProviderSettings,
     this.uploadsVideo = true,
     this.supportsAiDirector = false,
+    this.readProviderAccess = ShortProviderSettings.access,
+    this.grantVisionConsent = ShortProviderSettings.grantVision,
   });
+
+  /// Test seam: what an AI-directed run still needs (provider / frame consent).
+  final Future<ShortAiAccess> Function() readProviderAccess;
+
+  /// Test seam: stores the explicit yes to sharing video frames.
+  final Future<void> Function() grantVisionConsent;
 
   @override
   State<LiteFlowScreen> createState() => _LiteFlowScreenState();
@@ -32,6 +41,7 @@ class _LiteFlowScreenState extends State<LiteFlowScreen> {
   bool get _aiDirected => _answers.director == LiteDirector.ai;
   String? _videoPath;
   bool _isPickingVideo = false;
+  bool _starting = false;
 
   Future<void> _pickVideo() async {
     setState(() => _isPickingVideo = true);
@@ -52,6 +62,119 @@ class _LiteFlowScreenState extends State<LiteFlowScreen> {
           _isPickingVideo = false;
         });
       }
+    }
+  }
+
+  /// يسأل عن إذن مشاركة الصور قبل تشغيل مخرج AI، ويرجّع الإجابات النهائية
+  /// (أو null لو المستخدم ألغى). رفض المشاركة يكمل بالمونتاج المحلي.
+  Future<LiteAnswers?> _gateAiConsent() async {
+    if (!_aiDirected || !widget.supportsAiDirector) return _answers;
+
+    ShortAiAccess access;
+    try {
+      access = await widget.readProviderAccess();
+    } on Exception {
+      access = ShortAiAccess.unconfigured;
+    }
+    if (!mounted) return null;
+
+    if (access == ShortAiAccess.unconfigured) {
+      final choice = await _askGate(
+        title: 'مخرج AI محتاج مزوّد',
+        body:
+            'فعّل مزوّد الذكاء الاصطناعي واحفظ المفتاح الأول، أو كمّل بالمونتاج '
+            'المحلي من غير مشاركة صور.',
+        primaryLabel: 'افتح الإعدادات',
+        primaryChoice: _GateChoice.settings,
+      );
+      if (!mounted || choice == null) return null;
+      if (choice == _GateChoice.settings) {
+        widget.onProviderSettings?.call();
+        return null;
+      }
+      if (choice == _GateChoice.local) {
+        setState(
+          () => _answers = _answers.copyWith(director: LiteDirector.local),
+        );
+      }
+      return _answers;
+    }
+
+    if (access == ShortAiAccess.needsVisionConsent) {
+      final choice = await _askGate(
+        title: 'إذن إرسال صور من الفيديو',
+        body:
+            'مخرج AI بيحتاج يشوف لحد ١٨ صورة مصغّرة من الفيديو، مع مقتطفات '
+            'الكلام، عشان يختار القص والكادر. الصور بتتبعت للمزوّد السحابي، '
+            'والمونتاج والرندر بيتمّوا على جهازك. تقدر تلغي الإذن في أي وقت '
+            'من إعدادات الذكاء الاصطناعي.',
+        primaryLabel: 'أوافق وأكمل',
+        primaryChoice: _GateChoice.allow,
+      );
+      if (!mounted || choice == null) return null;
+      if (choice == _GateChoice.local) {
+        setState(
+          () => _answers = _answers.copyWith(director: LiteDirector.local),
+        );
+        return _answers;
+      }
+      try {
+        await widget.grantVisionConsent();
+      } on Exception {
+        if (!mounted) return null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تعذّر حفظ الإذن. افتح إعدادات الذكاء الاصطناعي وفعّل '
+              '«إرسال صور من الفيديو».',
+            ),
+          ),
+        );
+        return null;
+      }
+    }
+    return _answers;
+  }
+
+  Future<_GateChoice?> _askGate({
+    required String title,
+    required String body,
+    required String primaryLabel,
+    required _GateChoice primaryChoice,
+  }) {
+    return showDialog<_GateChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _GateChoice.local),
+            child: const Text('مونتاج محلي'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, primaryChoice),
+            child: Text(primaryLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _start() async {
+    final videoPath = _videoPath;
+    if (videoPath == null || _starting) return;
+    setState(() => _starting = true);
+    try {
+      final answers = await _gateAiConsent();
+      if (!mounted || answers == null) return;
+      widget.onReady(answers, videoPath);
+    } finally {
+      if (mounted) setState(() => _starting = false);
     }
   }
 
@@ -78,11 +201,11 @@ class _LiteFlowScreenState extends State<LiteFlowScreen> {
       ),
       body: StudioLayout(
         footer: FilledButton.icon(
-          onPressed: _isPickingVideo
+          onPressed: _isPickingVideo || _starting
               ? null
               : videoPath == null
               ? _pickVideo
-              : () => widget.onReady(_answers, videoPath),
+              : _start,
           icon: Icon(
             videoPath == null ? Icons.add_rounded : Icons.auto_awesome_outlined,
           ),
@@ -320,6 +443,8 @@ class _LiteFlowScreenState extends State<LiteFlowScreen> {
     ],
   );
 }
+
+enum _GateChoice { allow, local, settings }
 
 class _SelectedVideo extends StatelessWidget {
   const _SelectedVideo({required this.name, required this.onPick});
